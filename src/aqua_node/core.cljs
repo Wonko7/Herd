@@ -26,8 +26,8 @@
   (-> conn rm-conn .destroy))
 
 
-
 ;; FIXME: most kill-conns should be wait for more data.
+;;        also, do ipv4 & dns.
 (defn socks-recv [c data]
   (let [len        (.-length data)
         b          #(.readUInt8 data %)
@@ -60,7 +60,8 @@
                                  (kill-conn c "ip4 info too small")
                                  (-> c
                                    (set-conn-dest {:type :ip4 :addr (apply str (interpose "." (map b (range 4 8)))) :port (b16 8)})
-                                   (set-conn-state :relay))))))
+                                   (set-conn-state :relay)))
+                             (kill-conn c "bad address type"))))
                        (kill-conn c "too small")))
         ]
     (println (str "state: " state))
