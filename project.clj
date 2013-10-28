@@ -9,5 +9,6 @@
   :cljsbuild {:builds [{:source-path "src"
                         :compiler {:target :nodejs
                                    :output-to "target/aqua.js"
-                                   :optimizations :advanced
+                                   ;:optimizations :advanced
+                                   :optimizations :simple
                                    :pretty-print true}}]})
