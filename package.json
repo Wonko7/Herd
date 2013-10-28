@@ -2,7 +2,7 @@
     "name": "aqua",
     "version": "0.0.1",
     "dependencies": {
-        "sockserver": "0.0.1"
+	"argyle": ""
     },
     "engines": {
         "node": "0.10.x",
