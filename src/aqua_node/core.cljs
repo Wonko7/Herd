@@ -74,15 +74,19 @@
         :request     (request c data)
         (kill-conn c)))))
 
+(defn create-socks-server [{addr :addr
+                            port :port}]
+  (let [net (node/require "net")
+        srv (.createServer net (fn [c] 
+                                 (println "conn start")
+                                 (-> c 
+                                   (add-conn)
+                                   (.on "end" #(println "conn end")) 
+                                   (.on "error" kill-conn) 
+                                   (.on "data" #(socks-recv c %)))))]
+    (.listen srv port #(println (str "listening on: " (-> srv .address .-port))))))
+
 (defn -main [& args]
-  (let [net     (node/require "net")
-        srv     (.createServer net (fn [c] 
-                                     (println "conn start")
-                                     (-> c 
-                                       (add-conn)
-                                       (.on "end" #(println "conn end")) 
-                                       (.on "error" kill-conn) 
-                                       (.on "data" #(socks-recv c %)))))]
-    (.listen srv 6666 #(println (str "listening on: " (-> srv .address .-port))))))
+  (create-socks-server {:port 6666}))
 
 (set! *main-cli-fn* -main)
