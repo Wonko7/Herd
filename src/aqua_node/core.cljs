@@ -52,8 +52,8 @@
                        (let [cmd       (b 1)
                              addr-type (b 3)
                              [too-short? type to-port to-ip] (condp = addr-type
-                                                               1 [(< len 10) :ipv4 #(b16 8)  #(apply str (interpose "." (map b (range 4 8))))]
-                                                               4 [(< len 5)  :ipv6 #(b16 20) #(apply str (mapcat concat (interpose [":"] (partition 4 (.toString data "hex" 4 20)))))]
+                                                               1 [(< len 10) :ipv4 #(b16 8)  #(->> (range 4 8) (map b) (interpose ".") (apply str))]
+                                                               4 [(< len 5)  :ipv6 #(b16 20) #(->> (.toString data "hex" 4 20) (partition 4) (interpose [\:]) (apply concat) (apply str))]
                                                                3 (let [ml?  (>= len 5)
                                                                        alen (when ml? (b 4))
                                                                        aend (when ml? (+ alen 5))]
