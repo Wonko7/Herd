@@ -13,7 +13,7 @@
   conn)
 
 (defn set-conn-dest [conn dest]
-  (println (str dest))
+  (println dest)
   (swap! connections assoc-in [conn :dest] dest)
   conn)
 
@@ -53,17 +53,30 @@
                              addr-type (b 3)]
                          (doseq [i (range len)]
                            (println (str "buf: " (.readUInt8 data i))))
-                         (if (not= cmd 1) 
+                         (if (not= cmd 1) ;; Add udp here.
                            (kill-conn c "bad request command")
                            (condp = addr-type
-                             1 (if (< len 10)
+                             1 (if (< len 10) ;; ipv4
                                  (kill-conn c "ip4 info too small")
                                  (-> c
                                    (set-conn-dest {:type :ip4 :addr (apply str (interpose "." (map b (range 4 8)))) :port (b16 8)})
                                    (set-conn-state :relay)))
+                             3 (if (< len 5) ;; dns
+                                 (kill-conn "too short for dns")
+                                 (let [alen (b 4)
+                                       aend (+ alen 5)]
+                                   (if (< len (+ 2 alen)) ;; host + port
+                                     (kill-conn "too short for dns 2")
+                                     (-> c
+                                       (set-conn-dest {:type :dns :addr (.toString data "utf8" 5 aend) :port (b16 aend)})
+                                       (set-conn-state :relay)))))
+                             4 (if (< len 22) ;; ipv6
+                                 (kill-conn c "ipv6 too short")
+                                 (-> c
+                                   (set-conn-dest {:type :ip6 :addr (apply str (mapcat concat (interpose [":"] (partition 4 (.toString data "hex" 4 20))))) :port (b16 20)})
+                                   (set-conn-state :relay)))
                              (kill-conn c "bad address type"))))
-                       (kill-conn c "too small")))
-        ]
+                       (kill-conn c "too small")))]
     (println (str "state: " state))
     (if (not= socks-vers 5)
       (kill-conn c "bad socks version")
