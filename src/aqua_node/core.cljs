@@ -50,33 +50,22 @@
                      (println "entered rq")
                      (if (> len 4)
                        (let [cmd       (b 1)
-                             addr-type (b 3)]
-                         (doseq [i (range len)]
-                           (println (str "buf: " (.readUInt8 data i))))
-                         (if (not= cmd 1) ;; Add udp here.
+                             addr-type (b 3)
+                             [too-short? type to-port to-ip] (condp = addr-type
+                                                               1 [(< len 10) :ipv4 #(b16 8)  #(apply str (interpose "." (map b (range 4 8))))]
+                                                               4 [(< len 5)  :ipv6 #(b16 20) #(apply str (mapcat concat (interpose [":"] (partition 4 (.toString data "hex" 4 20)))))]
+                                                               3 (let [ml?  (>= len 5)
+                                                                       alen (when ml? (b 4))
+                                                                       aend (when ml? (+ alen 5))]
+                                                                   [(or (not ml?) (< len (+ 2 aend))) :dns #(b16 aend) #(.toString data "utf8" 5 aend)])
+                                                               (repeat false))]
+                         (if (not= cmd 1) ;; FIXME: Add udp here.
                            (kill-conn c "bad request command")
-                           (condp = addr-type
-                             1 (if (< len 10) ;; ipv4
-                                 (kill-conn c "ip4 info too small")
-                                 (-> c
-                                   (set-conn-dest {:type :ip4 :addr (apply str (interpose "." (map b (range 4 8)))) :port (b16 8)})
-                                   (set-conn-state :relay)))
-                             3 (if (< len 5) ;; dns
-                                 (kill-conn "too short for dns")
-                                 (let [alen (b 4)
-                                       aend (+ alen 5)]
-                                   (if (< len (+ 2 alen)) ;; host + port
-                                     (kill-conn "too short for dns 2")
-                                     (-> c
-                                       (set-conn-dest {:type :dns :addr (.toString data "utf8" 5 aend) :port (b16 aend)})
-                                       (set-conn-state :relay)))))
-                             4 (if (< len 22) ;; ipv6
-                                 (kill-conn c "ipv6 too short")
-                                 (-> c
-                                   (set-conn-dest {:type :ip6 :addr (apply str (mapcat concat (interpose [":"] (partition 4 (.toString data "hex" 4 20))))) :port (b16 20)})
-                                   (set-conn-state :relay)))
-                             (kill-conn c "bad address type"))))
-                       (kill-conn c "too small")))]
+                           (if too-short? ;; to-[ip/port] are functions to avoid executing the code if not enough data
+                             (kill-conn c (str "not enough data. conn type: " type))
+                             (-> c
+                               (set-conn-dest {:type type :addr (to-ip) :port (to-port)})
+                               (set-conn-state :relay)))))))]
     (println (str "state: " state))
     (if (not= socks-vers 5)
       (kill-conn c "bad socks version")
