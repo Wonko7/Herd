@@ -32,7 +32,7 @@
   (let [len        (.-length data)
         b          #(.readUInt8 data %)
         b16        #(.readUInt16BE data %)
-        socks-vers (b 0)       
+        socks-vers (b 0)
         state      (:state (@connections c))
         ;; handle socks states:
         handshake  (fn [c data]
@@ -40,8 +40,8 @@
                      (if (> len 2)
                        (let [nb-auth-methods (b 1)
                              no-auth? (some zero? (map b (range 2 (min len (+ 2 nb-auth-methods)))))]
-                         (if no-auth? 
-                           (-> c 
+                         (if no-auth?
+                           (-> c
                              (set-conn-state :request)
                              (.write (js/Buffer. (cljs/clj->js [0x05, 0x00]))))
                            (kill-conn c "bad auth method")))
@@ -77,11 +77,11 @@
 (defn create-socks-server [{addr :addr ;; FIXME: use addr.
                             port :port}]
   (let [net (node/require "net")
-        srv (.createServer net (fn [c] 
+        srv (.createServer net (fn [c]
                                  (println "conn start")
-                                 (-> c 
+                                 (-> c
                                    (add-conn)
-                                   (.on "end" #(println "conn end")) 
-                                   (.on "error" kill-conn) 
+                                   (.on "end" #(println "conn end"))
+                                   (.on "error" kill-conn)
                                    (.on "data" #(socks-recv c %)))))]
     (.listen srv port #(println (str "listening on: " (-> srv .address .-port))))))
