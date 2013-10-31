@@ -1,0 +1,6 @@
+{:server {:type [:mix :exit :entry]
+          :addr "127.0.0.1"
+	  :port 6666
+	  :auth {:cert "auth/cert.pem"
+	         :key  "auth/key.pem"
+                 :passphrase "1234"}}}

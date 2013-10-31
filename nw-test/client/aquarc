@@ -1,0 +1,7 @@
+{:server {:type [:app-proxy]
+          :addr "127.0.0.1"
+	  :port 6669
+	  :auth {:cert "auth/cert.pem"
+	         :key  "auth/key.pem"
+                 :passphrase "aoeu"}}
+ :dir-server {:addr "127.0.0.1" :port 6666}}
