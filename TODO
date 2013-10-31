@@ -1,0 +1,12 @@
+* connection manager
+	- all sockets, with types (socks, dtls, tunnels and stuff)
+
+* bootstrap manager:
+	- by type/role. rename type to roles? seems to make sense.
+
+* config
+	- try to settle on a good hierarchy and names etc.
+
+* libs
+	- find a good logging module
+	- fix stuff in nodedtls: API, printfs.
