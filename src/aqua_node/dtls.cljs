@@ -6,7 +6,9 @@
                                      {addr :addr
                                       port :port} :listen}
                                     new-conn-handler]
-  (let [dtls       (node/require "./node_modules/nodedtls/index.js") ;; FIXME: look into making this cleaner.
+  (let [dtls       (node/require "nodedtls")
         fs         (node/require "fs")
-        auth       (apply merge (for [k (keys auth)] {k (.readFileSync fs (auth k) "utf8")}))]
+        cat        (fn [k] (try {k (.readFileSync fs (auth k) "utf8")}
+                             (catch js/Object e (println "/!\\  could not load auth info: " e)))) 
+        auth       (merge auth (cat :key) (cat :cert))]
     (.createServer dtls (cljs/clj->js auth) new-conn-handler)))

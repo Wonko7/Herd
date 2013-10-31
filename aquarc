@@ -1,3 +1,6 @@
 {:server {:types [:mix :exit :entry]
           :ip "127.0.0.1"
-	  :port 6666}}
+	  :port 6666
+	  :auth {:cert "auth/cert.pem"
+	         :key  "auth/key.pem"
+                 :passphrase "aoeu"}}}
