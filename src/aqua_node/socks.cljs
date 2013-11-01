@@ -9,7 +9,7 @@
   (-> conn c/rm .destroy))
 
 ;; FIXME: most kill-conns should be wait for more data.
-(defn socks-recv [c data-handler data] ;; FIXME: either call data-handler if socks still needs processing when forwarding data, or remove all listeners when connection is ready and add the given listener.
+(defn socks-recv [c new-conn-handler data] ;; FIXME: either call data-handler if socks still needs processing when forwarding data, or remove all listeners when connection is ready and add the given listener.
   (let [len        (.-length data)
         b          #(.readUInt8 data %)
         b16        #(.readUInt16BE data %)
@@ -54,19 +54,19 @@
 
 (defn create-socks-server [{addr :addr
                             port :port}
-                           conn-listeners
-                           srv-listeners]
+                           listeners
+                           new-conn-handler]
   (let [net     (node/require "net")
         srv     (.createServer net (fn [c]
                                      (println (str "###  App-Proxy: new connection on: " (-> c .address .-ip) ":" (-> c .address .-port)))
                                      (-> c
                                        (c/add {:socks {:state :handshake}})
-                                       (c/add-listeners (merge-with #(list %1 %2) (dissoc conn-listeners :data) {:end   #(println "###  App-Proxy: connection end: " (-> c .address .-ip) ":" (-> c .address .-port))
-                                                                                                                 :error kill-conn
-                                                                                                                 :data  #(socks-recv c (:data conn-listeners) %)})))))
+                                       (c/add-listeners {:end   #(println "###  App-Proxy: connection end: " (-> c .address .-ip) ":" (-> c .address .-port))
+                                                         :error kill-conn
+                                                         :data  #(socks-recv c new-conn-handler %)}))))
         new-srv #(println (str "###  App-Proxy listening on: " (-> srv .address .-ip) ":" (-> srv .address .-port)))]
     (if addr
       (.listen srv port addr new-srv)
       (.listen srv port new-srv))
     (c/add srv)
-    (c/add-listeners srv srv-listeners)))
+    (c/add-listeners srv listeners)))
