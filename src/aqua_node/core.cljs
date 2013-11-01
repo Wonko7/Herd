@@ -17,11 +17,11 @@
 
 (defn -main [& args]
   (let [config (config/read-config)]
-    (if (some #(not= % :app-proxy) (-> config :server :type))
-      (dtls/create-aqua-listening-socket (:server config) new-dtls-conn)
+    (if false ;(some #(not= % :app-proxy) (:roles config))
+      (dtls/create-aqua-listening-socket (:aqua-conn config) new-dtls-conn)
       (do
         (println "app-proxy only")
-        (socks/create-socks-server (:server config))
+        (socks/create-socks-server (:app-proxy-conn config))
         (let [s (dtls/connect-to-aqua-node (:dir-server config) (:server config) identity)]
           (write s)
           (.on s "data" #(println (.toString %))))))))
