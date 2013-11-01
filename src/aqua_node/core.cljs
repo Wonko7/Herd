@@ -23,7 +23,8 @@
         (println "app-proxy only")
         (socks/create-socks-server (:server config))
         (let [s (dtls/connect-to-aqua-node (:dir-server config) (:server config) identity)]
-          (write s))))))
+          (write s)
+          (.on s "data" #(println (.toString %))))))))
 
 ;(set! *main-cli-fn* -main)
 (set! *main-cli-fn* #(try
