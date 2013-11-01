@@ -4,17 +4,17 @@ An Anonymous Quanta implementation.
 
 ## Building
 
-Program versions:
+### Program versions:
 - Node:		v0.10.12-release:a088cf4f930d3928c97d239adf950ab43e7794aa
 - OpenSSl:	1.0.1e
 - nodedtls:	shared-ossl:9ed519f1bfe373686c7b37bebbbde3a5cca80c3c (on our fork).
 
-Environment:
+### Environment:
 - `prefix=...`
 - `PATH=$prefix/bin:$prefix/sbin:$prefix/lib/node_modules/npm/bin/node-gyp-bin:$PATH`
 - `export LD_LIBRARY_PATH=$prefix/lib`
 
-Building:
+### Building:
 - OpenSSL:	`./config shared --prefix=$prefix enable-tlsext enable-dtls enable-ssl; make; make install`
 - Node:		`./configure --prefix=$prefix --shared-openssl --shared-openssl-includes $prefix/include --shared-openssl-libpath $prefix/lib; make; make install`
 - nodedtls:	`node-gyp configure build`
