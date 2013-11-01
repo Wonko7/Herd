@@ -7,7 +7,7 @@ An Anonymous Quanta implementation.
 Program versions:
 - Node:		v0.10.12-release:a088cf4f930d3928c97d239adf950ab43e7794aa
 - OpenSSl:	1.0.1e
-- nodedtls:	633c3f65752afeae40d573f226403768811264b3 (v2 branch on our fork)
+- nodedtls:	shared-ossl:9ed519f1bfe373686c7b37bebbbde3a5cca80c3c (on our fork).
 
 Environment:
 - `prefix=...`
