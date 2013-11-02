@@ -8,10 +8,6 @@
   (swap! connections merge {conn data})
   conn)
 
-(defn update-data [conn data]
-  (swap! connections merge {conn data})
-  conn)
-
 (defn set-data [conn data]
   (swap! connections merge {conn data})
   conn)
@@ -19,10 +15,6 @@
 (defn update-data [conn keys subdata]
   (swap! connections assoc-in (cons conn keys) subdata)
   conn)
-
-; (defn update-single-data [conn key subdata]
-;   (swap! connections assoc-in [conn key] subdata)
-;   conn)
 
 (defn rm [conn]
   (swap! connections dissoc conn)
