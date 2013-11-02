@@ -10,7 +10,7 @@
   (println "---  recv:" (.toString b)))
 
 (defn new-dtls-conn [s]
-  (println "---  new dtls conn on:" (.-remoteAddress s) ":" (.-remotePort s))
+  (println "---  new dtls conn on:" (-> s .-socket .-_destIP) ":" (-> s .-socket .-_destPort)) ;; FIXME: investigate nil .-remote[Addr|Port]
   (c/add-listeners s {:data (fn [b]
                               (print-buf b)
                               (.write s (str "polly wants a cracker! " (.toString b))))}))
