@@ -1,30 +1,13 @@
 (ns aqua-node.core
   (:require [cljs.core :as cljs]
             [cljs.nodejs :as node]
-            [aqua-node.dtls :as dtls]
-            [aqua-node.socks :as socks]
+            [aqua-node.roles :as roles]
             [aqua-node.config :as config]))
 
-(defn new-dtls-conn [s]
-  (println "new dtls conn on: " (.-remoteAddress s) ":" (.-remotePort s))
-  (.on s "data" (fn [b]
-                  (println "recv: " (.toString b))
-                  (.write s (str "polly wants a cracker! " (.toString b))))))
-
-(def i (atom 0))
-(defn write [s]
-  (js/setInterval #(.write s (str "hello" (swap! i inc))) 1000))
 
 (defn -main [& args]
   (let [config (config/read-config)]
-    (if false ;(some #(not= % :app-proxy) (:roles config))
-      (dtls/create-aqua-listening-socket (:aqua-conn config) new-dtls-conn)
-      (do
-        (println "app-proxy only")
-        (socks/create-socks-server (:app-proxy-conn config))
-        (let [s (dtls/connect-to-aqua-node (:dir-server config) (:server config) identity)]
-          (write s)
-          (.on s "data" #(println (.toString %))))))))
+    (roles/bootstrap config)))
 
 ;(set! *main-cli-fn* -main)
 (set! *main-cli-fn* #(try

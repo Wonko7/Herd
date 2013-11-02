@@ -1,7 +1,10 @@
-{:server {:roles [:app-proxy]
-          :addr "127.0.0.1"
-	  :port 6669
-	  :auth {:cert "auth/cert.pem"
-	         :key  "auth/key.pem"
-                 :passphrase "aoeu"}}
- :dir-server {:addr "127.0.0.1" :port 6666}}
+{:roles [:app-proxy]
+ :aqua-conn {:addr "127.0.0.1"
+             :port 6667}
+ :dir-server {:addr "127.0.0.1"
+	      :port 6669}
+ :app-proxy-conn {:addr "127.0.0.1"
+                  :port 6666}
+ :auth {:cert "auth/cert.pem"
+	:key  "auth/key.pem"
+	:passphrase "aoeu"}}

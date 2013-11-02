@@ -52,10 +52,7 @@
         :request     (request c data)
         (kill-conn c)))))
 
-(defn create-socks-server [{addr :addr
-                            port :port}
-                           listeners
-                           new-conn-handler]
+(defn create-server [{addr :addr port :port} new-conn-handler]
   (let [net     (node/require "net")
         srv     (.createServer net (fn [c]
                                      (println (str "###  App-Proxy: new connection on: " (-> c .address .-ip) ":" (-> c .address .-port)))
@@ -68,5 +65,4 @@
     (if addr
       (.listen srv port addr new-srv)
       (.listen srv port new-srv))
-    (c/add srv)
-    (c/add-listeners srv listeners)))
+    (c/add srv)))
