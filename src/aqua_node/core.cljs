@@ -12,4 +12,4 @@
 ;(set! *main-cli-fn* -main)
 (set! *main-cli-fn* #(try
                        (apply -main %&)
-                       (catch js/Object e (println "/!\\  I don't know what I excepted: " e))))
+                       (catch js/Object e (println "/!\\  I don't know what I excepted:" e))))

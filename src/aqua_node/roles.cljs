@@ -7,10 +7,10 @@
 
 ;; FIXME: the following are placeholders.
 (defn print-buf [b]
-  (println "---  recv: " (.toString b)))
+  (println "---  recv:" (.toString b)))
 
 (defn new-dtls-conn [s]
-  (println "---  new dtls conn on: " (.-remoteAddress s) ":" (.-remotePort s))
+  (println "---  new dtls conn on:" (.-remoteAddress s) ":" (.-remotePort s))
   (c/add-listeners s {:data (fn [b]
                               (print-buf b)
                               (.write s (str "polly wants a cracker! " (.toString b))))}))
@@ -31,4 +31,4 @@
     (conn/new :aqua :server aq config new-dtls-conn) ;; in the case of entry only, still needed for NW consensus polling.
     (when (is? :app-proxy)
       (conn/new :socks :server ap config print-buf)
-      (conn/new :aqua  :client ds config print-buf))))
+      (conn/new :aqua  :client ds config conn-to-dtls))))
