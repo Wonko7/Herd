@@ -9,7 +9,7 @@
                               (catch js/Object e (println "/!\\  could not load auth info: " e))))]
     [(node/require "nodedtls") (cljs/clj->js (merge auth (if addr {:host addr} nil) {:port port} (cat :key) (cat :cert)))]))
 
-(defn create-server [{addr :addr port :port} auth new-conn-handler] ;; FIXME listeners aren't used here for now. might remove from the api.
+(defn create-server [{addr :addr port :port} auth new-conn-handler]
   (let [[dtls opts] (mk-dtls auth addr port)
         srv         (.createServer dtls port opts new-conn-handler)] ;; FIXME: based on tls api, this is not what a nice dtls api should look like.
     (println "###  Aqua listening on:" addr ":" port)
