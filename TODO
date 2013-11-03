@@ -1,6 +1,12 @@
-* bootstrap manager:
-	- by type/role. rename type to roles? seems to make sense.
+* aqua core:
+	- bootstrap manager
+	- circuit mgr -> cell protocol: single path, multipath.
+	- onioning
 
-* libs
+* testing:
+	- automatic network simulation testing & benchmarking.
+	- automatic unit testing & benchmarking.
+
+* libs:
 	- find a good logging module
 	- fix stuff in nodedtls: API (host in opts), remoteAddr.
