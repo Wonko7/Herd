@@ -63,7 +63,7 @@
         srv     (.createServer net (fn [c]
                                      (println (str "###  App-Proxy: new connection on: " (-> c .address .-ip) ":" (-> c .address .-port)))
                                      (-> c
-                                         (c/add {:socks {:state :handshake}})
+                                         (c/add {:cs :remote-client :type :socks :socks {:state :handshake}})
                                          (c/add-listeners {:end   #(println "###  App-Proxy: connection end: " (-> c .address .-ip) ":" (-> c .address .-port))
                                                            :error kill-conn
                                                            :data  #(socks-recv c new-conn-handler %)}))))
@@ -71,4 +71,4 @@
     (if addr
       (.listen srv port addr new-srv)
       (.listen srv port new-srv))
-    (c/add srv)))
+    (c/add srv {:cs :server :type :socks})))
