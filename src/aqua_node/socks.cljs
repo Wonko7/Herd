@@ -30,6 +30,7 @@
                      (if (> len 4)
                        (let [cmd       (b 1)
                              addr-type (b 3)
+                             reply     (js/Buffer. len)
                              [too-short? type to-port to-ip] (condp = addr-type
                                                                1 [(< len 10) :ipv4 #(b16 8)  #(->> (range 4 8) (map b) (interpose ".") (apply str))]
                                                                4 [(< len 5)  :ipv6 #(b16 20) #(->> (.toString data "hex" 4 20) (partition 4) (interpose [\:]) (apply concat) (apply str))]
@@ -38,13 +39,18 @@
                                                                        aend (when ml? (+ alen 5))]
                                                                    [(or (not ml?) (< len (+ 2 aend))) :dns #(b16 aend) #(.toString data "utf8" 5 aend)])
                                                                (repeat false))]
+                         (.copy data reply)
+                         (.writeUInt8 reply 0 1)
                          (if (not= cmd 1) ;; FIXME: Add udp here.
                            (kill-conn c "bad request command")
                            (if too-short? ;; to-[ip/port] are functions to avoid executing the code if not enough data
                              (kill-conn c (str "not enough data. conn type: " type))
                              (-> c
                                  (c/update-data [:socks :dest] {:type type :addr (to-ip) :port (to-port)})
-                                 (c/update-data [:socks :state] :relay) ))))))]
+                                 (c/update-data [:socks :state] :relay)
+                                 (.removeAllListeners "data")
+                                 (c/add-listeners {:data new-conn-handler})
+                                 (.write reply)))))))]
     (if (not= socks-vers 5)
       (kill-conn c "bad socks version")
       (condp = state
