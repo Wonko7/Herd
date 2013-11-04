@@ -64,7 +64,7 @@
                                      (println (str "###  App-Proxy: new connection on: " (-> c .address .-ip) ":" (-> c .address .-port)))
                                      (-> c
                                          (c/add {:cs :remote-client :type :socks :socks {:state :handshake}})
-                                         (c/add-listeners {:end   #(println "###  App-Proxy: connection end: " (-> c .address .-ip) ":" (-> c .address .-port))
+                                         (c/add-listeners {:end   #(println "###  App-Proxy: connection end")
                                                            :error kill-conn
                                                            :data  #(socks-recv c new-conn-handler %)}))))
         new-srv #(println "###  App-Proxy listening on:" (-> srv .address .-ip) ":" (-> srv .address .-port))]
