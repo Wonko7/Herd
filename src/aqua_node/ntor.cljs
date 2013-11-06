@@ -21,7 +21,7 @@
             .digest)))
 
 ;; FIXME: perfect function to start unit testing...
-(defn expand [k n] ;; could be optimised, write instead of recreating buffs.
+(defn expand [k n]
   (let [cct    #(js/Buffer.concat (cljs/clj->js %&))
         prk    (hmac (:t-key init) k)
         info   (js/Buffer. (:m-expand init))]
