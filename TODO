@@ -1,7 +1,7 @@
 * aqua core:
 	- bootstrap manager
 	- circuit mgr -> cell protocol: single path, multipath.
-	- onioning
+	- onioning: for now work with a hardcoded dir descriptor list. concentrate on onioning and take it from there. see tor dir-spec when the time comes.
 	- nw errors. automatic reconnection.
 	- see what exists in node for buffering/qos/shaping.
 
