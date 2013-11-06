@@ -5,6 +5,7 @@
 
 ;; see: torspec/proposals/216-ntor-handshake.txt
 ;;      torspec/tor-spec.txt 5.1.4
+
 (def init
   (let [protoid "ntor-curve25519-sha256-1"]
     {:m-expand (str protoid ":key_expand")
@@ -19,6 +20,7 @@
             (.update message)
             .digest)))
 
+;; FIXME: perfect function to start unit testing...
 (defn expand [k n] ;; could be optimised, write instead of recreating buffs.
   (let [cct    #(js/Buffer.concat (cljs/clj->js %&))
         prk    (hmac (:t-key init) k)
