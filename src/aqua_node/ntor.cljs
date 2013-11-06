@@ -19,16 +19,14 @@
             (.update message)
             .digest)))
 
-(defn expand [k n]
-  (let [prk    (hmac (:t-key init) k)
-        cct    (.concat (js/Buffer. 0) (cljs/clj->js %&))
-        info   (js/Buffer. (:m-expand init))
-        ib     (js/Buffer. 0)
-        out    (loop [out (js/Buffer. 0), prev (js/Buffer. 0), i 1, len 0]
-                 (if (< (count out) n)
-                   (let [m (cct prev info (.writeUInt8 ib 0 (char i))) ;; FIXME, wtf happens when i > 255...
-                         h (hmac prk m)]
-                     (recur (cct out h) h (inc i)))))] ;; could be optimised, write in out instead of recreating buffs.
-    (println (str))
-    ))
-
+(defn expand [k n] ;; could be optimised, write instead of recreating buffs.
+  (let [cct    #(js/Buffer.concat (cljs/clj->js %&))
+        prk    (hmac (:t-key init) k)
+        info   (js/Buffer. (:m-expand init))]
+    (loop [out (js/Buffer. 0), prev (js/Buffer. 0), i 1]
+      (if (>= (.-length out) n)
+        (.slice out 0 n)
+        (let [m   (cct prev info (js/Buffer (cljs/clj->js. [i]))) ;; FIXME, wtf happens when i > 255...
+              h   (hmac prk m)
+              out (cct out h)]
+          (recur out h (inc i)))))))
