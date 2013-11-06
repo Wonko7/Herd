@@ -2,7 +2,7 @@
     "name": "aqua",
     "version": "0.0.1",
     "dependencies": {
-	"argyle": ""
+	"hkdf": ""
     },
     "engines": {
         "node": "0.10.x",

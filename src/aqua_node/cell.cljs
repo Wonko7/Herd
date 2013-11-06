@@ -4,6 +4,13 @@
             [aqua-node.conns :as c]))
 
 
+;; Tor doc. from tor spec file:
+;;  - see section 5 for circ creation.
+;;  - see section 5.1.4 for ntor hs.
+;;  - create2 will be used for ntor hs. 
+;;  - circ id: msb set to 1 when created on current node. otherwise 0.
+;;  - will not be supporting create fast: tor spec: 221-stop-using-create-fast.txt
+
 (defn to-cmd [num]
   (condp = num
     0   :padding

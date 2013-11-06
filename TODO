@@ -2,6 +2,8 @@
 	- bootstrap manager
 	- circuit mgr -> cell protocol: single path, multipath.
 	- onioning
+	- nw errors. automatic reconnection.
+	- see what exists in node for buffering/qos/shaping.
 
 * testing:
 	- automatic network simulation testing & benchmarking.
