@@ -28,7 +28,6 @@
     (loop [out (js/Buffer. 0), prev (js/Buffer. 0), i 1]
       (if (>= (.-length out) n)
         (.slice out 0 n)
-        (let [m   (cct prev info (js/Buffer (cljs/clj->js. [i]))) ;; FIXME, wtf happens when i > 255...
-              h   (hmac prk m)
+        (let [h   (hmac prk (cct prev info (js/Buffer. (cljs/clj->js. [i])))) ;; FIXME, test wtf happens when i > 255...
               out (cct out h)]
           (recur out h (inc i)))))))
