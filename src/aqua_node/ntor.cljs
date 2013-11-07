@@ -8,25 +8,33 @@
 
 ;; FIXME: buff helpers: this will be exported.
 (defn cct [& bs]
+  ;(doall (map #(println :len (.-length %)) bs)) FIXME
   (js/Buffer.concat (cljs/clj->js bs)))
 
 (defn b= [a b]
   (= (.toString a "ascii") (.toString b "ascii")))
 
 (defn b-cut [b & xs]
-  (doall (map #(.slice b %1 %2) (cons 0 xs) (concat xs [(.-length b)]))))
+  (doall (map #(do
+                 ;(println :cut %1 %2) FIXME
+                 (.slice b %1 %2)) (cons 0 xs) (concat xs [(.-length b)]))))
+
+(defn hx [b]
+  (.toString b "hex"))
 ;; end buff helpers
 
 ;; FIXME: part or all of this static (non user) conf will get exported as pieces of it are needed by other modules.
+;; FIXME: also, buffers or not?
 (def conf
-  (let [protoid "ntor-curve25519-sha256-1"]
-    {:m-expand    (str protoid ":key_expand")
-     :t-key       (str protoid ":key_extract")
-     :mac         (str protoid ":mac")
-     :verify      (str protoid ":verify")
-     :protoid     protoid
-     :protoid-buf (js/SlowBuffer. protoid)  ;; for perf
-     :server-buf  (js/SlowBuffer. "Server") ;; for perf
+  (let [protoid   "ntor-curve25519-sha256-1"
+        b         #(js/Buffer. %1)
+        bp        #(b (str protoid %1))]
+    {:m-expand    (bp ":key_expand")
+     :t-key       (bp ":key_extract")
+     :mac         (bp ":mac")
+     :verify      (bp ":verify")
+     :protoid     (b protoid)
+     :server      (js/Buffer. "Server")
      :node-id-len 20
      :key-id-len  32
      :g-len       32
@@ -37,6 +45,11 @@
         (-> (.createHmac crypto. "sha256" key)
             (.update message)
             .digest)))
+
+(def h-mac (partial hmac (:mac conf)))
+(def h-verify (partial hmac (:verify conf)))
+;(def h-mac #(hmac % (:mac conf)))
+;(def h-verify #(hmac % (:verify conf)))
 
 ;; FIXME: perfect function to start unit testing...
 (defn expand [k n]
@@ -59,31 +72,39 @@
     [sec pub]))
 
 ;; FIXME: assert all lens.
-(defn client-init [srv]
+(defn client-init [{srv-id :srv-id pub-B :pub-B :as auth}]
   (let [[secret-x public-X]        (gen-keys)] ;; FIXME: save secret-x in conn's ntor state or something.
-    [{:secret secret-x :public public-X} (cct (:node-id srv) (:pub-key srv) public-X)]))
+  (println "client init")
+  (doseq [k (keys auth)] (println k (hx (k auth))))
+    (println :pX (hx public-X) :sx (hx secret-x))
+    [(merge auth {:sec-x secret-x :pub-X public-X}) (cct srv-id pub-B public-X)]))
 
-(defn server-reply [{pub-B :public sec-b :secret id :node-id} key-len req]
+(defn server-reply [{pub-B :pub-B sec-b :sec-b id :node-id :as auth} req key-len]
+  (println "srv reply")
+  (doseq [k (keys auth)] (println k (hx (k auth))))
   (assert (= (.-length req) (+ (:node-id-len conf) (:h-len conf) (:h-len conf))) "bad client req ntor length")
   (let [[curve crypto]             (req-curve-crypto) ;; FIXME, useless in the end.
         [req-nid req-pub pub-X]    (b-cut req (:node-id-len conf) (+ (:node-id-len conf) (:h-len conf)))
-        pub-X                      (.derivePublicKey curve pub-X)]
-    (assert (= req-nid id)  "received create request with bad node-id")
-    (assert (= req-pub pub-B) "received create request with bad pub key")
+        ;pub-X                      (.derivePublicKey curve pub-X)
+        ]
+    (assert (b= req-nid id)    "received create request with bad node-id")
+    (assert (b= req-pub pub-B) "received create request with bad pub key")
     (let [[sec-y pub-Y]            (gen-keys)
           x-y                      (.deriveSharedSecret curve sec-y pub-X)
           x-b                      (.deriveSharedSecret curve sec-b pub-X)
-          secret-input             (cct x-y x-b id pub-B pub-X pub-Y (:protoid-buf conf))
-          auth-input               (cct (hmac (:verify conf) secret-input) id pub-B pub-X pub-Y (:protoid-buf conf) (:server-buf conf))]
-      [(expand secret-input key-len) (cct pub-Y (hmac (:t-mac conf) auth-input))])))
+          secret-input             (cct x-y x-b id pub-B pub-X pub-Y (:protoid conf))
+          auth-input               (cct (h-verify secret-input) id pub-B pub-Y pub-X (:protoid conf) (:server conf))]
+      [(expand secret-input key-len) (cct pub-Y (h-mac auth-input))])))
 
-(defn client-finalise [{srv-id :srv-id pub-B :public-B pub-X :public-X sec-x :secret-x} key-len req]
+(defn client-finalise [{srv-id :srv-id pub-B :pub-B pub-X :pub-X sec-x :sec-x :as auth} req key-len]
+  (println "client fin")
+  (doseq [k (keys auth)] (println k (hx (k auth))))
   (assert (= (.-length req) (+ (:g-len conf) (:h-len conf))) "bad server req ntor length")
   (let [curve                      (node/require "node-curve25519")
         [pub-Y srv-auth]           (b-cut req (:g-len conf))
         x-y                        (.deriveSharedSecret curve sec-x pub-Y)
         x-b                        (.deriveSharedSecret curve sec-x pub-B)
-        secret-input               (cct x-y x-b srv-id pub-B pub-X pub-Y (:protoid-buf conf))
-        auth                       (hmac (:t-mac conf) (cct (hmac (:verify conf) secret-input) srv-id pub-B pub-Y pub-X (:protoid-buf conf) (:server-buf conf)))]
+        secret-input               (cct x-y x-b srv-id pub-B pub-X pub-Y (:protoid conf))
+        auth                       (h-mac (cct (h-verify secret-input) srv-id pub-B pub-Y pub-X (:protoid conf) (:server conf)))]
     (assert (b= auth srv-auth) "mismatching auth") ;; FIXME here and srv, check x-y & b none 0000.
     (expand secret-input key-len)))

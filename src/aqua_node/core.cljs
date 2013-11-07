@@ -8,10 +8,17 @@
 
 (defn -main [& args]
   (let [config (config/read-config)]
-    ;(hs/client-init :lol :kkt)
+    (let [srv-id                   (js/Buffer. "waaaaaaaaaaoooooooow" "ascii")
+          [srv-sec-b srv-pub-B]    (hs/gen-keys)
+          [auth-info create]       (hs/client-init  {:srv-id srv-id :pub-B srv-pub-B})
+          [srv-shared-sec created] (hs/server-reply {:node-id srv-id :pub-B srv-pub-B :sec-b srv-sec-b} create 72)
+          cli-shared-sec           (hs/client-finalise auth-info created 72)]
+      (println :cli (.toString cli-shared-sec "hex"))
+      (println :srv (.toString srv-shared-sec "hex")))
+
     (roles/bootstrap config)))
 
-;(set! *main-cli-fn* -main)
-(set! *main-cli-fn* #(try
-                       (apply -main %&)
-                       (catch js/Object e (println "/!\\  I don't know what I excepted:" e))))
+(set! *main-cli-fn* -main)
+;(set! *main-cli-fn* #(try
+;                       (apply -main %&)
+;                       (catch js/Object e (println "/!\\  I don't know what I excepted:" e))))
