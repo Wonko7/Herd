@@ -8,18 +8,15 @@
 
 ;; FIXME: buff helpers: this will be exported.
 (defn cct [& bs]
-  ;(doall (map #(println :len (.-length %)) bs)) FIXME
   (js/Buffer.concat (cljs/clj->js bs)))
 
 (defn b= [a b]
   (= (.toString a "ascii") (.toString b "ascii")))
 
 (defn b-cut [b & xs]
-  (doall (map #(do
-                 ;(println :cut %1 %2) FIXME
-                 (.slice b %1 %2)) (cons 0 xs) (concat xs [(.-length b)]))))
+  (doall (map #(.slice b %1 %2) (cons 0 xs) (concat xs [(.-length b)]))))
 
-(defn hx [b]
+(defn hx [b] ;; FIXME: only a debug helper. shouldn't be here at all.
   (.toString b "hex"))
 ;; end buff helpers
 
@@ -48,8 +45,6 @@
 
 (def h-mac (partial hmac (:mac conf)))
 (def h-verify (partial hmac (:verify conf)))
-;(def h-mac #(hmac % (:mac conf)))
-;(def h-verify #(hmac % (:verify conf)))
 
 ;; FIXME: perfect function to start unit testing...
 (defn expand [k n]
@@ -74,19 +69,12 @@
 ;; FIXME: assert all lens.
 (defn client-init [{srv-id :srv-id pub-B :pub-B :as auth}]
   (let [[secret-x public-X]        (gen-keys)] ;; FIXME: save secret-x in conn's ntor state or something.
-  (println "client init")
-  (doseq [k (keys auth)] (println k (hx (k auth))))
-    (println :pX (hx public-X) :sx (hx secret-x))
     [(merge auth {:sec-x secret-x :pub-X public-X}) (cct srv-id pub-B public-X)]))
 
 (defn server-reply [{pub-B :pub-B sec-b :sec-b id :node-id :as auth} req key-len]
-  (println "srv reply")
-  (doseq [k (keys auth)] (println k (hx (k auth))))
   (assert (= (.-length req) (+ (:node-id-len conf) (:h-len conf) (:h-len conf))) "bad client req ntor length")
   (let [[curve crypto]             (req-curve-crypto) ;; FIXME, useless in the end.
-        [req-nid req-pub pub-X]    (b-cut req (:node-id-len conf) (+ (:node-id-len conf) (:h-len conf)))
-        ;pub-X                      (.derivePublicKey curve pub-X)
-        ]
+        [req-nid req-pub pub-X]    (b-cut req (:node-id-len conf) (+ (:node-id-len conf) (:h-len conf)))]
     (assert (b= req-nid id)    "received create request with bad node-id")
     (assert (b= req-pub pub-B) "received create request with bad pub key")
     (let [[sec-y pub-Y]            (gen-keys)
@@ -97,8 +85,6 @@
       [(expand secret-input key-len) (cct pub-Y (h-mac auth-input))])))
 
 (defn client-finalise [{srv-id :srv-id pub-B :pub-B pub-X :pub-X sec-x :sec-x :as auth} req key-len]
-  (println "client fin")
-  (doseq [k (keys auth)] (println k (hx (k auth))))
   (assert (= (.-length req) (+ (:g-len conf) (:h-len conf))) "bad server req ntor length")
   (let [curve                      (node/require "node-curve25519")
         [pub-Y srv-auth]           (b-cut req (:g-len conf))
