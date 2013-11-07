@@ -25,6 +25,8 @@
      :mac         (str protoid ":mac")
      :verify      (str protoid ":verify")
      :protoid     protoid
+     :protoid-buf (js/SlowBuffer. protoid)  ;; for perf
+     :server-buf  (js/SlowBuffer. "Server") ;; for perf
      :node-id-len 20
      :key-id-len  32
      :g-len       32
@@ -50,21 +52,27 @@
 (defn req-curve-crypto []
   [(node/require "node-curve25519") (node/require "crypto")])
 
+(defn gen-keys [& [curve]]
+  (let [[curve crypto] (req-curve-crypto)
+        sec            (.makeSecretKey curve (.randomBytes crypto 32))
+        pub            (.derivePublicKey curve sec)]
+    [sec pub]))
+
 ;; FIXME: assert all lens.
 (defn client-init [srv]
-  (let [[curve crypto] (req-curve-crypto)
-        secret-x       (.makeSecretKey curve (.randomBytes crypto 32))
-        public-X       (.derivePublicKey curve secret-x)]
+  (let [[secret-x public-X]        (gen-keys)] ;; FIXME: save secret-x in conn's ntor state or something.
     [{:secret secret-x :public public-X} (cct (:node-id srv) (:pub-key srv) public-X)]))
 
-(defn server-reply [{pub :public sec :secret id :node-id} req]
-  (assert (= (.-length req) (+ (:node-id-len conf) (:h-len conf) (:h-len conf)) "bad client ntor length")
-    (println "###  this is just a placeholder for error handling. I should raise something.."))
+(defn server-reply [{pub-B :public sec-b :secret id :node-id} key-len req]
+  (assert (= (.-length req) (+ (:node-id-len conf) (:h-len conf) (:h-len conf))) "bad client ntor length")
   (let [[curve crypto]             (req-curve-crypto)
         [req-nid req-pub public-X] (b-cut req (:node-id-len conf) (+ (:node-id-len conf) (:h-len conf)))
-        pub-X                      (.derivePublicKey curve public-x)
-        ]
-    (assert (= req-nid id) "received create request with bad node-id")
-    (assert (= req-pub pub) "received create request with bad node-id")
-    
-    ))
+        pub-X                      (.derivePublicKey curve public-X) ]
+    (assert (= req-nid id)  "received create request with bad node-id")
+    (assert (= req-pub pub-B) "received create request with bad pub key")
+    (let [[sec-y pub-Y]            (gen-keys)
+          x-y                      (.deriveSharedSecret curve sec-y pub-X)
+          x-b                      (.deriveSharedSecret curve sec-b pub-X)
+          secret-input             (cct x-y x-b id pub-B pub-X pub-Y (:protoid-buf conf))
+          auth-input               (cct (hmac (:verify conf) secret-input) id pub-B pub-X pub-Y (:protoid-buf conf) (:server-buf conf))]
+      [(expand secret-input key-len) (cct pub-Y (hmac (:t-mac conf) auth-input))])))

@@ -8,7 +8,7 @@
 
 (defn -main [& args]
   (let [config (config/read-config)]
-    (hs/client-init :lol :kkt)
+    ;(hs/client-init :lol :kkt)
     (roles/bootstrap config)))
 
 ;(set! *main-cli-fn* -main)
