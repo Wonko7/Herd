@@ -31,3 +31,8 @@
         (let [h   (hmac prk (cct prev info (js/Buffer. (cljs/clj->js. [i])))) ;; FIXME, test wtf happens when i > 255...
               out (cct out h)]
           (recur out h (inc i)))))))
+
+;; node id len = 20, keyid len = 32
+(defn client-init [srv-id config]
+  (let [cv (node/require "node-curve25519")]
+    (println :curve (.derivePublicKey cv (.toString (.makeSecretKey cv (js/Buffer. 32)) "hex")))))

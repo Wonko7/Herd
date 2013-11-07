@@ -2,11 +2,13 @@
   (:require [cljs.core :as cljs]
             [cljs.nodejs :as node]
             [aqua-node.roles :as roles]
+            [aqua-node.ntor :as hs]
             [aqua-node.config :as config]))
 
 
 (defn -main [& args]
   (let [config (config/read-config)]
+    (hs/client-init :lol :kkt)
     (roles/bootstrap config)))
 
 ;(set! *main-cli-fn* -main)
