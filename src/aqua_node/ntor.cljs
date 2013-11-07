@@ -47,7 +47,24 @@
               out (cct out h)]
           (recur out h (inc i)))))))
 
-;; node id len = 20, keyid len = 32
-(defn client-init [srv-id config]
-  (let [cv (node/require "node-curve25519")]
-    (println :curve (.derivePublicKey cv (.toString (.makeSecretKey cv (js/Buffer. 32)) "hex")))))
+(defn req-curve-crypto []
+  [(node/require "node-curve25519") (node/require "crypto")])
+
+;; FIXME: assert all lens.
+(defn client-init [srv]
+  (let [[curve crypto] (req-curve-crypto)
+        secret-x       (.makeSecretKey curve (.randomBytes crypto 32))
+        public-X       (.derivePublicKey curve secret-x)]
+    [{:secret secret-x :public public-X} (cct (:node-id srv) (:pub-key srv) public-X)]))
+
+(defn server-reply [{pub :public sec :secret id :node-id} req]
+  (assert (= (.-length req) (+ (:node-id-len conf) (:h-len conf) (:h-len conf)) "bad client ntor length")
+    (println "###  this is just a placeholder for error handling. I should raise something.."))
+  (let [[curve crypto]             (req-curve-crypto)
+        [req-nid req-pub public-X] (b-cut req (:node-id-len conf) (+ (:node-id-len conf) (:h-len conf)))
+        pub-X                      (.derivePublicKey curve public-x)
+        ]
+    (assert (= req-nid id) "received create request with bad node-id")
+    (assert (= req-pub pub) "received create request with bad node-id")
+    
+    ))
