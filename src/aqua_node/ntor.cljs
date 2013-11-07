@@ -64,10 +64,10 @@
     [{:secret secret-x :public public-X} (cct (:node-id srv) (:pub-key srv) public-X)]))
 
 (defn server-reply [{pub-B :public sec-b :secret id :node-id} key-len req]
-  (assert (= (.-length req) (+ (:node-id-len conf) (:h-len conf) (:h-len conf))) "bad client ntor length")
-  (let [[curve crypto]             (req-curve-crypto)
-        [req-nid req-pub public-X] (b-cut req (:node-id-len conf) (+ (:node-id-len conf) (:h-len conf)))
-        pub-X                      (.derivePublicKey curve public-X) ]
+  (assert (= (.-length req) (+ (:node-id-len conf) (:h-len conf) (:h-len conf))) "bad client req ntor length")
+  (let [[curve crypto]             (req-curve-crypto) ;; FIXME, useless in the end.
+        [req-nid req-pub pub-X]    (b-cut req (:node-id-len conf) (+ (:node-id-len conf) (:h-len conf)))
+        pub-X                      (.derivePublicKey curve pub-X)]
     (assert (= req-nid id)  "received create request with bad node-id")
     (assert (= req-pub pub-B) "received create request with bad pub key")
     (let [[sec-y pub-Y]            (gen-keys)
@@ -76,3 +76,14 @@
           secret-input             (cct x-y x-b id pub-B pub-X pub-Y (:protoid-buf conf))
           auth-input               (cct (hmac (:verify conf) secret-input) id pub-B pub-X pub-Y (:protoid-buf conf) (:server-buf conf))]
       [(expand secret-input key-len) (cct pub-Y (hmac (:t-mac conf) auth-input))])))
+
+(defn client-finalise [{srv-id :srv-id pub-B :public-B pub-X :public-X sec-x :secret-x} key-len req]
+  (assert (= (.-length req) (+ (:g-len conf) (:h-len conf))) "bad server req ntor length")
+  (let [curve                      (node/require "node-curve25519")
+        [pub-Y srv-auth]           (b-cut req (:g-len conf))
+        x-y                        (.deriveSharedSecret curve sec-x pub-Y)
+        x-b                        (.deriveSharedSecret curve sec-x pub-B)
+        secret-input               (cct x-y x-b srv-id pub-B pub-X pub-Y (:protoid-buf conf))
+        auth                       (hmac (:t-mac conf) (cct (hmac (:verify conf) secret-input) srv-id pub-B pub-Y pub-X (:protoid-buf conf) (:server-buf conf)))]
+    (assert (b= auth srv-auth) "mismatching auth") ;; FIXME here and srv, check x-y & b none 0000.
+    (expand secret-input key-len)))
