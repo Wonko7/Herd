@@ -6,13 +6,21 @@
 ;; see: torspec/proposals/216-ntor-handshake.txt
 ;;      torspec/tor-spec.txt 5.1.4
 
-(def init
+;; FIXME: buff helpers: this will be exported.
+(defn cct [& bs]
+  (js/Buffer.concat (cljs/clj->js bs)))
+;; end buff helpers
+
+;; FIXME: part or all of this static (non user) conf will get exported as pieces of it are needed by other modules.
+(def conf
   (let [protoid "ntor-curve25519-sha256-1"]
     {:m-expand (str protoid ":key_expand")
      :t-key    (str protoid ":key_extract")
      :mac      (str protoid ":mac")
      :verify   (str protoid ":verify")
-     :protoid  protoid}))
+     :protoid  protoid
+     :node-id-len 20
+     }))
 
 (defn hmac [key message]
   (let [crypto (node/require "crypto")]
@@ -22,9 +30,8 @@
 
 ;; FIXME: perfect function to start unit testing...
 (defn expand [k n]
-  (let [cct    #(js/Buffer.concat (cljs/clj->js %&))
-        prk    (hmac (:t-key init) k)
-        info   (js/Buffer. (:m-expand init))]
+  (let [prk    (hmac (:t-key conf) k)
+        info   (js/Buffer. (:m-expand conf))]
     (loop [out (js/Buffer. 0), prev (js/Buffer. 0), i 1]
       (if (>= (.-length out) n)
         (.slice out 0 n)
