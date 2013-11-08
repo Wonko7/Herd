@@ -31,6 +31,7 @@
   "make big endian writers"
   [#(.writeUInt8 b %1 %2) #(.writeUInt16BE b %1 %2) #(.writeUInt32BE b %1 %2)])
 
+
 ;; debug ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
 (defn hx [b]
@@ -39,4 +40,3 @@
 
 (defn print-x [b & [s]]
   (println "---  " s (hx b)))
-
