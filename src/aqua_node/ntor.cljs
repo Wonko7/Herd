@@ -6,20 +6,6 @@
 ;; see: torspec/proposals/216-ntor-handshake.txt
 ;;      torspec/tor-spec.txt 5.1.4
 
-;; FIXME: buff helpers: this will be exported.
-(defn cct [& bs]
-  (js/Buffer.concat (cljs/clj->js bs)))
-
-(defn b= [a b]
-  (= (.toString a "ascii") (.toString b "ascii")))
-
-(defn b-cut [b & xs]
-  (doall (map #(.slice b %1 %2) (cons 0 xs) (concat xs [(.-length b)]))))
-
-(defn hx [b] ;; FIXME: only a debug helper. shouldn't be here at all.
-  (.toString b "hex"))
-;; end buff helpers
-
 ;; FIXME: part or all of this static (non user) conf will get exported as pieces of it are needed by other modules.
 ;; FIXME: also, buffers or not?
 (def conf

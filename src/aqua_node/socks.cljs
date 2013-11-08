@@ -1,6 +1,7 @@
 (ns aqua-node.socks
   (:require [cljs.core :as cljs]
             [cljs.nodejs :as node]
+            [aqua-node.buf :as b]
             [aqua-node.conns :as c]))
 
 
@@ -11,15 +12,14 @@
 ;; FIXME: most kill-conns should be wait for more data.
 (defn socks-recv [c new-conn-handler data] ;; FIXME: either call data-handler if socks still needs processing when forwarding data, or remove all listeners when connection is ready and add the given listener.
   (let [len        (.-length data)
-        b          #(.readUInt8 data %)
-        b16        #(.readUInt16BE data %)
-        socks-vers (b 0)
+        [r8 r16]   (b/mk-readers buff)       
+        socks-vers (r8 0)
         state      (-> c c/get-data :socks :state)
         ;; handle socks states:
         handshake  (fn [c data]
                      (if (> len 2)
-                       (let [nb-auth-methods (b 1)
-                             no-auth? (some zero? (map b (range 2 (min len (+ 2 nb-auth-methods)))))]
+                       (let [nb-auth-methods (r8 1)
+                             no-auth? (some zero? (map r8 (range 2 (min len (+ 2 nb-auth-methods)))))]
                          (if no-auth?
                            (-> c
                                (c/update-data [:socks :state] :request)
@@ -28,16 +28,16 @@
                        (kill-conn c "too small")))
         request    (fn [c data]
                      (if (> len 4)
-                       (let [cmd       (b 1)
-                             addr-type (b 3)
+                       (let [cmd       (r8 1)
+                             addr-type (r8 3)
                              reply     (js/Buffer. len)
                              [too-short? type to-port to-ip] (condp = addr-type
-                                                               1 [(< len 10) :ipv4 #(b16 8)  #(->> (range 4 8) (map b) (interpose ".") (apply str))]
-                                                               4 [(< len 5)  :ipv6 #(b16 20) #(->> (.toString data "hex" 4 20) (partition 4) (interpose [\:]) (apply concat) (apply str))]
+                                                               1 [(< len 10) :ipv4 #(r16 8)  #(->> (range 4 8) (map r8) (interpose ".") (apply str))]
+                                                               4 [(< len 5)  :ipv6 #(r16 20) #(->> (.toString data "hex" 4 20) (partition 4) (interpose [\:]) (apply concat) (apply str))]
                                                                3 (let [ml?  (>= len 5)
-                                                                       alen (when ml? (b 4))
+                                                                       alen (when ml? (r8 4))
                                                                        aend (when ml? (+ alen 5))]
-                                                                   [(or (not ml?) (< len (+ 2 aend))) :dns #(b16 aend) #(.toString data "utf8" 5 aend)])
+                                                                   [(or (not ml?) (< len (+ 2 aend))) :dns #(r16 aend) #(.toString data "utf8" 5 aend)])
                                                                (repeat false))]
                          (.copy data reply)
                          (.writeUInt8 reply 0 1)

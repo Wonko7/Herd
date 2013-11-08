@@ -54,13 +54,11 @@
 
 (defn process [conn buff]
   ;; FIXME check len first -> match with fix buf size
-  (let [b8      #(.readUInt8 buff %) ;; export these to same place as cct & cie. FIXME
-        b16     #(.readUInt16BE buff %)
-        b32     #(.readUInt32BE buff %)
-        len     (.-length buff)
-        circ-id (b32 0)
-        command (to-cmd (b8 4))
-        payload (.slice buff 5 len)]
+  (let [[r8 r16 r32] (b/mk-readers buff)
+        len          (.-length buff)
+        circ-id      (r32 0)
+        command      (to-cmd (r8 4))
+        payload      (.slice buff 5 len)]
     (println "---  recvd cell: id:" circ-id "cmd:" (:name command) ":" (.toString payload "hex"))
     (when (:fun command)
      (try
