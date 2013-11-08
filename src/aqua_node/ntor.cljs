@@ -6,9 +6,10 @@
 
 ;; see: torspec/proposals/216-ntor-handshake.txt
 ;;      torspec/tor-spec.txt 5.1.4
+;;      tor/src/test/ntor_ref.py, tor/src/or/onion_ntor.c
 
 ;; FIXME: part or all of this static (non user) conf will get exported as pieces of it are needed by other modules.
-;; FIXME: also, buffers or not?
+;; FIXME: also, [slow]buffers or not?
 (def conf
   (let [protoid   "ntor-curve25519-sha256-1"
         b         #(js/Buffer. %1)
