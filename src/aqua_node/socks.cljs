@@ -12,7 +12,7 @@
 ;; FIXME: most kill-conns should be wait for more data.
 (defn socks-recv [c new-conn-handler data] ;; FIXME: either call data-handler if socks still needs processing when forwarding data, or remove all listeners when connection is ready and add the given listener.
   (let [len        (.-length data)
-        [r8 r16]   (b/mk-readers buff)       
+        [r8 r16]   (b/mk-readers buff)
         socks-vers (r8 0)
         state      (-> c c/get-data :socks :state)
         ;; handle socks states:
