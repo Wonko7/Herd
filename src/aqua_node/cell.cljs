@@ -12,8 +12,9 @@
 
 ;; Circuit management: --> FIXME too similar to conns, make a lib.
 (def circuits (atom {}))
+
 (defn circ-add [circ-id conn & [state]]
-  (assert (nil? (@circuits circ-id)) (str "could not create circuit," circ-id "already exists")) 
+  (assert (nil? (@circuits circ-id)) (str "could not create circuit," circ-id "already exists"))
   (swap! circuits merge {circ-id {:conn conn :state state}}))
 
 (defn circ-update-data [circ keys subdata]
@@ -24,32 +25,40 @@
   (swap! circuits dissoc circ)
   circ) ;; FIXME think about what we could return
 
+(defn cell-send [conn circ cmd payload & [len]]
+  (let [len   (or len (.-lenght payload))
+        buf   (js/Buffer. (+ 5 len))]
+    ))
+
 (defn cell-recv [config conn data circ-id {buf :payload len :len}]
   (circ-add circ-id {:type :srv})
   (let [{auth-hs :auth-hs} config
         [srv-shared-sec created] (hs/server-reply auth-hs buf 72)]
-    (circ-update-data circ-id [:secret] srv-shared-sec)))
+    (circ-update-data circ-id [:secret] srv-shared-sec)
+    (FIXME send created)))
 
-(defn to-cmd [num]
-  (condp = num
-    0   {:name :padding         :fun nil}
-    1   {:name :create          :fun nil}
-    2   {:name :created         :fun nil}
-    3   {:name :relay           :fun nil}
-    4   {:name :destroy         :fun nil}
-    5   {:name :create_fast     :fun nil}
-    6   {:name :created_fast    :fun nil}
-    8   {:name :netinfo         :fun nil}
-    9   {:name :relay_early     :fun nil}
-    10  {:name :create2         :fun nil}
-    11  {:name :created2        :fun nil}
-    7   {:name :versions        :fun nil}
-    128 {:name :vpadding        :fun nil}
-    129 {:name :certs           :fun nil}
-    130 {:name :auth_challenge  :fun nil}
-    131 {:name :authenticate    :fun nil}
-    132 {:name :authorize       :fun nil}
-    {:name :unknown :fun nil}))
+(def to-cmd
+  {0   {:name :padding         :fun nil}
+   1   {:name :create          :fun nil}
+   2   {:name :created         :fun nil}
+   3   {:name :relay           :fun nil}
+   4   {:name :destroy         :fun nil}
+   5   {:name :create_fast     :fun nil}
+   6   {:name :created_fast    :fun nil}
+   8   {:name :netinfo         :fun nil}
+   9   {:name :relay_early     :fun nil}
+   10  {:name :create2         :fun nil}
+   11  {:name :created2        :fun nil}
+   7   {:name :versions        :fun nil}
+   128 {:name :vpadding        :fun nil}
+   129 {:name :certs           :fun nil}
+   130 {:name :auth_challenge  :fun nil}
+   131 {:name :authenticate    :fun nil}
+   132 {:name :authorize       :fun nil}})
+
+(def from-cmd
+  (merge (for [k (keys to-cmd)]
+           {(-> to-cmd k :name) k})))
 
 
 (defn process [conn buff]
