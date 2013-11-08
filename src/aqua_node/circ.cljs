@@ -2,8 +2,10 @@
   (:require [cljs.core :as cljs]
             [cljs.nodejs :as node]
             [aqua-node.buf :as b]
+            [aqua-node.ntor :as hs]
             [aqua-node.conns :as c]))
 
+(declare from-cmd to-cmd)
 
 ;; Tor doc. from tor spec file:
 ;;  - see section 5 for circ creation.
@@ -54,7 +56,7 @@
 
 (def to-cmd
   {0   {:name :padding         :fun nil}
-   1   {:name :create          :fun circ/recv-create2}
+   1   {:name :create          :fun recv-create2}
    2   {:name :created         :fun nil}
    3   {:name :relay           :fun nil}
    4   {:name :destroy         :fun nil}

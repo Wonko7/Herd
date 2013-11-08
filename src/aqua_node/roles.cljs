@@ -1,7 +1,7 @@
 (ns aqua-node.roles
   (:require [cljs.core :as cljs]
             [cljs.nodejs :as node]
-            [aqua-node.cell :as cell]
+            [aqua-node.circ :as circ]
             [aqua-node.conns :as c]
             [aqua-node.conn-mgr :as conn]))
 
@@ -18,7 +18,7 @@
 (defn new-dtls-conn [s]
   (println "---  new dtls conn on:" (-> s .-socket .-_destIP) ":" (-> s .-socket .-_destPort)) ;; FIXME: investigate nil .-remote[Addr|Port]
   (c/add-listeners s {:data (fn [b]
-                              (cell/process s b)
+                              (circ/process s b)
                               (.write s (str "polly wants a cracker! " (.toString b))))}))
 
 (def i (atom 0))
