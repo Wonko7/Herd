@@ -12,14 +12,13 @@
 ;; FIXME: also, [slow]buffers or not?
 (def conf
   (let [protoid   "ntor-curve25519-sha256-1"
-        b         #(js/Buffer. %1)
-        bp        #(b (str protoid %1))]
+        bp        #(b/new (str protoid %1))]
     {:m-expand    (bp ":key_expand")
      :t-key       (bp ":key_extract")
      :mac         (bp ":mac")
      :verify      (bp ":verify")
-     :protoid     (b protoid)
-     :server      (js/Buffer. "Server")
+     :protoid     (b/new protoid)
+     :server      (b/new "Server")
      :node-id-len 20
      :key-id-len  32
      :g-len       32
@@ -37,11 +36,11 @@
 ;; FIXME: perfect function to start unit testing...
 (defn expand [k n]
   (let [prk    (hmac (:t-key conf) k)
-        info   (js/Buffer. (:m-expand conf))]
-    (loop [out (js/Buffer. 0), prev (js/Buffer. 0), i 1]
+        info   (b/new (:m-expand conf))]
+    (loop [out (b/new 0), prev (b/new 0), i 1]
       (if (>= (.-length out) n)
         (.slice out 0 n)
-        (let [h   (hmac prk (b/cat prev info (js/Buffer. (cljs/clj->js. [i])))) ;; FIXME, test wtf happens when i > 255...
+        (let [h   (hmac prk (b/cat prev info (b/new (cljs/clj->js. [i])))) ;; FIXME, test wtf happens when i > 255...
               out (b/cat out h)]
           (recur out h (inc i)))))))
 

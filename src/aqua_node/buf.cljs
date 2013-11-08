@@ -27,4 +27,7 @@
 
 (defn mk-writers [b]
   "make big endian writers"
-  [#(.writeUInt8 b %) #(.writeUInt16BE b %) #(.writeUInt32BE b %)])
+  [#(.writeUInt8 b %1 %2) #(.writeUInt16BE b %1 %2) #(.writeUInt32BE b %1 %2)])
+
+(defn new [data]
+  (js/Buffer. data))
