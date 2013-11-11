@@ -45,7 +45,7 @@
 
 ;; process recv ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
-(defn recv-create2 [config conn data circ-id {buf :payload len :len}]
+(defn recv-create2 [config conn circ-id {buf :payload len :len}]
   (circ-add circ-id {:type :srv})
   (let [{auth-hs :auth-hs} config
         [srv-shared-sec created] (hs/server-reply auth-hs buf 72)]
@@ -77,7 +77,7 @@
   (merge (for [k (keys to-cmd)]
            {(-> to-cmd k :name) k})))
 
-(defn process [conn buff]
+(defn process [config conn buff]
   ;; FIXME check len first -> match with fix buf size
   (let [[r8 r16 r32] (b/mk-readers buff)
         len          (.-length buff)
@@ -87,5 +87,5 @@
     (println "---  recvd cell: id:" circ-id "cmd:" (:name command) ":" (.toString payload "hex"))
     (when (:fun command)
       (try
-        ((:fun command) conn (c/get-data conn) circ-id {:payload payload :len (- len 5)})
+        ((:fun command) config conn  circ-id {:payload payload :len (- len 5)})
         (catch js/Object e (println "/!\\  Error in circuit states:" e "circ" circ-id))))))

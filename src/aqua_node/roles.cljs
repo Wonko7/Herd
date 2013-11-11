@@ -2,6 +2,7 @@
   (:require [cljs.core :as cljs]
             [cljs.nodejs :as node]
             [aqua-node.buf :as b]
+            [aqua-node.ntor :as hs]
             [aqua-node.circ :as circ]
             [aqua-node.conns :as c]
             [aqua-node.conn-mgr :as conn]))
@@ -13,16 +14,18 @@
     (b/print b "recv:")
     (.write c b)))
 
-(defn new-dtls-conn [s]
+(defn new-dtls-conn [config s]
   (println "---  new dtls conn on:" (-> s .-socket .-_destIP) ":" (-> s .-socket .-_destPort)) ;; FIXME: investigate nil .-remote[Addr|Port]
   (c/add-listeners s {:data (fn [b]
-                              (circ/process s b)
+                              (circ/process config s b)
                               (.write s (str "polly wants a cracker! " (.toString b))))}))
 
 (def i (atom 0))
 
-(defn conn-to-dtls [s]
+(defn conn-to-dtls [config s]
   (c/add-listeners s {:data #(b/print % "recv:")})
+  (circ/cell-send s 42 :create (hs/client-init {:srv-id (js/Buffer. "60254099c37175202bd6f22943b5634989fb9fe7ba05bd7a7ac3a0e4f1cbbac2" "hex")
+                                                :pub-B  (js/Buffer. "2292a6e4727912decb641d04e4ee5de0c3f5dfe54fe227d807b8f39153ffbb34" "hex")}))
   ;(js/setInterval #(.write s (str "hello" (swap! i inc))) 1000)
   )
 ;; FIXME: end placeholders.
@@ -34,10 +37,10 @@
   (let [is?   #(is? % roles)]
     (println "###  Bootstrapping as" roles)
     (when (some is? [:mix :entry :exit])
-      (conn/new :aqua :server aq config circ/process))
+      (conn/new :aqua :server aq config (partial new-dtls-conn config)))
     (when (is? :app-proxy)
       (conn/new :socks :server ap config forward)
       ;; the following will be covered by conn-to all known nodes --> sooooon
-      (conn/new :aqua  :client ds config conn-to-dtls))
+      (conn/new :aqua  :client ds config (partial conn-to-dtls config)))
     (when (and false (not (is? :dir-server))) ;; dir-servs also need to connect to other dir-sers, we'll see about that when we get there.
       (conn/new :aqua  :client ds config get-dir-info))))

@@ -6,7 +6,7 @@
             [aqua-node.conns :as c]))
 
 
-(defn new [type cs conn {auth :auth} handle]
+(defn new [type cs conn {auth :auth} handle] ;; FIXME: forward conn to handle
   (let [conn-info (merge conn {:type type :cs cs})
         is?       #(and (= %2 cs) (= %1 type))]
     (cond (is? :socks :server) (socks/create-server conn handle)
