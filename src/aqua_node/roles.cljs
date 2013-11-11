@@ -37,10 +37,10 @@
   (let [is?   #(is? % roles)]
     (println "###  Bootstrapping as" roles)
     (when (some is? [:mix :entry :exit])
-      (conn/new :aqua :server aq config (partial new-dtls-conn config)))
+      (conn/new :aqua :server aq config new-dtls-conn))
     (when (is? :app-proxy)
       (conn/new :socks :server ap config forward)
       ;; the following will be covered by conn-to all known nodes --> sooooon
-      (conn/new :aqua  :client ds config (partial conn-to-dtls config)))
+      (conn/new :aqua  :client ds config conn-to-dtls))
     (when (and false (not (is? :dir-server))) ;; dir-servs also need to connect to other dir-sers, we'll see about that when we get there.
       (conn/new :aqua  :client ds config get-dir-info))))

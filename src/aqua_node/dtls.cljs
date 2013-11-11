@@ -3,7 +3,7 @@
             [cljs.nodejs :as node]
             [aqua-node.conns :as c]))
 
-(defn mk-dtls [auth addr port]
+(defn mk-dtls [config addr port]
   [(node/require "nodedtls") (cljs/clj->js (merge (-> config :auth :openssl) (if addr {:host addr} nil) {:port port}))])
 
 (defn create-server [{addr :addr port :port} config new-conn-handler]
