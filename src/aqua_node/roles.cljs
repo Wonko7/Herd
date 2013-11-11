@@ -33,8 +33,8 @@
 (defn bootstrap [{roles :roles ap :app-proxy-conn aq :aqua-conn ds :dir-server :as config}]
   (let [is?   #(is? % roles)]
     (println "###  Bootstrapping as" roles)
-    (when
-      (conn/new :aqua :server aq config new-dtls-conn))
+    (when (some is? [:mix :entry :exit])
+      (conn/new :aqua :server aq config circ/process))
     (when (is? :app-proxy)
       (conn/new :socks :server ap config forward)
       ;; the following will be covered by conn-to all known nodes --> sooooon

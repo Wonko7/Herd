@@ -56,7 +56,7 @@
 
 (def to-cmd
   {0   {:name :padding         :fun nil}
-   1   {:name :create          :fun recv-create2}
+   1   {:name :create          :fun nil}
    2   {:name :created         :fun nil}
    3   {:name :relay           :fun nil}
    4   {:name :destroy         :fun nil}
@@ -64,7 +64,7 @@
    6   {:name :created_fast    :fun nil}
    8   {:name :netinfo         :fun nil}
    9   {:name :relay_early     :fun nil}
-   10  {:name :create2         :fun nil}
+   10  {:name :create2         :fun recv-create2}
    11  {:name :created2        :fun nil}
    7   {:name :versions        :fun nil}
    128 {:name :vpadding        :fun nil}
@@ -86,6 +86,6 @@
         payload      (.slice buff 5 len)]
     (println "---  recvd cell: id:" circ-id "cmd:" (:name command) ":" (.toString payload "hex"))
     (when (:fun command)
-     (try
-       ((:fun command) conn (c/get-data conn) circ-id {:payload payload :len (- len 5)})
-       (catch js/Object e (println "/!\\  Error in circuit states:" e "circ" circ-id))))))
+      (try
+        ((:fun command) conn (c/get-data conn) circ-id {:payload payload :len (- len 5)})
+        (catch js/Object e (println "/!\\  Error in circuit states:" e "circ" circ-id))))))
