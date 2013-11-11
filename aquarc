@@ -3,6 +3,9 @@
              :port 6669}
  :app-proxy-conn {:addr "127.0.0.1"
                   :port 6666}
- :auth {:cert "auth/cert.pem"
-        :key  "auth/key.pem"
-        :passphrase "1234"}}
+ :auth {:openssl {:cert "auth/public/cert.pem"
+                  :key  "auth/secret/key.pem"
+                  :passphrase "1234"}
+        :aqua-id {:pub "auth/public/pub.ntor"
+		  :id  "auth/public/id.ntor"
+                  :sec "auth/secret/sec.ntor"}}}

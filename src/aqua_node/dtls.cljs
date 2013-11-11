@@ -4,19 +4,16 @@
             [aqua-node.conns :as c]))
 
 (defn mk-dtls [auth addr port]
-  (let [fs          (node/require "fs")
-        cat         (fn [k] (try {k (.readFileSync fs (auth k) "utf8")}
-                              (catch js/Object e (println "/!\\  could not load auth info: " e))))]
-    [(node/require "nodedtls") (cljs/clj->js (merge auth (if addr {:host addr} nil) {:port port} (cat :key) (cat :cert)))]))
+  [(node/require "nodedtls") (cljs/clj->js (merge (-> config :auth :openssl) (if addr {:host addr} nil) {:port port}))])
 
-(defn create-server [{addr :addr port :port} auth new-conn-handler]
-  (let [[dtls opts] (mk-dtls auth addr port)
+(defn create-server [{addr :addr port :port} config new-conn-handler]
+  (let [[dtls opts] (mk-dtls config addr port)
         srv         (.createServer dtls port opts new-conn-handler)] ;; FIXME: based on tls api, this is not what a nice dtls api should look like.
     (println "###  Aqua listening on:" addr ":" port)
     (c/add srv {:cs :server :type :aqua})))
 
-(defn connect [{addr :addr port :port} auth conn-handler]
-  (let [[dtls opts] (mk-dtls auth addr port)
+(defn connect [{addr :addr port :port} config conn-handler]
+  (let [[dtls opts] (mk-dtls config addr port)
         c           (.connect dtls opts)]
     (c/add-listeners c {:secureConnect #(conn-handler c)}) ;; FIXME; do this on connect?
     (c/add c {:cs :client :type :aqua})))
