@@ -14,17 +14,17 @@
         read        #(swap! config merge (reader/read-string %))
         cfg         (read (.readFileSync fs "aquarc" "utf8"))
         ;; file manipulation
-        cat         (fn [k auth enc]
-                      (try {k (.readFileSync fs (auth k) enc)}
+        cat         (fn [k auth]
+                      (try {k (.readFileSync fs (auth k) "ascii")}
                            (catch js/Object e (do (println "/!\\  could not load auth info:" e) {k nil}))))
-        mcat        (fn [enc auth & keys]
-                      (apply merge auth (map #(cat % auth enc) keys)))
+        mcat        (fn [auth & keys]
+                      (apply merge auth (map #(cat % auth) keys)))
         echo-to     (fn [file buf]
                       (.writeFile fs file (b/hx buf "hex"))
                       buf)
         ;; cat key paths as keys
-        ossl        (mcat "ascii" (-> cfg :auth :openssl) :cert :key)
-        aqua        (mcat "ascii" (-> cfg :auth :aqua-id) :sec :pub :id)
+        ossl        (mcat (-> cfg :auth :openssl) :cert :key)
+        aqua        (mcat (-> cfg :auth :aqua-id) :sec :pub :id)
         aqua        (if (:sec aqua)
                       aqua
                       (let [[s p] (hs/gen-keys)]
