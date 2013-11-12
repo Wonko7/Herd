@@ -23,12 +23,9 @@
 
 (defn conn-to-dtls [config s]
   (c/add-listeners s {:data #(b/print-x % "recv:")})
-  (let [[s b] (hs/client-init {:srv-id (js/Buffer. "60254099c37175202bd6f22943b5634989fb9fe7" "hex")
-                              :pub-B  (js/Buffer. "2292a6e4727912decb641d04e4ee5de0c3f5dfe54fe227d807b8f39153ffbb34" "hex")})] 
-    (b/print-x b)
-    (circ/cell-send s 42 :create b))
-  ;(js/setInterval #(.write s (str "hello" (swap! i inc))) 1000)
-  )
+  (let [[auth b] (hs/client-init {:srv-id (js/Buffer. "60254099c37175202bd6f22943b5634989fb9fe7" "hex")
+                                  :pub-B  (js/Buffer. "2292a6e4727912decb641d04e4ee5de0c3f5dfe54fe227d807b8f39153ffbb34" "hex")})]
+    (circ/cell-send s 42 :create2 b)))
 ;; FIXME: end placeholders.
 
 (defn is? [role roles] ;; FIXME -> when needed elsewhere move to roles

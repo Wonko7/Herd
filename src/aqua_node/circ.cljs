@@ -74,8 +74,8 @@
    132 {:name :authorize       :fun nil}})
 
 (def from-cmd
-  (merge (for [k (keys to-cmd)]
-           {(-> to-cmd k :name) k})))
+  (apply merge (for [k (keys to-cmd)]
+                 {((to-cmd k) :name) k})))
 
 (defn process [config conn buff]
   ;; FIXME check len first -> match with fix buf size
