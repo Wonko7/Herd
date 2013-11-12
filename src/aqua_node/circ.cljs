@@ -52,6 +52,15 @@
     (circ-update-data circ-id [:auth] auth)
     (cell-send socket circ-id :create2 b)))
 
+(defn relay [config socket circ-id msg]
+  (assert (@circuits circ-id) "cicuit does not exist") ;; FIXME this assert will probably be done elsewhere (process?)
+  (let [circ     (@circuits circ-id)
+        crypto   (node/require "crypto")
+        iv       (.randomBytes crypto. 64)
+        aes      (.createCipheriv crypto. "aes-256" (-> circ :auth :secret) iv)
+        msg      (-> aes (.update msg) .finalise)]
+    (cell-send socket circ-id :relay (b/cat iv msg))))
+
 ;; process recv ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
 ;; FIXME: these need state
@@ -68,9 +77,20 @@
   (let [auth       (:auth (@circuits circ-id))
         shared-sec (hs/client-finalise auth payload 72)]
     (b/print-x shared-sec "secret:")
-    (circ-update-data circ-id [:auth :secret] shared-sec)
-    ;(cell-send conn circ-id :created2 created)
-    ))
+    (circ-update-data circ-id [:auth :secret] shared-sec)))
+
+(defn recv-relay [config conn circ-id {payload :payload len :len}]
+  (assert (@circuits circ-id) "cicuit does not exist")
+  ;(assert (@circuits circ-id) "cicuit does not exist") something about the len
+  (let [circ     (@circuits circ-id)
+        [iv msg] (b/cut 32)
+        crypto   (node/require "crypto")
+        aes      (.createDecipheriv crypto. "aes-256" (-> circ :auth :secret) iv)
+        msg      (-> aes (.update msg) .finalise)]
+    (condp = (:type circ) ;; FIXME will be changed by app-proxy, mix, exit etc? also depends on path type, link & encr proto.
+      :server (b/print-x msg)
+      :client (b/print-x msg)
+      (assert (= 1 0) "unsupported relay type, bad circ state, something is wrong"))))
 
 
 ;; cell management (no state logic here) ;;;;;;;;;;;;;;;;;;;;;;;;;
@@ -79,7 +99,7 @@
   {0   {:name :padding         :fun nil}
    1   {:name :create          :fun nil}
    2   {:name :created         :fun nil}
-   3   {:name :relay           :fun nil}
+   3   {:name :relay           :fun recv-relay}
    4   {:name :destroy         :fun nil}
    5   {:name :create_fast     :fun nil}
    6   {:name :created_fast    :fun nil}
