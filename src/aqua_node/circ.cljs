@@ -64,8 +64,6 @@
     (cell-send conn circ-id :created2 created)))
 
 (defn recv-created2 [config conn circ-id {buf :payload len :len}]
-  (println "lolololo" conn (:auth (@circuits circ-id)))
-  (b/print-x buf)
   (assert (@circuits circ-id) "cicuit does not exist") ;; FIXME this assert will probably be done elsewhere (process?)
   (let [auth       (:auth (@circuits circ-id))
         shared-sec (hs/client-finalise auth buf 72)]
