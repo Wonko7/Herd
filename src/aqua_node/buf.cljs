@@ -14,7 +14,7 @@
 
 (defn b= [a b]
   "buffer content equality"
-  (= (.toString a "ascii") (.toString b "ascii")))
+  (= (.toString b) (.toString a)))
 
 (defn cut [b & xs]
   "divide the buffer: (cut b 55 88 99) will return a seq of slices from 0 to 55, 55 to 88, 88 to end of buf"

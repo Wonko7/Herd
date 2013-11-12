@@ -23,8 +23,8 @@
 
 (defn conn-to-dtls [config s]
   (c/add-listeners s {:data #(b/print-x % "recv:")})
-  (let [[auth b] (hs/client-init {:srv-id (js/Buffer. "60254099c37175202bd6f22943b5634989fb9fe7" "hex")
-                                  :pub-B  (js/Buffer. "2292a6e4727912decb641d04e4ee5de0c3f5dfe54fe227d807b8f39153ffbb34" "hex")})]
+  (let [[auth b] (hs/client-init {:srv-id (js/Buffer. "h00z6mIWXCPWK4Pp1AQh+oHoHs8=" "base64")
+                                  :pub-B  (js/Buffer. "KYi+NX2pCOQmYnscN0K+MB+NO9A6ynKiIp41B5GlkHc=" "base64")})]
     (circ/cell-send s 42 :create2 b)))
 ;; FIXME: end placeholders.
 

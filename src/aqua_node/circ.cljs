@@ -47,8 +47,8 @@
 
 (defn recv-create2 [config conn circ-id {buf :payload len :len}]
   (circ-add circ-id {:type :srv})
-  (let [{auth-hs :auth-hs} config
-        [srv-shared-sec created] (hs/server-reply auth-hs buf 72)]
+  (let [{pub-B :pub node-id :id sec-b :sec} (-> config :auth :aqua-id) ;; FIXME: renaming the keys is stupid.
+        [srv-shared-sec created] (hs/server-reply {:pub-B pub-B :node-id node-id :sec-b sec-b} buf 72)]
     (circ-update-data circ-id [:secret] srv-shared-sec)
     (cell-send conn circ-id :created created)))
 
@@ -88,4 +88,5 @@
     (when (:fun command)
       (try
         ((:fun command) config conn  circ-id {:payload payload :len (- len 5)})
-        (catch js/Object e (println "/!\\  Error in circuit states:" e "circ" circ-id))))))
+        (catch js/Object e (do (println "/!\\  Error in circuit states:" e "circ" circ-id)
+                               (println (.-stack e))))))))
