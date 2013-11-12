@@ -55,18 +55,18 @@
 ;; process recv ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
 ;; FIXME: these need state
-(defn recv-create2 [config conn circ-id {buf :payload len :len}]
+(defn recv-create2 [config conn circ-id {payload :payload len :len}]
   (circ-add circ-id {:type :server})
   (let [{pub-B :pub node-id :id sec-b :sec} (-> config :auth :aqua-id) ;; FIXME: renaming the keys is stupid.
-        [shared-sec created]                (hs/server-reply {:pub-B pub-B :node-id node-id :sec-b sec-b} buf 72)]
+        [shared-sec created]                (hs/server-reply {:pub-B pub-B :node-id node-id :sec-b sec-b} payload 72)]
     (circ-update-data circ-id [:auth :secret] shared-sec)
     (b/print-x shared-sec "secret:")
     (cell-send conn circ-id :created2 created)))
 
-(defn recv-created2 [config conn circ-id {buf :payload len :len}]
+(defn recv-created2 [config conn circ-id {payload :payload len :len}]
   (assert (@circuits circ-id) "cicuit does not exist") ;; FIXME this assert will probably be done elsewhere (process?)
   (let [auth       (:auth (@circuits circ-id))
-        shared-sec (hs/client-finalise auth buf 72)]
+        shared-sec (hs/client-finalise auth payload 72)]
     (b/print-x shared-sec "secret:")
     (circ-update-data circ-id [:auth :secret] shared-sec)
     ;(cell-send conn circ-id :created2 created)
@@ -110,4 +110,5 @@
       (try
         ((:fun command) config conn  circ-id {:payload payload :len (- len 5)})
         (catch js/Object e (do (println "/!\\  Error in circuit states:" e "circ" circ-id)
+                               ;(FIXME kill circuit)
                                (println (.-stack e))))))))

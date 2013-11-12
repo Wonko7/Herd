@@ -55,7 +55,7 @@
 
 ;; FIXME: assert all lens.
 (defn client-init [{srv-id :srv-id pub-B :pub-B :as auth}]
-  (let [[secret-x public-X]        (gen-keys)] ;; FIXME: save secret-x in conn's ntor state or something.
+  (let [[secret-x public-X]        (gen-keys)]
     [(merge auth {:sec-x secret-x :pub-X public-X}) (b/cat srv-id pub-B public-X)]))
 
 (defn server-reply [{pub-B :pub-B sec-b :sec-b id :node-id :as auth} req key-len]
