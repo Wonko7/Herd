@@ -16,16 +16,14 @@
 
 (defn new-dtls-conn [config s]
   (println "---  new dtls conn on:" (-> s .-socket .-_destIP) ":" (-> s .-socket .-_destPort)) ;; FIXME: investigate nil .-remote[Addr|Port]
-  (c/add-listeners s {:data (fn [b]
-                              (circ/process config s b))}))
+  (c/add-listeners s {:data #(circ/process config s %)}))
 
 (def i (atom 0))
 
 (defn conn-to-dtls [config s]
-  (c/add-listeners s {:data #(b/print-x % "recv:")})
-  (let [[auth b] (hs/client-init {:srv-id (js/Buffer. "h00z6mIWXCPWK4Pp1AQh+oHoHs8=" "base64")
-                                  :pub-B  (js/Buffer. "KYi+NX2pCOQmYnscN0K+MB+NO9A6ynKiIp41B5GlkHc=" "base64")})]
-    (circ/cell-send s 42 :create2 b)))
+  (c/add-listeners s {:data #(circ/process config s %)})
+  (circ/mk-path config s {:srv-id (js/Buffer. "h00z6mIWXCPWK4Pp1AQh+oHoHs8=" "base64")
+                          :pub-B  (js/Buffer. "KYi+NX2pCOQmYnscN0K+MB+NO9A6ynKiIp41B5GlkHc=" "base64")}))
 ;; FIXME: end placeholders.
 
 (defn is? [role roles] ;; FIXME -> when needed elsewhere move to roles

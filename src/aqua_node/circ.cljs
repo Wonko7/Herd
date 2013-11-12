@@ -43,14 +43,37 @@
     (.write conn buf)))
 
 
+;; make requests ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+(defn mk-path [config socket srv-auth] ;; FIXME: the api will change. remove socket.
+  (let [circ-id  42 ;; FIXME generate.
+        [auth b] (hs/client-init srv-auth)]
+    (circ-add circ-id {:type :client})
+    (circ-update-data circ-id [:auth] auth)
+    (cell-send socket circ-id :create2 b)))
+
 ;; process recv ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
+;; FIXME: these need state
 (defn recv-create2 [config conn circ-id {buf :payload len :len}]
-  (circ-add circ-id {:type :srv})
+  (circ-add circ-id {:type :server})
   (let [{pub-B :pub node-id :id sec-b :sec} (-> config :auth :aqua-id) ;; FIXME: renaming the keys is stupid.
-        [srv-shared-sec created] (hs/server-reply {:pub-B pub-B :node-id node-id :sec-b sec-b} buf 72)]
-    (circ-update-data circ-id [:secret] srv-shared-sec)
-    (cell-send conn circ-id :created created)))
+        [shared-sec created]                (hs/server-reply {:pub-B pub-B :node-id node-id :sec-b sec-b} buf 72)]
+    (circ-update-data circ-id [:auth :secret] shared-sec)
+    (b/print-x shared-sec "secret:")
+    (cell-send conn circ-id :created2 created)))
+
+(defn recv-created2 [config conn circ-id {buf :payload len :len}]
+  (println "lolololo" conn (:auth (@circuits circ-id)))
+  (b/print-x buf)
+  (assert (@circuits circ-id) "cicuit does not exist") ;; FIXME this assert will probably be done elsewhere (process?)
+  (let [auth       (:auth (@circuits circ-id))
+        shared-sec (hs/client-finalise auth buf 72)]
+    (b/print-x shared-sec "secret:")
+    (circ-update-data circ-id [:auth :secret] shared-sec)
+    ;(cell-send conn circ-id :created2 created)
+    ))
+
 
 ;; cell management (no state logic here) ;;;;;;;;;;;;;;;;;;;;;;;;;
 
@@ -65,7 +88,7 @@
    8   {:name :netinfo         :fun nil}
    9   {:name :relay_early     :fun nil}
    10  {:name :create2         :fun recv-create2}
-   11  {:name :created2        :fun nil}
+   11  {:name :created2        :fun recv-created2}
    7   {:name :versions        :fun nil}
    128 {:name :vpadding        :fun nil}
    129 {:name :certs           :fun nil}
