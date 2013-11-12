@@ -34,7 +34,7 @@
 ;; send cell ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
 (defn cell-send [conn circ-id cmd payload & [len]]
-  (let [len          (or len (.-lenght payload))
+  (let [len          (or len (.-length payload))
         buf          (b/new (+ 5 len))
         [w8 w16 w32] (b/mk-writers payload)]
     (w32 circ-id 0)

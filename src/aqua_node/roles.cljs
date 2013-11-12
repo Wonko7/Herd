@@ -17,15 +17,15 @@
 (defn new-dtls-conn [config s]
   (println "---  new dtls conn on:" (-> s .-socket .-_destIP) ":" (-> s .-socket .-_destPort)) ;; FIXME: investigate nil .-remote[Addr|Port]
   (c/add-listeners s {:data (fn [b]
-                              (circ/process config s b)
-                              (.write s (str "polly wants a cracker! " (.toString b))))}))
+                              (circ/process config s b))}))
 
 (def i (atom 0))
 
 (defn conn-to-dtls [config s]
   (c/add-listeners s {:data #(b/print-x % "recv:")})
-  (let [s b] (hs/client-init {:srv-id (js/Buffer. "60254099c37175202bd6f22943b5634989fb9fe7ba05bd7a7ac3a0e4f1cbbac2" "hex")
-                              :pub-B  (js/Buffer. "2292a6e4727912decb641d04e4ee5de0c3f5dfe54fe227d807b8f39153ffbb34" "hex")})
+  (let [[s b] (hs/client-init {:srv-id (js/Buffer. "60254099c37175202bd6f22943b5634989fb9fe7" "hex")
+                              :pub-B  (js/Buffer. "2292a6e4727912decb641d04e4ee5de0c3f5dfe54fe227d807b8f39153ffbb34" "hex")})] 
+    (b/print-x b)
     (circ/cell-send s 42 :create b))
   ;(js/setInterval #(.write s (str "hello" (swap! i inc))) 1000)
   )
