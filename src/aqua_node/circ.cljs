@@ -19,7 +19,7 @@
 (def circuits (atom {}))
 
 (defn circ-add [circ-id conn & [state]]
-  (assert (nil? (@circuits circ-id)) (str "could not create circuit," circ-id "already exists"))
+  (assert (nil? (@circuits circ-id)) (str "could not create circuit, " circ-id " already exists"))
   (swap! circuits merge {circ-id {:conn conn :state state}}))
 
 (defn circ-update-data [circ keys subdata]
