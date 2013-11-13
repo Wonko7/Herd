@@ -10,4 +10,5 @@
                   :passphrase "aoeu"}
         :aqua-id {:pub "auth/public/pub.ntor"
 		  :id  "auth/public/id.ntor"
-                  :sec "auth/secret/sec.ntor"}}}
+                  :sec "auth/secret/sec.ntor"}}
+ :debug true}

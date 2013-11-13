@@ -30,7 +30,7 @@
 
 (defn circ-rm [circ]
   (swap! circuits dissoc circ)
-  circ) ;; FIXME think about what we could return
+  circ)
 
 (defn circ-destroy [circ]
   (when (@circuits circ) ;; FIXME also send destroy cells to the path
@@ -70,9 +70,9 @@
 
 (defn relay [config socket circ-id relay-cmd msg]
   (let [circ         (@circuits circ-id)
-        pl-len       (.-len msg)
+        pl-len       (.-length msg)
         data         (b/new (+ pl-len 11))
-        [w8 w16 w32] (b/mk-writers msg)]
+        [w8 w16 w32] (b/mk-writers data)]
     (w8 (from-relay-cmd relay-cmd) 0)
     (w16 101 1) ;; Recognized
     (w16 101 3) ;; StreamID
@@ -104,7 +104,7 @@
         p-begin (fn []
                     (assert (= :server (:type circ-data)) "relay resolve command makes no sense")
                     (let [url (.parse (node/require "url") (.toString r-payload "ascii"))]
-                      (log/info "forward-to:" (.host url) (.path url) (.port url))
+                      (log/info "forward-to:" (.-host url) (.-path url) (.-port url))
                       :state))]
     (assert (condp = (:relay-cmd relay-data)
               1  (p-begin)
