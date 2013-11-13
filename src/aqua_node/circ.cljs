@@ -98,6 +98,13 @@
         shared-sec (hs/client-finalise auth payload 32)] ;; FIXME aes 256 seems to want 32 len key. seems short to me.
     (circ-update-data circ-id [:auth :secret] shared-sec)))
 
+(defn parse-addr [buf len] ;; this may live somewhere else.
+  (let [[r1 r2 r4] (b/mk-readers buf)
+        ip4-re     #"^((\d+\.){3}\d+):(\d+)"
+        re         #(let [res (cljs/js->clj (.match %1 %2))]
+                      (nth %3))]
+    (log/debug (.match buf ip4-re))))
+
 (defn process-relay [config conn circ-id relay-data original-pl]
   (let [circ-data (@circuits circ-id)
         r-payload (:payload relay-data)

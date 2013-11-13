@@ -34,6 +34,7 @@
 
 (defn bootstrap [{roles :roles ap :app-proxy-conn aq :aqua-conn ds :dir-server :as config}]
   (let [is?   #(is? % roles)]
+    (circ/parse-addr "123.123.97.2:1234")
     (log/info "Bootstrapping as" roles)
     (when (some is? [:mix :entry :exit])
       (conn/new :aqua :server aq config new-dtls-conn))
