@@ -1,12 +1,13 @@
 (ns aqua-node.socks
   (:require [cljs.core :as cljs]
             [cljs.nodejs :as node]
+            [aqua-node.log :as log]
             [aqua-node.buf :as b]
             [aqua-node.conns :as c]))
 
 
 (defn kill-conn [conn & [err]]
-  (println (str "###  App-Proxy: killing a conn: " (or err "unknow")))
+  (log/debug "App-Proxy: killing a conn:" (or err "unknow"))
   (-> conn c/rm .destroy))
 
 ;; FIXME: most kill-conns should be wait for more data.
@@ -61,13 +62,13 @@
 (defn create-server [{addr :addr port :port} new-conn-handler]
   (let [net     (node/require "net")
         srv     (.createServer net (fn [c]
-                                     (println (str "###  App-Proxy: new connection on: " (-> c .address .-ip) ":" (-> c .address .-port)))
+                                     (log/debug "App-Proxy: new connection on:" (-> c .address .-ip) (-> c .address .-port))
                                      (-> c
                                          (c/add {:cs :remote-client :type :socks :socks {:state :handshake}})
-                                         (c/add-listeners {:end   #(println "###  App-Proxy: connection end")
+                                         (c/add-listeners {:end   #(log/debug "App-Proxy: connection end")
                                                            :error kill-conn
                                                            :data  #(socks-recv c new-conn-handler %)}))))
-        new-srv #(println "###  App-Proxy listening on:" (-> srv .address .-ip) ":" (-> srv .address .-port))]
+        new-srv #(log/info "###  App-Proxy listening on:" (-> srv .address .-ip) (-> srv .address .-port))]
     (if addr
       (.listen srv port addr new-srv)
       (.listen srv port new-srv))

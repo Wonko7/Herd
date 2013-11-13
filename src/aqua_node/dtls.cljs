@@ -1,6 +1,7 @@
 (ns aqua-node.dtls
   (:require [cljs.core :as cljs]
             [cljs.nodejs :as node]
+            [aqua-node.log :as log]
             [aqua-node.conns :as c]))
 
 (defn mk-dtls [config addr port]
@@ -9,7 +10,7 @@
 (defn create-server [{addr :addr port :port} config new-conn-handler]
   (let [[dtls opts] (mk-dtls config addr port)
         srv         (.createServer dtls port opts new-conn-handler)] ;; FIXME: based on tls api, this is not what a nice dtls api should look like.
-    (println "###  Aqua listening on:" addr ":" port)
+    (log/info "Aqua listening on:" addr port)
     (c/add srv {:cs :server :type :aqua})))
 
 (defn connect [{addr :addr port :port} config conn-handler]

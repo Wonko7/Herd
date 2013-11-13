@@ -1,6 +1,7 @@
 (ns aqua-node.conn-mgr
   (:require [cljs.core :as cljs]
             [cljs.nodejs :as node]
+            [aqua-node.log :as log]
             [aqua-node.dtls :as dtls]
             [aqua-node.socks :as socks]
             [aqua-node.conns :as c]))
@@ -13,4 +14,4 @@
     (cond (is? :socks :server) (socks/create-server conn handle)
           (is? :aqua  :server) (dtls/create-server conn config handle)
           (is? :aqua  :client) (dtls/connect conn config handle)
-          :else                (println "/!\\  Unsupported connection type:" type "as" cs))))
+          :else                (log/error "Unsupported connection type:" type "as" cs))))

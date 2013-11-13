@@ -1,6 +1,7 @@
 (ns aqua-node.roles
   (:require [cljs.core :as cljs]
             [cljs.nodejs :as node]
+            [aqua-node.log :as log]
             [aqua-node.buf :as b]
             [aqua-node.ntor :as hs]
             [aqua-node.circ :as circ]
@@ -15,7 +16,7 @@
     (.write c b)))
 
 (defn new-dtls-conn [config s]
-  (println "---  new dtls conn on:" (-> s .-socket .-_destIP) ":" (-> s .-socket .-_destPort)) ;; FIXME: investigate nil .-remote[Addr|Port]
+  (log/debug "---  new dtls conn on:" (-> s .-socket .-_destIP) (-> s .-socket .-_destPort)) ;; FIXME: investigate nil .-remote[Addr|Port]
   (c/add-listeners s {:data #(circ/process config s %)}))
 
 (def i (atom 0))
@@ -32,7 +33,7 @@
 
 (defn bootstrap [{roles :roles ap :app-proxy-conn aq :aqua-conn ds :dir-server :as config}]
   (let [is?   #(is? % roles)]
-    (println "###  Bootstrapping as" roles)
+    (log/info "Bootstrapping as" roles)
     (when (some is? [:mix :entry :exit])
       (conn/new :aqua :server aq config new-dtls-conn))
     (when (is? :app-proxy)
