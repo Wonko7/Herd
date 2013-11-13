@@ -1,12 +1,10 @@
 (ns aqua-node.crypto
   (:require [cljs.core :as cljs]
             [cljs.nodejs :as node]
-            [aqua-node.buf :as b]
-            [aqua-node.config :as cfg]))
+            [aqua-node.buf :as b]))
+
 
 ;; FIXME should use this everywhere. put hashes and stuff here.
-
-(def dbg? #(:debug (cfg/get)))
 
 (defn fin [c]
   "work around reserved final keyword"
@@ -21,3 +19,12 @@
   (let [c    (node/require "crypto")
         aes  (.createDecipheriv c. "aes-256-ctr" key iv)]
     (b/cat (.update aes msg) (fin aes))))
+
+
+;; curve:
+
+(defn gen-keys []
+  (let [[curve crypto] [(node/require "node-curve25519") (node/require "crypto")]
+        sec            (.makeSecretKey curve (.randomBytes crypto 32))
+        pub            (.derivePublicKey curve sec)]
+    [sec pub]))

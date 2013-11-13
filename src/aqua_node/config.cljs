@@ -3,15 +3,28 @@
             [cljs.nodejs :as node]
             [cljs.reader :as reader]
             [aqua-node.buf :as b]
-            [aqua-node.ntor :as hs]))
+            [aqua-node.crypto :as c]))
 
 
 (def config (atom {}))
 
 (def static-conf 
   ;; set defaults and non user stuff here.
-  {:encr  {:iv-len 16 :key-len 32}
-   :debug false})
+  (let [protoid   "ntor-curve25519-sha256-1"
+        bp        #(b/new (str protoid %1))
+        ntor      {:m-expand    (bp ":key_expand")
+                   :t-key       (bp ":key_extract")
+                   :mac         (bp ":mac")
+                   :verify      (bp ":verify")
+                   :protoid     (b/new protoid)
+                   :server      (b/new "Server")
+                   :node-id-len 20
+                   :key-id-len  32
+                   :g-len       32
+                   :h-len       32}]
+    {:encr        {:iv-len 16 :key-len 32}
+     :debug       false
+     :ntor-values ntor}))
 
 (defn read-config []
   (let [;; read config
@@ -35,7 +48,7 @@
         aqua        (mcat xcat (-> cfg :auth :aqua-id) :sec :pub :id)
         aqua        (if (:sec aqua)
                       aqua
-                      (let [[s p] (hs/gen-keys)]
+                      (let [[s p] (c/gen-keys)]
                         (merge {:sec (echo-to (-> cfg :auth :aqua-id :sec) s)}
                                {:pub (echo-to (-> cfg :auth :aqua-id :pub) p)}
                                {:id  (echo-to (-> cfg :auth :aqua-id :id)  (-> (node/require "crypto") (.createHash "sha256") (.update p) .digest (.slice 0 20)))})))] ;; FIXME get 20 from conf.
