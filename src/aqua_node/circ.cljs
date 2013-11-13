@@ -7,7 +7,7 @@
             [aqua-node.conns :as c]
             [aqua-node.crypto :as crypto]))
 
-(declare from-cmd to-cmd)
+(declare from-relay-cmd from-cmd to-cmd)
 
 ;; Tor doc. from tor spec file:
 ;;  - see section 5 for circ creation.
@@ -59,14 +59,27 @@
            (cell-send socket circ-id :create2 b))
          (catch js/Object e (log/c-info e (str "failed circuit creation: " circ-id) (circ-destroy circ-id))))))
 
-(defn relay [config socket circ-id msg]
+(defn enc-send [config socket circ-id circ-cmd msg]
   (assert (@circuits circ-id) "cicuit does not exist") ;; FIXME this assert will probably be done elsewhere (process?)
   ;; FIXME assert state.
   (let [circ     (@circuits circ-id)
         c        (node/require "crypto")
         iv       (.randomBytes c. 16)
         msg      (crypto/enc-aes (-> circ :auth :secret) iv msg)]
-    (cell-send socket circ-id :relay (b/cat iv msg))))
+    (cell-send socket circ-id circ-cmd (b/cat iv msg))))
+
+(defn relay [config socket circ-id relay-cmd msg]
+  (let [circ         (@circuits circ-id)
+        pl-len       (.-len msg)
+        data         (b/new (+ pl-len 11))
+        [w8 w16 w32] (b/mk-writers msg)]
+    (w8 (from-relay-cmd relay-cmd) 0)
+    (w16 101 1) ;; Recognized
+    (w16 101 3) ;; StreamID
+    (w32 101 5) ;; Digest
+    (w16 101 9) ;; Length
+    (.copy msg data 11)
+    (enc-send config socket circ-id :relay data)))
 
 
 ;; process recv ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
@@ -85,16 +98,46 @@
         shared-sec (hs/client-finalise auth payload 32)] ;; FIXME aes 256 seems to want 32 len key. seems short to me.
     (circ-update-data circ-id [:auth :secret] shared-sec)))
 
+(defn process-relay [config conn circ-id relay-data original-pl]
+  (let [circ-data (@circuits circ-id)
+        r-payload (:payload relay-data)
+        p-begin (fn []
+                    (assert (= :server (:type circ-data)) "relay resolve command makes no sense")
+                    (let [url (.parse (node/require "url") (.toString r-payload "ascii"))]
+                      (log/info "forward-to:" (.host url) (.path url) (.port url))
+                      :state))]
+    (assert (condp = (:relay-cmd relay-data)
+              1  (p-begin)
+              2  (log/error :relay-data "is an unsupported relay command")
+              3  (log/error :relay-end "is an unsupported relay command")
+              4  (log/error :relay-connected "is an unsupported relay command")
+              5  (log/error :relay-sendme "is an unsupported relay command")
+              6  (log/error :relay-extend "is an unsupported relay command")
+              7  (log/error :relay-extended "is an unsupported relay command")
+              8  (log/error :relay-truncate "is an unsupported relay command")
+              9  (log/error :relay-truncated "is an unsupported relay command")
+              10 (log/error :relay-drop "is an unsupported relay command")
+              11 (log/error :relay-resolve "is an unsupported relay command")
+              12 (log/error :relay-resolved "is an unsupported relay command")
+              13 (log/error :relay-begin_dir "is an unsupported relay command")
+              14 (log/error :relay-extend2 "is an unsupported relay command")
+              15 (log/error :relay-extended2 "is an unsupported relay command")
+              nil))))
+
+;; see tor spec 6.
 (defn recv-relay [config conn circ-id {payload :payload len :len}]
   (assert (@circuits circ-id) "cicuit does not exist")
-  ;(assert (@circuits circ-id) "cicuit does not exist") something about the len
-  (let [circ     (@circuits circ-id)
-        [iv msg] (b/cut payload 16)
-        msg      (crypto/dec-aes (-> circ :auth :secret) iv msg)]
-    (condp = (:type circ) ;; FIXME will be changed by app-proxy, mix, exit etc? also depends on path type, link & encr proto.
-      :server (println (.toString msg "ascii"))
-      :client (b/print-x msg)
-      (assert (= 1 0) "unsupported relay type, bad circ state, something is wrong"))))
+  (let [circ       (@circuits circ-id)
+        [iv msg]   (b/cut payload 16)
+        msg        (crypto/dec-aes (-> circ :auth :secret) iv msg)
+        [r1 r2 r4] (b/mk-readers msg)
+        relay-data {:relay-cmd  (r1 0)
+                    :recognised (r2 1)
+                    :stream-id  (r2 3)
+                    :digest     (r4 5)
+                    :relay-len  (r2 9)
+                    :payload    (.slice msg 11 (.-length msg))}] ;; FIXME check how aes padding is handled.
+    (process-relay config conn circ-id relay-data {:unused? true})))
 
 
 ;; cell management (no state logic here) ;;;;;;;;;;;;;;;;;;;;;;;;;
@@ -121,6 +164,23 @@
 (def from-cmd
   (apply merge (for [k (keys to-cmd)]
                  {((to-cmd k) :name) k})))
+
+(def from-relay-cmd
+  {:begin      1
+   :data       2
+   :end        3
+   :connected  4
+   :sendme     5
+   :extend     6
+   :extended   7
+   :truncate   8
+   :truncated  9
+   :drop       10
+   :resolve    11
+   :resolved   12
+   :begin_dir  13
+   :extend2    14
+   :extended2  15})
 
 (defn process [config conn buff]
   ;; FIXME check len first -> match with fix buf size
