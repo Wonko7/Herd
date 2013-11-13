@@ -3,7 +3,8 @@
             [cljs.nodejs :as node]
             [aqua-node.buf :as b]
             [aqua-node.ntor :as hs]
-            [aqua-node.conns :as c]))
+            [aqua-node.conns :as c]
+            [aqua-node.crypto :as crypto]))
 
 (declare from-cmd to-cmd)
 
@@ -20,7 +21,7 @@
 
 (defn circ-add [circ-id conn & [state]]
   (assert (nil? (@circuits circ-id)) (str "could not create circuit, " circ-id " already exists"))
-  (swap! circuits merge {circ-id {:conn conn :state state}}))
+  (swap! circuits merge {circ-id (merge state {:conn conn})}))
 
 (defn circ-update-data [circ keys subdata]
   (swap! circuits assoc-in (cons circ keys) subdata)
@@ -48,47 +49,44 @@
 (defn mk-path [config socket srv-auth] ;; FIXME: the api will change. remove socket.
   (let [circ-id  42 ;; FIXME generate.
         [auth b] (hs/client-init srv-auth)]
-    (circ-add circ-id {:type :client})
+    (circ-add circ-id socket {:type :client})
     (circ-update-data circ-id [:auth] auth)
     (cell-send socket circ-id :create2 b)))
 
 (defn relay [config socket circ-id msg]
   (assert (@circuits circ-id) "cicuit does not exist") ;; FIXME this assert will probably be done elsewhere (process?)
+  ;; FIXME assert state.
   (let [circ     (@circuits circ-id)
-        crypto   (node/require "crypto")
-        iv       (.randomBytes crypto. 64)
-        aes      (.createCipheriv crypto. "aes-256" (-> circ :auth :secret) iv)
-        msg      (-> aes (.update msg) .finalise)]
+        c        (node/require "crypto")
+        iv       (.randomBytes c. 16)
+        msg      (crypto/enc-aes (-> circ :auth :secret) iv msg)]
     (cell-send socket circ-id :relay (b/cat iv msg))))
+
 
 ;; process recv ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
 ;; FIXME: these need state
 (defn recv-create2 [config conn circ-id {payload :payload len :len}]
-  (circ-add circ-id {:type :server})
+  (circ-add circ-id conn {:type :server})
   (let [{pub-B :pub node-id :id sec-b :sec} (-> config :auth :aqua-id) ;; FIXME: renaming the keys is stupid.
-        [shared-sec created]                (hs/server-reply {:pub-B pub-B :node-id node-id :sec-b sec-b} payload 72)]
+        [shared-sec created]                (hs/server-reply {:pub-B pub-B :node-id node-id :sec-b sec-b} payload 32)] ;; FIXME -> key len & iv len should be in configw
     (circ-update-data circ-id [:auth :secret] shared-sec)
-    (b/print-x shared-sec "secret:")
     (cell-send conn circ-id :created2 created)))
 
 (defn recv-created2 [config conn circ-id {payload :payload len :len}]
   (assert (@circuits circ-id) "cicuit does not exist") ;; FIXME this assert will probably be done elsewhere (process?)
   (let [auth       (:auth (@circuits circ-id))
-        shared-sec (hs/client-finalise auth payload 72)]
-    (b/print-x shared-sec "secret:")
+        shared-sec (hs/client-finalise auth payload 32)] ;; FIXME aes 256 seems to want 32 len key. seems short to me.
     (circ-update-data circ-id [:auth :secret] shared-sec)))
 
 (defn recv-relay [config conn circ-id {payload :payload len :len}]
   (assert (@circuits circ-id) "cicuit does not exist")
   ;(assert (@circuits circ-id) "cicuit does not exist") something about the len
   (let [circ     (@circuits circ-id)
-        [iv msg] (b/cut 32)
-        crypto   (node/require "crypto")
-        aes      (.createDecipheriv crypto. "aes-256" (-> circ :auth :secret) iv)
-        msg      (-> aes (.update msg) .finalise)]
+        [iv msg] (b/cut payload 16)
+        msg      (crypto/dec-aes (-> circ :auth :secret) iv msg)]
     (condp = (:type circ) ;; FIXME will be changed by app-proxy, mix, exit etc? also depends on path type, link & encr proto.
-      :server (b/print-x msg)
+      :server (println (.toString msg "ascii"))
       :client (b/print-x msg)
       (assert (= 1 0) "unsupported relay type, bad circ state, something is wrong"))))
 

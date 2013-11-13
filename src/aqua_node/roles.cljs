@@ -23,7 +23,8 @@
 (defn conn-to-dtls [config s]
   (c/add-listeners s {:data #(circ/process config s %)})
   (circ/mk-path config s {:srv-id (js/Buffer. "h00z6mIWXCPWK4Pp1AQh+oHoHs8=" "base64")
-                          :pub-B  (js/Buffer. "KYi+NX2pCOQmYnscN0K+MB+NO9A6ynKiIp41B5GlkHc=" "base64")}))
+                          :pub-B  (js/Buffer. "KYi+NX2pCOQmYnscN0K+MB+NO9A6ynKiIp41B5GlkHc=" "base64")})
+  (js/setInterval #(circ/relay config s 42 "If at first you don't succeed, you fail.") 1000))
 ;; FIXME: end placeholders.
 
 (defn is? [role roles] ;; FIXME -> when needed elsewhere move to roles

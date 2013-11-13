@@ -10,5 +10,6 @@
                         :compiler {:target :nodejs
                                    :output-to "target/aqua.js"
                                    ;:optimizations :advanced
+                                   :foreign-libs [{:file "resources/fin.js" :provides ["finalhack"]}]
                                    :optimizations :simple
                                    :pretty-print true}}]})
