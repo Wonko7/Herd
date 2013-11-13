@@ -51,7 +51,7 @@
                       (let [[s p] (c/gen-keys)]
                         (merge {:sec (echo-to (-> cfg :auth :aqua-id :sec) s)}
                                {:pub (echo-to (-> cfg :auth :aqua-id :pub) p)}
-                               {:id  (echo-to (-> cfg :auth :aqua-id :id)  (-> (node/require "crypto") (.createHash "sha256") (.update p) .digest (.slice 0 20)))})))] ;; FIXME get 20 from conf.
+                               {:id  (echo-to (-> cfg :auth :aqua-id :id)  (-> (node/require "crypto") (.createHash "sha256") (.update p) .digest (.slice 0 (-> static-conf :ntor-values :node-id-len))))})))] ;; FIXME test node len
     (swap! config merge static-conf cfg {:auth {:openssl ossl :aqua-id aqua}})))
 
 (defn get-cfg []
