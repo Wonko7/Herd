@@ -99,7 +99,9 @@
     (circ-update-data circ-id [:auth :secret] shared-sec)))
 
 (defn parse-addr [buf len] ;; this may live somewhere else.
-  (let [[r1 r2 r4] (b/mk-readers buf)
+  (let [
+        aeu (.writeUInt8 buf 0 9)
+        buf        (.toString buf "ascii") ;; FIXME 0?
         ip4-re     #"^((\d+\.){3}\d+):(\d+)$"
         ip6-re     #"^\[((\d|[a-fA-F]|:)+)\]:(\d+)$"
         dns-re     #"^(.*):(\d+)$"

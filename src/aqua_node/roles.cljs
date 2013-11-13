@@ -34,9 +34,9 @@
 
 (defn bootstrap [{roles :roles ap :app-proxy-conn aq :aqua-conn ds :dir-server :as config}]
   (let [is?   #(is? % roles)]
-    (log/debug (circ/parse-addr "123.123.97.2:1234"))
-    (log/debug (circ/parse-addr "[fe80::6267:20ff:fef0:4a0]:1234"))
-    (log/debug (circ/parse-addr "http://www.google.com:1234"))
+    (log/debug (circ/parse-addr (js/Buffer. "123.123.97.2:1234")))
+    (log/debug (circ/parse-addr (js/Buffer. "[fe80::6267:20ff:fef0:4a0]:1234"))
+    (log/debug (circ/parse-addr (js/Buffer. "http://www.google.com:1234"))
     (log/info "Bootstrapping as" roles)
     (when (some is? [:mix :entry :exit])
       (conn/new :aqua :server aq config new-dtls-conn))
