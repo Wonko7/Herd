@@ -1,6 +1,7 @@
 (ns aqua-node.circ
   (:require [cljs.core :as cljs]
             [cljs.nodejs :as node]
+            [aqua-node.log :as log]
             [aqua-node.buf :as b]
             [aqua-node.ntor :as hs]
             [aqua-node.conns :as c]
@@ -31,6 +32,10 @@
   (swap! circuits dissoc circ)
   circ) ;; FIXME think about what we could return
 
+(defn circ-destroy [circ]
+  (when (@circuits circ) ;; FIXME also send destroy cells to the path
+    (circ-rm circ)))
+
 
 ;; send cell ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
@@ -46,12 +51,13 @@
 
 ;; make requests ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
-(defn mk-path [config socket srv-auth] ;; FIXME: the api will change. remove socket.
-  (let [circ-id  42 ;; FIXME generate.
-        [auth b] (hs/client-init srv-auth)]
-    (circ-add circ-id socket {:type :client})
-    (circ-update-data circ-id [:auth] auth)
-    (cell-send socket circ-id :create2 b)))
+(defn mk-path [config socket srv-auth] ;; FIXME: the api will change. remove socket.  ;; since this looks like a good entry point, try goes here for now
+  (let [circ-id 42] ;; FIXME generate
+    (try (let [[auth b] (hs/client-init srv-auth)]
+           (circ-add circ-id socket {:type :client})
+           (circ-update-data circ-id [:auth] auth)
+           (cell-send socket circ-id :create2 b))
+         (catch js/Object e (log/c-info e (str "failed circuit creation: " circ-id) (circ-destroy circ-id))))))
 
 (defn relay [config socket circ-id msg]
   (assert (@circuits circ-id) "cicuit does not exist") ;; FIXME this assert will probably be done elsewhere (process?)
@@ -123,10 +129,8 @@
         circ-id      (r32 0)
         command      (to-cmd (r8 4))
         payload      (.slice buff 5 len)]
-    (println "---  recvd cell: id:" circ-id "cmd:" (:name command) ":" (.toString payload "hex"))
+    (log/debug "recv cell: id:" circ-id "cmd:" (:name command) ":" (.toString payload "hex"))
     (when (:fun command)
       (try
         ((:fun command) config conn  circ-id {:payload payload :len (- len 5)})
-        (catch js/Object e (do (println "/!\\  Error in circuit states:" e "circ" circ-id)
-                               ;(FIXME kill circuit)
-                               (println (.-stack e))))))))
+        (catch js/Object e (log/c-info e (str "Killed circuit " circ-id)) (circ-destroy circ-id))))))

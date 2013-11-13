@@ -8,10 +8,15 @@
 
 (def config (atom {}))
 
+(def static-conf 
+  ;; set defaults and non user stuff here.
+  {:encr  {:iv-len 16 :key-len 32}
+   :debug false})
+
 (defn read-config []
   (let [;; read config
         fs          (node/require "fs")
-        read        #(swap! config merge (reader/read-string %))
+        read        #(reader/read-string %)
         cfg         (read (.readFileSync fs "aquarc" "utf8"))
         ;; file manipulation
         cat         (fn [k auth]
@@ -34,4 +39,7 @@
                         (merge {:sec (echo-to (-> cfg :auth :aqua-id :sec) s)}
                                {:pub (echo-to (-> cfg :auth :aqua-id :pub) p)}
                                {:id  (echo-to (-> cfg :auth :aqua-id :id)  (-> (node/require "crypto") (.createHash "sha256") (.update p) .digest (.slice 0 20)))})))] ;; FIXME get 20 from conf.
-    (merge cfg {:auth {:openssl ossl :aqua-id aqua}})))
+    (swap! config merge static-conf cfg {:auth {:openssl ossl :aqua-id aqua}})))
+
+(defn get-cfg []
+  @config)
