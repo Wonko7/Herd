@@ -122,7 +122,7 @@
                           (map #(cons %1 %2) [:ip4 :ip6 :dns])
                           (filter second)
                           first)]
-      {:addr a :port p :type p})))
+      {:addr a :port p :type t})))
 
 (defn process-relay [config conn circ-id relay-data original-pl]
   (let [circ-data (@circuits circ-id)
@@ -140,7 +140,7 @@
                       (circ-update-data circ-id [:forward] (merge dest {:conn sock}));; FIXME
                       (circ-update-data circ-id [:next-hop] (merge dest {:conn sock}))
                       (log/info "forward-to:" dest)))]
-    (assert (condp = (:relay-cmd relay-data)
+    (condp = (:relay-cmd relay-data)
               1  (p-begin)
               2  (p-data)
               3  (log/error :relay-end "is an unsupported relay command")
@@ -156,7 +156,7 @@
               13 (log/error :relay-begin_dir "is an unsupported relay command")
               14 (log/error :relay-extend2 "is an unsupported relay command")
               15 (log/error :relay-extended2 "is an unsupported relay command")
-              nil))))
+              (log/error "unsupported relay command"))))
 
 ;; see tor spec 6.
 (defn recv-relay [config conn circ-id {payload :payload len :len}]

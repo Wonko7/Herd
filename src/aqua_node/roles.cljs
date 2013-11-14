@@ -20,7 +20,7 @@
       (do (b/print-x b "forwarding:")
           (circ/relay config c 42 :data b))
       (do (circ/relay-begin config c 42 dest)
-          (circ/update-data 42 [:next-hop] dest)))))
+          (circ/circ-update-data 42 [:next-hop] {:conn s})))))
 
 (defn new-dtls-conn [config s]
   (log/debug "---  new dtls conn on:" (-> s .-socket .-_destIP) (-> s .-socket .-_destPort)) ;; FIXME: investigate nil .-remote[Addr|Port]
