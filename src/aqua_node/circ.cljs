@@ -81,6 +81,14 @@
     (.copy msg data 11)
     (enc-send config socket circ-id :relay data)))
 
+;; see tor spec 6.2. 160 = ip6 ok & prefered.
+(defn relay-begin [config socket circ-id {addr :addr port :port type :type}]
+  (let [addr (if (= type :ip6) (str "[" addr "]") addr)
+        dest (str addr ":" port)
+        len  (count data)
+        dest  (b/cat (b/new dest) (b/new (cljs/clj->js [0 160 0 0 0])))]
+    (relay config socket circ-id :begin dest)))
+
 
 ;; process recv ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
@@ -119,8 +127,8 @@
         r-payload (:payload relay-data)
         p-begin (fn []
                     (assert (= :server (:type circ-data)) "relay resolve command makes no sense")
-                    (let [url (.parse (node/require "url") (.toString r-payload "ascii"))]
-                      (log/info "forward-to:" (.-host url) (.-path url) (.-port url))
+                    (let [[type addr port] (parse-addr r-payload)]
+                      (log/info "forward-to:" addr port type)
                       :state))]
     (assert (condp = (:relay-cmd relay-data)
               1  (p-begin)
