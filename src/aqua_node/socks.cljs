@@ -50,7 +50,7 @@
                                  (c/update-data [:socks :dest] {:type type :addr (to-ip) :port (to-port)})
                                  (c/update-data [:socks :state] :relay)
                                  (.removeAllListeners "data")
-                                 (c/add-listeners {:data new-conn-handler})
+                                 (c/add-listeners {:data (partial new-conn-handler c)})
                                  (.write reply)))))))]
     (if (not= socks-vers 5)
       (kill-conn c "bad socks version")

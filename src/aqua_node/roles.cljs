@@ -10,10 +10,18 @@
 
 
 ;; FIXME: the following are placeholders.
-(defn forward [b]
-  (let [[c cdata] (first (filter (fn [[c data]] (and (= (:type data) :aqua) (= (:cs data) :client))) (c/get-all)))]
-    (b/print b "recv:")
-    (.write c b)))
+(defn forward [config s b]
+  (let [[c cdata] (first (filter (fn [[c data]] (and (= (:type data) :aqua) (= (:cs data) :client))) (c/get-all)))
+        dest      (-> (c/get-data s) :socks :dest)]
+    ;(b/print-x b "recv:")
+    (log/debug :data (c/get-data s))
+    (log/debug :to dest)
+    (if (-> cdata :circuit :state :relay)
+      (do (b/print-x b "forwarding:")
+         ; (relay-data )
+          )
+      (circ/relay-begin config c 42 dest)
+      )))
 
 (defn new-dtls-conn [config s]
   (log/debug "---  new dtls conn on:" (-> s .-socket .-_destIP) (-> s .-socket .-_destPort)) ;; FIXME: investigate nil .-remote[Addr|Port]
@@ -25,8 +33,8 @@
   (c/add-listeners s {:data #(circ/process config s %)})
   (circ/mk-path config s {:srv-id (js/Buffer. "h00z6mIWXCPWK4Pp1AQh+oHoHs8=" "base64")
                           :pub-B  (js/Buffer. "KYi+NX2pCOQmYnscN0K+MB+NO9A6ynKiIp41B5GlkHc=" "base64")})
-  (js/setTimeout #(circ/relay config s 42 :begin (b/new "www.google.com:80")) 1000))
-  ;(js/setInterval#(circ/relay config s 42 :data "If at first you don't succeed, you fail.")  1000))
+  ;(js/setInterval#(circ/relay config s 42 :data "If at first you don't succeed, you fail.")  1000)
+  )
 ;; FIXME: end placeholders.
 
 (defn is? [role roles] ;; FIXME -> when needed elsewhere move to roles
@@ -34,9 +42,6 @@
 
 (defn bootstrap [{roles :roles ap :app-proxy-conn aq :aqua-conn ds :dir-server :as config}]
   (let [is?   #(is? % roles)]
-    (log/debug (circ/parse-addr (js/Buffer. "123.123.97.2:1234")))
-    (log/debug (circ/parse-addr (js/Buffer. "[fe80::6267:20ff:fef0:4a0]:1234")))
-    (log/debug (circ/parse-addr (js/Buffer. "http://www.google.com:1234")))
     (log/info "Bootstrapping as" roles)
     (when (some is? [:mix :entry :exit])
       (conn/new :aqua :server aq config new-dtls-conn))
