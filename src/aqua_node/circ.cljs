@@ -5,7 +5,8 @@
             [aqua-node.buf :as b]
             [aqua-node.ntor :as hs]
             [aqua-node.conns :as c]
-            [aqua-node.crypto :as crypto]))
+            [aqua-node.crypto :as crypto]
+            [aqua-node.conn-mgr :as conn]))
 
 (declare from-relay-cmd from-cmd to-cmd)
 
@@ -85,7 +86,7 @@
 (defn relay-begin [config socket circ-id {addr :addr port :port type :type}]
   (let [addr (if (= type :ip6) (str "[" addr "]") addr)
         dest (str addr ":" port)
-        len  (count data)
+        len  (count dest)
         dest  (b/cat (b/new dest) (b/new (cljs/clj->js [0 160 0 0 0])))]
     (relay config socket circ-id :begin dest)))
 
@@ -106,7 +107,7 @@
         shared-sec (hs/client-finalise auth payload 32)] ;; FIXME aes 256 seems to want 32 len key. seems short to me.
     (circ-update-data circ-id [:auth :secret] shared-sec)))
 
-(defn parse-addr [buf len]
+(defn parse-addr [buf]
   (let [z            (->> (range (.-length buf))
                           (map #(when (= 0 (.readUInt8 buf %)) %))
                           (some identity))]
@@ -116,23 +117,32 @@
           ip6-re     #"^\[((\d|[a-fA-F]|:)+)\]:(\d+)$"
           dns-re     #"^(.*):(\d+)$"
           re         #(let [res (cljs/js->clj (.match %2 %1))]
-                        [(nth res %3) (nth res %4)])]
-      (->> [(re ip4-re buf 1 3) (re ip6-re buf 1 3) (re dns-re buf 1 2)]
-           (map #(cons %1 %2) [:ip4 :ip6 :dns])
-           (filter second)
-           first))))
+                        [(nth res %3) (nth res %4)])
+          [t a p]    (->> [(re ip4-re buf 1 3) (re ip6-re buf 1 3) (re dns-re buf 1 2)]
+                          (map #(cons %1 %2) [:ip4 :ip6 :dns])
+                          (filter second)
+                          first)]
+      {:addr a :port p :type p})))
 
 (defn process-relay [config conn circ-id relay-data original-pl]
   (let [circ-data (@circuits circ-id)
         r-payload (:payload relay-data)
-        p-begin (fn []
+        p-data    (fn []
+                    (let [dest (-> circ-data :next-hop :conn)]
+                      (if dest
+                        (.write dest (:payload relay-data))
+                        (log/ingo "no destination, dropping"))))
+        p-begin   (fn []
                     (assert (= :server (:type circ-data)) "relay resolve command makes no sense")
-                    (let [[type addr port] (parse-addr r-payload)]
-                      (log/info "forward-to:" addr port type)
-                      :state))]
+                    (let [dest (parse-addr r-payload)
+                          sock (conn/new :tcp :client dest config (fn [config socket buf]
+                                                                    (relay config conn circ-id :data buf)))]
+                      (circ-update-data circ-id [:forward] (merge dest {:conn sock}));; FIXME
+                      (circ-update-data circ-id [:next-hop] (merge dest {:conn sock}))
+                      (log/info "forward-to:" dest)))]
     (assert (condp = (:relay-cmd relay-data)
               1  (p-begin)
-              2  (log/error :relay-data "is an unsupported relay command")
+              2  (p-data)
               3  (log/error :relay-end "is an unsupported relay command")
               4  (log/error :relay-connected "is an unsupported relay command")
               5  (log/error :relay-sendme "is an unsupported relay command")
