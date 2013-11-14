@@ -98,19 +98,21 @@
         shared-sec (hs/client-finalise auth payload 32)] ;; FIXME aes 256 seems to want 32 len key. seems short to me.
     (circ-update-data circ-id [:auth :secret] shared-sec)))
 
-(defn parse-addr [buf len] ;; this may live somewhere else.
-  (let [
-        aeu (.writeUInt8 buf 0 9)
-        buf        (.toString buf "ascii") ;; FIXME 0?
-        ip4-re     #"^((\d+\.){3}\d+):(\d+)$"
-        ip6-re     #"^\[((\d|[a-fA-F]|:)+)\]:(\d+)$"
-        dns-re     #"^(.*):(\d+)$"
-        re         #(let [res (cljs/js->clj (.match %2 %1))]
-                      [(nth res %3) (nth res %4)])]
-    (->> [(re ip4-re buf 1 3) (re ip6-re buf 1 3) (re dns-re buf 1 2)]
-         (map #(cons %1 %2) [:ip4 :ip6 :dns])
-         (filter second)
-         first)))
+(defn parse-addr [buf len]
+  (let [z            (->> (range (.-length buf))
+                          (map #(when (= 0 (.readUInt8 buf %)) %))
+                          (some identity))]
+    (assert z "bad buffer: no zero delimiter")
+    (let [buf        (.toString buf "ascii" 0 z)
+          ip4-re     #"^((\d+\.){3}\d+):(\d+)$"
+          ip6-re     #"^\[((\d|[a-fA-F]|:)+)\]:(\d+)$"
+          dns-re     #"^(.*):(\d+)$"
+          re         #(let [res (cljs/js->clj (.match %2 %1))]
+                        [(nth res %3) (nth res %4)])]
+      (->> [(re ip4-re buf 1 3) (re ip6-re buf 1 3) (re dns-re buf 1 2)]
+           (map #(cons %1 %2) [:ip4 :ip6 :dns])
+           (filter second)
+           first))))
 
 (defn process-relay [config conn circ-id relay-data original-pl]
   (let [circ-data (@circuits circ-id)
