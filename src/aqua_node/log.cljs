@@ -16,11 +16,11 @@
   (when (dbg?)
     (apply println (cons "###" msgs))))
 
-(defn c-error [error message & [return-value]]
+(defn c-error [err message & [return-value]]
   (error message)
   (when (dbg?)
-    (println error)
-    (println (.-stack error)))
+    (println err)
+    (println (.-stack err)))
   return-value)
 
 (defn c-info [error message & [return-value]]
