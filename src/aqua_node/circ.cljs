@@ -115,10 +115,11 @@
     (let [buf        (.toString buf "ascii" 0 z)
           ip4-re     #"^((\d+\.){3}\d+):(\d+)$"
           ip6-re     #"^\[((\d|[a-fA-F]|:)+)\]:(\d+)$"
-          dns-re     #"^(.*):(\d+)$"
+          dns-p      #(let [u (.parse (node/require "url") %)]
+                        [(.-hostname u) (.-port u)])
           re         #(let [res (cljs/js->clj (.match %2 %1))]
                         [(nth res %3) (nth res %4)])
-          [t a p]    (->> [(re ip4-re buf 1 3) (re ip6-re buf 1 3) (re dns-re buf 1 2)]
+          [t a p]    (->> [(re ip4-re buf 1 3) (re ip6-re buf 1 3) (dns-p buf)]
                           (map cons [:ip4 :ip6 :dns])
                           (filter second)
                           first)]
