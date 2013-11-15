@@ -14,7 +14,7 @@
         new-tcp-c (fn [] (let [socket (.connect (node/require "net") (cljs/clj->js {:host (:addr conn) :port (:port conn)}))]
                            (log/error conn {:host (:addr conn) :port (:port conn)})
                            (.on socket "data" (partial handle socket))
-                           socket))] ;; FIXME does .on return the socket?
+                           socket))]
     (cond (is? :socks :server) (socks/create-server conn handle)
           (is? :aqua  :server) (dtls/create-server conn config handle)
           (is? :aqua  :client) (dtls/connect conn config handle)

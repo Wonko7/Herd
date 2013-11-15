@@ -13,13 +13,10 @@
 (defn forward [config s b]
   (let [[c cdata] (first (filter (fn [[c data]] (and (= (:type data) :aqua) (= (:cs data) :client))) (c/get-all)))
         dest      (-> (c/get-data s) :socks :dest)]
-    ;(b/print-x b "recv:")
-    (log/debug :data (c/get-data s))
-    (log/debug :to dest)
     (if (-> cdata :circuit :state :relay)
-      (do (b/print-x b "forwarding:")
-          (circ/relay config c 42 :data b))
-      (do (circ/relay-begin config c 42 dest)
+      (do (circ/relay config c 42 :data b))
+      (do (c/update-data c [:circuit :state :relay] true)
+          (circ/relay-begin config c 42 dest)
           (circ/circ-update-data 42 [:next-hop] {:conn s})))))
 
 (defn new-dtls-conn [config s]

@@ -87,7 +87,7 @@
   (let [addr (if (= type :ip6) (str "[" addr "]") addr)
         dest (str addr ":" port)
         len  (count dest)
-        dest  (b/cat (b/new dest) (b/new (cljs/clj->js [0 160 0 0 0])))]
+        dest (b/cat (b/new dest) (b/new (cljs/clj->js [0 160 0 0 0])))]
     (relay config socket circ-id :begin dest)))
 
 
@@ -131,11 +131,12 @@
                     (let [dest (-> circ-data :next-hop :conn)]
                       (if dest
                         (.write dest (:payload relay-data))
-                        (log/ingo "no destination, dropping"))))
+                        (log/info "no destination, dropping"))))
         p-begin   (fn []
-                    (assert (= :server (:type circ-data)) "relay resolve command makes no sense")
+                    (assert (= :server (:type circ-data)) "relay begin command makes no sense")
                     (let [dest (parse-addr r-payload)
                           sock (conn/new :tcp :client dest config (fn [config socket buf]
+                                                                    (log/debug :content (.toString buf))
                                                                     (relay config conn circ-id :data buf)))]
                       (circ-update-data circ-id [:forward] (merge dest {:conn sock}));; FIXME
                       (circ-update-data circ-id [:next-hop] (merge dest {:conn sock}))
@@ -223,7 +224,7 @@
         circ-id      (r32 0)
         command      (to-cmd (r8 4))
         payload      (.slice buff 5 len)]
-    (log/debug "recv cell: id:" circ-id "cmd:" (:name command) ":" (.toString payload "hex"))
+    (log/debug "recv cell: id:" circ-id "cmd:" (:name command))
     (when (:fun command)
       (try
         ((:fun command) config conn  circ-id {:payload payload :len (- len 5)})
