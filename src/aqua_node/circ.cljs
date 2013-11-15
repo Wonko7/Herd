@@ -136,7 +136,6 @@
                     (assert (= :server (:type circ-data)) "relay begin command makes no sense")
                     (let [dest (parse-addr r-payload)
                           sock (conn/new :tcp :client dest config (fn [config socket buf]
-                                                                    (log/debug :content (.toString buf))
                                                                     (relay config conn circ-id :data buf)))]
                       (circ-update-data circ-id [:forward] (merge dest {:conn sock}));; FIXME
                       (circ-update-data circ-id [:next-hop] (merge dest {:conn sock}))
