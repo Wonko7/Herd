@@ -122,7 +122,7 @@
                           (map #(cons %1 %2) [:ip4 :ip6 :dns])
                           (filter second)
                           first)]
-      {:addr a :port p :type t})))
+      {:type t :addr a :port p})))
 
 (defn process-relay [config conn circ-id relay-data original-pl]
   (let [circ-data (@circuits circ-id)
