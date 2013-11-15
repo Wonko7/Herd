@@ -119,7 +119,7 @@
           re         #(let [res (cljs/js->clj (.match %2 %1))]
                         [(nth res %3) (nth res %4)])
           [t a p]    (->> [(re ip4-re buf 1 3) (re ip6-re buf 1 3) (re dns-re buf 1 2)]
-                          (map #(cons %1 %2) [:ip4 :ip6 :dns])
+                          (map cons [:ip4 :ip6 :dns])
                           (filter second)
                           first)]
       {:type t :addr a :port p})))
