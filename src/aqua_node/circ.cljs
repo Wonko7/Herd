@@ -70,7 +70,7 @@
     (try (let [[auth b] (hs/client-init srv-auth)]
            (add circ-id socket {:type :app-proxy})
            (update-data circ-id [:auth] auth)
-           (cell-send socket circ-id :create2 b)
+           (cell-send socket circ-id :create2 b) ;; FIXME missing create2 headers
            circ-id)
          (catch js/Object e (log/c-info e (str "failed circuit creation: " circ-id) (destroy circ-id))))))
 
@@ -84,8 +84,7 @@
     (cell-send socket circ-id circ-cmd (b/cat iv msg))))
 
 (defn- relay [config socket circ-id relay-cmd msg]
-  (let [circ         (@circuits circ-id)
-        pl-len       (.-length msg)
+  (let [pl-len       (.-length msg)
         data         (b/new (+ pl-len 11))
         [w8 w16 w32] (b/mk-writers data)]
     (w8 (from-relay-cmd relay-cmd) 0)
@@ -109,11 +108,23 @@
 (defn relay-data [config circ-id data]
   (relay config (:conn (@circuits circ-id)) circ-id :data data))
 
+;; see tor spec 5.1.2.
+;; lstype hardcoded to our link specifier. this will change. we are adding links:
+;; 03 = ip4 4 | port 2 -> reliable (tcp) routed over udp & dtls
+;; 04 = ip6 16 | port 2 -> reliable (tcp) routed over udp & dtls
+;; 05 = ip6 16 | port 2 -> unreliable (udp) routed over dtls
+;; 06 = ip6 16 | port 2 -> unreliable (udp) routed over dtls
+(defn relay-extend [config circ-id next-hop]
+  (let [data   (@circuits circ-id)
+        socket (:conn data)
+        hs-data (go see create2)
+        header (b/new (cljs/clj->js [1 1 1 3]))]
+  ))
+
 
 ;; process recv ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
-;; FIXME: these need state
-(defn recv-create2 [config conn circ-id {payload :payload len :len}]
+(defn recv-create2 [config conn circ-id {payload :payload len :len}] ;; FIXME this will be a sub function of the actual recv create2
   (add circ-id conn {:type :server})
   (let [{pub-B :pub node-id :id sec-b :sec} (-> config :auth :aqua-id) ;; FIXME: renaming the keys is stupid.
         [shared-sec created]                (hs/server-reply {:pub-B pub-B :node-id node-id :sec-b sec-b} payload 32)] ;; FIXME -> key len & iv len should be in configw
