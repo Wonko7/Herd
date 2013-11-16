@@ -33,8 +33,8 @@
                              host-type (r8 3)
                              reply     (js/Buffer. len)
                              [too-short? type to-port to-ip] (condp = host-type
-                                                               1 [(< len 10) :ipv4 #(r16 8)  #(->> (range 4 8) (map r8) (interpose ".") (apply str))]
-                                                               4 [(< len 5)  :ipv6 #(r16 20) #(->> (.toString data "hex" 4 20) (partition 4) (interpose [\:]) (apply concat) (apply str))]
+                                                               1 [(< len 10) :ip4 #(r16 8)  #(->> (range 4 8) (map r8) (interpose ".") (apply str))]
+                                                               4 [(< len 5)  :ip6 #(r16 20) #(->> (.toString data "hex" 4 20) (partition 4) (interpose [\:]) (apply concat) (apply str))]
                                                                3 (let [ml?  (>= len 5)
                                                                        alen (when ml? (r8 4))
                                                                        aend (when ml? (+ alen 5))]
