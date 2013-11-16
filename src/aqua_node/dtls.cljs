@@ -5,7 +5,7 @@
             [aqua-node.conns :as c]))
 
 (defn mk-dtls [config dest]
-  [(node/require "nodedtls") (cljs/clj->js (merge (-> config :auth :openssl) (select-keys dest :host :port)))])
+  [(node/require "nodedtls") (cljs/clj->js (merge (-> config :auth :openssl) (select-keys dest [:host :port])))])
 
 (defn create-server [{host :host port :port :as dest} config new-conn-handler]
   (let [[dtls opts] (mk-dtls config dest)

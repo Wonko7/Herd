@@ -11,7 +11,7 @@
   (-> conn c/rm .destroy))
 
 ;; FIXME: most kill-conns should be wait for more data.
-(defn socks-recv [c new-conn-handler data] ;; FIXME: either call data-handler if socks still needs processing when forwarding data, or remove all listeners when connection is ready and add the given listener.
+(defn socks-recv [c data-handler init-handle data]
   (let [len        (.-length data)
         [r8 r16]   (b/mk-readers data)
         socks-vers (r8 0)
@@ -46,12 +46,13 @@
                            (kill-conn c "bad request command")
                            (if too-short? ;; to-[ip/port] are functions to avoid executing the code if not enough data
                              (kill-conn c (str "not enough data. conn type: " type))
-                             (-> c
-                                 (c/update-data [:socks :dest] {:type type :host (to-ip) :port (to-port)})
-                                 (c/update-data [:socks :state] :relay)
-                                 (.removeAllListeners "data")
-                                 (c/add-listeners {:data (partial new-conn-handler c)})
-                                 (.write reply)))))))]
+                             (let [dest {:type type :host (to-ip) :port (to-port)}]
+                               (init-handle c dest)
+                               (-> c
+                                   (c/update-data [:socks] {:dest dest, :state :relay})
+                                   (.removeAllListeners "data")
+                                   (c/add-listeners {:data (partial data-handler c)})
+                                   (.write reply))))))))]
     (if (not= socks-vers 5)
       (kill-conn c "bad socks version")
       (condp = state
@@ -59,7 +60,7 @@
         :request     (request c data)
         (kill-conn c)))))
 
-(defn create-server [{host :host port :port} new-conn-handler]
+(defn create-server [{host :host port :port} data-handler init-handle]
   (let [net     (node/require "net")
         srv     (.createServer net (fn [c]
                                      (log/debug "App-Proxy: new connection on:" (-> c .address .-ip) (-> c .address .-port))
@@ -67,7 +68,7 @@
                                          (c/add {:cs :remote-client :type :socks :socks {:state :handshake}})
                                          (c/add-listeners {:end   #(log/debug "App-Proxy: connection end")
                                                            :error kill-conn
-                                                           :data  #(socks-recv c new-conn-handler %)}))))
+                                                           :data  #(socks-recv c data-handler init-handle %)}))))
         new-srv #(log/info "App-Proxy listening on:" (-> srv .address .-ip) (-> srv .address .-port))]
     (if host
       (.listen srv port host new-srv)

@@ -102,6 +102,7 @@
         dest   (str host ":" port)
         len    (count dest)
         dest   (b/cat (b/new dest) (b/new (cljs/clj->js [0 160 0 0 0])))]
+    (circ-update-data circ-id [:circuit :state :relay] true) ;; FIXME this should be done on r-begin ack. temp.
     (relay config socket circ-id :begin dest)))
 
 (defn relay-data [config circ-id data]
@@ -146,7 +147,7 @@
   (let [circ-data (@circuits circ-id)
         r-payload (:payload relay-data)
         p-data    (fn []
-                    (let [dest (-> circ-data :next-hop :conn)]
+                    (let [dest (-> circ-data :exit-hop :conn)]
                       (assert dest "no destination, illegal state")
                       (.write dest (:payload relay-data))))
         p-begin   (fn []
@@ -154,8 +155,7 @@
                     (let [dest (parse-addr r-payload)
                           sock (conn/new :tcp :client dest config (fn [config socket buf]
                                                                     (relay config conn circ-id :data buf)))]
-                      (circ-update-data circ-id [:forward] (merge dest {:conn sock}));; FIXME
-                      (circ-update-data circ-id [:next-hop] (merge dest {:conn sock}))
+                      (circ-update-data circ-id [:exit-hop] (merge dest {:conn sock}))
                       (log/info "forward-to:" dest)))]
     (condp = (:relay-cmd relay-data)
               1  (p-begin)
