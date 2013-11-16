@@ -1,7 +1,7 @@
 {:roles [:mix :exit :entry :app-proxy]
- :aqua-conn {:addr "127.0.0.1"
+ :aqua-conn {:host "127.0.0.1"
              :port 6669}
- :app-proxy-conn {:addr "127.0.0.1"
+ :app-proxy-conn {:host "127.0.0.1"
                   :port 6666}
  :auth {:openssl {:cert "auth/public/cert.pem"
                   :key  "auth/secret/key.pem"

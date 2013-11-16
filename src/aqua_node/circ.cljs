@@ -96,10 +96,10 @@
     (enc-send config socket circ-id :relay data)))
 
 ;; see tor spec 6.2. 160 = ip6 ok & prefered.
-(defn relay-begin [config circ-id {addr :addr port :port type :type}]
+(defn relay-begin [config circ-id {host :host port :port type :type}]
   (let [socket (:conn (@circuits circ-id))
-        addr   (if (= type :ip6) (str "[" addr "]") addr)
-        dest   (str addr ":" port)
+        host   (if (= type :ip6) (str "[" host "]") host)
+        dest   (str host ":" port)
         len    (count dest)
         dest   (b/cat (b/new dest) (b/new (cljs/clj->js [0 160 0 0 0])))]
     (relay config socket circ-id :begin dest)))
@@ -140,7 +140,7 @@
                           (map cons [:ip4 :ip6 :dns])
                           (filter second)
                           first)]
-      {:type t :addr a :port p})))
+      {:type t :host a :port p})))
 
 (defn process-relay [config conn circ-id relay-data original-pl]
   (let [circ-data (@circuits circ-id)

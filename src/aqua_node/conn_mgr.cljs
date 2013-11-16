@@ -11,8 +11,7 @@
   (let [conn-info (merge conn {:type type :cs cs})
         is?       #(and (= %2 cs) (= %1 type))
         handle    (partial handle config)
-        new-tcp-c (fn [] (let [socket (.connect (node/require "net") (cljs/clj->js {:host (:addr conn) :port (:port conn)}))]
-                           (log/error conn {:host (:addr conn) :port (:port conn)})
+        new-tcp-c (fn [] (let [socket (.connect (node/require "net") (cljs/clj->js (select-keys conn :host :port))))]
                            (.on socket "data" (partial handle socket))
                            socket))]
     (cond (is? :socks :server) (socks/create-server conn handle)
