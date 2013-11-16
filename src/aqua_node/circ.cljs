@@ -35,6 +35,7 @@
 
 (defn circ-destroy [circ]
   (when (@circuits circ) ;; FIXME also send destroy cells to the path
+    (log/info "destroying circuit" circ)
     (circ-rm circ)))
 
 (defn get-all []
@@ -154,7 +155,9 @@
                     (assert (= :server (:type circ-data)) "relay begin command makes no sense")
                     (let [dest (parse-addr r-payload)
                           sock (conn/new :tcp :client dest config (fn [config socket buf]
-                                                                    (relay config conn circ-id :data buf)))]
+                                                                    (relay config conn circ-id :data buf)
+                                                                    (c/add-listeners socket {:error #(do (c/rm socket)
+                                                                                                         (circ-destroy circ-id))})))]
                       (circ-update-data circ-id [:exit-hop] (merge dest {:conn sock}))
                       (log/info "forward-to:" dest)))]
     (condp = (:relay-cmd relay-data)
