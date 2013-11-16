@@ -21,30 +21,30 @@
 
 (def circuits (atom {}))
 
-(defn circ-add [circ-id conn & [state]]
+(defn add [circ-id conn & [state]]
   (assert (nil? (@circuits circ-id)) (str "could not create circuit, " circ-id " already exists"))
   (swap! circuits merge {circ-id (merge state {:conn conn})}))
 
-(defn circ-update-data [circ keys subdata]
+(defn update-data [circ keys subdata]
   (swap! circuits assoc-in (cons circ keys) subdata)
   circ)
 
-(defn circ-rm [circ]
+(defn rm [circ]
   (swap! circuits dissoc circ)
   circ)
 
-(defn circ-destroy [circ]
+(defn destroy [circ]
   (when (@circuits circ) ;; FIXME also send destroy cells to the path
     (log/info "destroying circuit" circ)
-    (circ-rm circ)))
+    (rm circ)))
 
 (defn get-all []
   @circuits)
 
-(defn circ-get [id]
+(defn get-data [id]
   (@circuits id))
 
-(defn gen-circ-id [] ;; FIXME temporary, it might be interesting to use something that guarantees an answer instead of an infinite loop. yeah.
+(defn gen-id [] ;; FIXME temporary, it might be interesting to use something that guarantees an answer instead of an infinite loop. yeah.
   (let [i (-> (node/require "crypto") (.randomBytes 4) (.readUInt32BE 0) (bit-clear 31))]
     (if (@circuits i)
       (recur)
@@ -66,13 +66,13 @@
 ;; make requests ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
 (defn mk-hop [config socket srv-auth] ;; FIXME: the api will change. remove socket.  ;; since this looks like a good entry point, try goes here for now
-  (let [circ-id (gen-circ-id)] ;; FIXME generate
+  (let [circ-id (gen-id)] ;; FIXME generate
     (try (let [[auth b] (hs/client-init srv-auth)]
-           (circ-add circ-id socket {:type :app-proxy})
-           (circ-update-data circ-id [:auth] auth)
+           (add circ-id socket {:type :app-proxy})
+           (update-data circ-id [:auth] auth)
            (cell-send socket circ-id :create2 b)
            circ-id)
-         (catch js/Object e (log/c-info e (str "failed circuit creation: " circ-id) (circ-destroy circ-id))))))
+         (catch js/Object e (log/c-info e (str "failed circuit creation: " circ-id) (destroy circ-id))))))
 
 (defn- enc-send [config socket circ-id circ-cmd msg]
   (assert (@circuits circ-id) "cicuit does not exist") ;; FIXME this assert will probably be done elsewhere (process?)
@@ -103,7 +103,7 @@
         dest   (str host ":" port)
         len    (count dest)
         dest   (b/cat (b/new dest) (b/new (cljs/clj->js [0 160 0 0 0])))]
-    (circ-update-data circ-id [:circuit :state :relay] true) ;; FIXME this should be done on r-begin ack. temp.
+    (update-data circ-id [:circuit :state :relay] true) ;; FIXME this should be done on r-begin ack. temp.
     (relay config socket circ-id :begin dest)))
 
 (defn relay-data [config circ-id data]
@@ -114,17 +114,17 @@
 
 ;; FIXME: these need state
 (defn recv-create2 [config conn circ-id {payload :payload len :len}]
-  (circ-add circ-id conn {:type :server})
+  (add circ-id conn {:type :server})
   (let [{pub-B :pub node-id :id sec-b :sec} (-> config :auth :aqua-id) ;; FIXME: renaming the keys is stupid.
         [shared-sec created]                (hs/server-reply {:pub-B pub-B :node-id node-id :sec-b sec-b} payload 32)] ;; FIXME -> key len & iv len should be in configw
-    (circ-update-data circ-id [:auth :secret] shared-sec)
+    (update-data circ-id [:auth :secret] shared-sec)
     (cell-send conn circ-id :created2 created)))
 
 (defn recv-created2 [config conn circ-id {payload :payload len :len}]
   (assert (@circuits circ-id) "cicuit does not exist") ;; FIXME this assert will probably be done elsewhere (process?)
   (let [auth       (:auth (@circuits circ-id))
         shared-sec (hs/client-finalise auth payload 32)] ;; FIXME aes 256 seems to want 32 len key. seems short to me.
-    (circ-update-data circ-id [:auth :secret] shared-sec)))
+    (update-data circ-id [:auth :secret] shared-sec)))
 
 (defn parse-addr [buf]
   (let [z            (->> (range (.-length buf))
@@ -157,8 +157,8 @@
                           sock (conn/new :tcp :client dest config (fn [config socket buf]
                                                                     (relay config conn circ-id :data buf)
                                                                     (c/add-listeners socket {:error #(do (c/rm socket)
-                                                                                                         (circ-destroy circ-id))})))]
-                      (circ-update-data circ-id [:exit-hop] (merge dest {:conn sock}))
+                                                                                                         (destroy circ-id))})))]
+                      (update-data circ-id [:exit-hop] (merge dest {:conn sock}))
                       (log/info "forward-to:" dest)))]
     (condp = (:relay-cmd relay-data)
               1  (p-begin)
@@ -247,4 +247,4 @@
     (when (:fun command)
       (try
         ((:fun command) config conn  circ-id {:payload payload :len (- len 5)})
-        (catch js/Object e (log/c-info e (str "Killed circuit " circ-id)) (circ-destroy circ-id))))))
+        (catch js/Object e (log/c-info e (str "Killed circuit " circ-id)) (destroy circ-id))))))

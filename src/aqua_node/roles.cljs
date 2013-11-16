@@ -13,11 +13,11 @@
   (let [[circ-id circ-data] (first (circ/get-all))] ;; FIXME -> choose (based on...?) or create circuit
     (c/update-data socket [:circuit] circ-id)
     (circ/relay-begin config circ-id dest)
-    (circ/circ-update-data circ-id [:exit-hop :conn] socket)))
+    (circ/update-data circ-id [:exit-hop :conn] socket)))
 
 (defn app-proxy-forward [config s b]
   (let [circ-id   (:circuit (c/get-data s))
-        circ-data (circ/circ-get circ-id)]
+        circ-data (circ/get-data circ-id)]
     (if (-> circ-data :circuit :state :relay)
       (circ/relay-data config circ-id b)
       (log/info "not ready for data, dropping on circuit" circ-id))))
