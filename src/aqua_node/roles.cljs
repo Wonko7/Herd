@@ -9,29 +9,25 @@
             [aqua-node.conn-mgr :as conn]))
 
 
-;; FIXME: the following are placeholders.
-(defn forward [config s b]
-  (let [[c cdata] (first (filter (fn [[c data]] (and (= (:type data) :aqua) (= (:cs data) :client))) (c/get-all)))
-        dest      (-> (c/get-data s) :socks :dest)]
-    (if (-> cdata :circuit :state :relay)
-      (do (circ/relay config c 42 :data b))
-      (do (c/update-data c [:circuit :state :relay] true)
-          (circ/relay-begin config c 42 dest)
-          (circ/circ-update-data 42 [:next-hop] {:conn s})))))
+(defn app-proxy-forward [config s b]
+  (let [[circ-id circ-data] (first (circ/get-all))]
+    (if (-> circ-data :circuit :state :relay)
+      (do (circ/relay-data config circ-id b))
+      (do (circ/circ-update-data circ-id [:circuit :state :relay] true) ;; and this should be done on r-begin ack.
+          (circ/relay-begin config circ-id (-> (c/get-data s) :socks :dest)) ;; this should be done as soon as dest recv'd on AP.
+          (circ/circ-update-data circ-id [:next-hop] {:conn s})))))
 
-(defn new-dtls-conn [config s]
-  (log/debug "---  new dtls conn on:" (-> s .-socket .-_destIP) (-> s .-socket .-_destPort)) ;; FIXME: investigate nil .-remote[Addr|Port]
+(defn aqua-server-recv [config s]
+  (log/debug "new dtls conn on:" (-> s .-socket .-_destIP) (-> s .-socket .-_destPort)) ;; FIXME: investigate nil .-remote[Addr|Port]
   (c/add-listeners s {:data #(circ/process config s %)}))
 
-(def i (atom 0))
-
-(defn conn-to-dtls [config s]
+(defn aqua-client-recv [config s]
   (c/add-listeners s {:data #(circ/process config s %)})
-  (circ/mk-path config s {:srv-id (js/Buffer. "h00z6mIWXCPWK4Pp1AQh+oHoHs8=" "base64")
-                          :pub-B  (js/Buffer. "KYi+NX2pCOQmYnscN0K+MB+NO9A6ynKiIp41B5GlkHc=" "base64")})
-  ;(js/setInterval#(circ/relay config s 42 :data "If at first you don't succeed, you fail.")  1000)
-  )
-;; FIXME: end placeholders.
+  ;; this is temporary:
+  (circ/mk-hop config s {:srv-id (js/Buffer. "h00z6mIWXCPWK4Pp1AQh+oHoHs8=" "base64")
+                         :pub-B  (js/Buffer. "KYi+NX2pCOQmYnscN0K+MB+NO9A6ynKiIp41B5GlkHc=" "base64")}))
+
+;(js/setInterval#(circ/relay config s 42 :data "If at first you don't succeed, you fail.")  1000)
 
 (defn is? [role roles] ;; FIXME -> when needed elsewhere move to roles
   (some #(= role %) roles))
@@ -40,10 +36,10 @@
   (let [is?   #(is? % roles)]
     (log/info "Bootstrapping as" roles)
     (when (some is? [:mix :entry :exit])
-      (conn/new :aqua :server aq config new-dtls-conn))
+      (conn/new :aqua :server aq config aqua-server-recv))
     (when (is? :app-proxy)
-      (conn/new :socks :server ap config forward)
+      (conn/new :socks :server ap config app-proxy-forward)
       ;; the following will be covered by conn-to all known nodes --> sooooon
-      (conn/new :aqua  :client ds config conn-to-dtls))
+      (conn/new :aqua  :client ds config aqua-client-recv))
     (when (and false (not (is? :dir-server))) ;; dir-servs also need to connect to other dir-sers, we'll see about that when we get there.
       (conn/new :aqua  :client ds config get-dir-info))))

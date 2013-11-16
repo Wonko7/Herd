@@ -37,6 +37,18 @@
   (when (@circuits circ) ;; FIXME also send destroy cells to the path
     (circ-rm circ)))
 
+(defn get-all []
+  @circuits)
+
+(defn circ-get [id]
+  (@circuits id))
+
+(defn gen-circ-id [] ;; FIXME temporary, it might be interesting to use something that guarantees an answer instead of an infinite loop. yeah.
+  (let [i (-> (node/require "crypto") (.randomBytes 4) (.readUInt32BE 0) (bit-clear 31))]
+    (if (@circuits i)
+      (recur)
+      i)))
+
 
 ;; send cell ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
@@ -52,15 +64,16 @@
 
 ;; make requests ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
-(defn mk-path [config socket srv-auth] ;; FIXME: the api will change. remove socket.  ;; since this looks like a good entry point, try goes here for now
-  (let [circ-id 42] ;; FIXME generate
+(defn mk-hop [config socket srv-auth] ;; FIXME: the api will change. remove socket.  ;; since this looks like a good entry point, try goes here for now
+  (let [circ-id (gen-circ-id)] ;; FIXME generate
     (try (let [[auth b] (hs/client-init srv-auth)]
-           (circ-add circ-id socket {:type :client})
+           (circ-add circ-id socket {:type :app-proxy})
            (circ-update-data circ-id [:auth] auth)
-           (cell-send socket circ-id :create2 b))
+           (cell-send socket circ-id :create2 b)
+           circ-id)
          (catch js/Object e (log/c-info e (str "failed circuit creation: " circ-id) (circ-destroy circ-id))))))
 
-(defn enc-send [config socket circ-id circ-cmd msg]
+(defn- enc-send [config socket circ-id circ-cmd msg]
   (assert (@circuits circ-id) "cicuit does not exist") ;; FIXME this assert will probably be done elsewhere (process?)
   ;; FIXME assert state.
   (let [circ     (@circuits circ-id)
@@ -69,7 +82,7 @@
         msg      (crypto/enc-aes (-> circ :auth :secret) iv msg)]
     (cell-send socket circ-id circ-cmd (b/cat iv msg))))
 
-(defn relay [config socket circ-id relay-cmd msg]
+(defn- relay [config socket circ-id relay-cmd msg]
   (let [circ         (@circuits circ-id)
         pl-len       (.-length msg)
         data         (b/new (+ pl-len 11))
@@ -83,12 +96,16 @@
     (enc-send config socket circ-id :relay data)))
 
 ;; see tor spec 6.2. 160 = ip6 ok & prefered.
-(defn relay-begin [config socket circ-id {addr :addr port :port type :type}]
-  (let [addr (if (= type :ip6) (str "[" addr "]") addr)
-        dest (str addr ":" port)
-        len  (count dest)
-        dest (b/cat (b/new dest) (b/new (cljs/clj->js [0 160 0 0 0])))]
+(defn relay-begin [config circ-id {addr :addr port :port type :type}]
+  (let [socket (:conn (@circuits circ-id))
+        addr   (if (= type :ip6) (str "[" addr "]") addr)
+        dest   (str addr ":" port)
+        len    (count dest)
+        dest   (b/cat (b/new dest) (b/new (cljs/clj->js [0 160 0 0 0])))]
     (relay config socket circ-id :begin dest)))
+
+(defn relay-data [config circ-id data]
+  (relay config (:conn (@circuits circ-id)) circ-id :data data))
 
 
 ;; process recv ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
@@ -130,9 +147,8 @@
         r-payload (:payload relay-data)
         p-data    (fn []
                     (let [dest (-> circ-data :next-hop :conn)]
-                      (if dest
-                        (.write dest (:payload relay-data))
-                        (log/info "no destination, dropping"))))
+                      (assert dest "no destination, illegal state")
+                      (.write dest (:payload relay-data))))
         p-begin   (fn []
                     (assert (= :server (:type circ-data)) "relay begin command makes no sense")
                     (let [dest (parse-addr r-payload)

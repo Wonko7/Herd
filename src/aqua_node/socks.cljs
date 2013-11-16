@@ -68,7 +68,7 @@
                                          (c/add-listeners {:end   #(log/debug "App-Proxy: connection end")
                                                            :error kill-conn
                                                            :data  #(socks-recv c new-conn-handler %)}))))
-        new-srv #(log/info "###  App-Proxy listening on:" (-> srv .address .-ip) (-> srv .address .-port))]
+        new-srv #(log/info "App-Proxy listening on:" (-> srv .address .-ip) (-> srv .address .-port))]
     (if addr
       (.listen srv port addr new-srv)
       (.listen srv port new-srv))
