@@ -6,10 +6,8 @@
 
 (defn ip4-to-bin [ip]
   (let [re   #"^(\d+)\.(\d+)\.(\d+)\.(\d+)$" ]
-    (log/error (next (.match ip re)))
-    (-> (.match ip re) next cljs/clj->js b/new)
-    ((next (.match ip re)))
-    ))
+    (log/error "FIXME just testing" (next (.match ip re)))
+    (-> (.match ip re) next cljs/clj->js b/new)))
 
 (defn parse-addr [buf]
   (let [z            (->> (range (.-length buf))
