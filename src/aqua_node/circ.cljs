@@ -81,9 +81,9 @@
 (defn create [config socket srv-auth]
   (let [circ-id        (gen-id)
         [auth create]  (mk-create config socket srv-auth circ-id)]
+    (add circ-id socket {:type :app-proxy})
     (update-data circ-id [:auth] auth)
-    (cell-send socket circ-id :create2 create)
-    (add circ-id socket {:type :app-proxy})))
+    (cell-send socket circ-id :create2 create)))
 
 (defn- enc-send [config socket circ-id circ-cmd msg]
   (assert (@circuits circ-id) "cicuit does not exist") ;; FIXME this assert will probably be done elsewhere (process?)
