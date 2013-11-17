@@ -29,7 +29,7 @@
 (defn aqua-client-recv [config s]
   (c/add-listeners s {:data #(circ/process config s %)})
   ;; this is temporary:
-  (circ/mk-hop config s {:srv-id (js/Buffer. "h00z6mIWXCPWK4Pp1AQh+oHoHs8=" "base64")
+  (circ/create config s {:srv-id (js/Buffer. "h00z6mIWXCPWK4Pp1AQh+oHoHs8=" "base64")
                          :pub-B  (js/Buffer. "KYi+NX2pCOQmYnscN0K+MB+NO9A6ynKiIp41B5GlkHc=" "base64")}))
 
 ;(js/setInterval#(circ/relay config s 42 :data "If at first you don't succeed, you fail.")  1000)

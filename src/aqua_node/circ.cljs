@@ -65,12 +65,15 @@
 
 ;; make requests ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
-(defn mk-hop [config socket srv-auth] ;; FIXME: the api will change. remove socket.  ;; since this looks like a good entry point, try goes here for now
+(defn create [config socket srv-auth] ;; FIXME: the api will change. remove socket.  ;; since this looks like a good entry point, try goes here for now
   (let [circ-id (gen-id)] ;; FIXME generate
-    (try (let [[auth b] (hs/client-init srv-auth)]
+    (try (let [[auth b] (hs/client-init srv-auth)
+               header   (b/new 4)]
+           (.writeUInt16BE header 2 0)
+           (.writeUInt16BE header (.-length b) 2)
            (add circ-id socket {:type :app-proxy})
            (update-data circ-id [:auth] auth)
-           (cell-send socket circ-id :create2 b) ;; FIXME missing create2 headers
+           (cell-send socket circ-id :create2 (b/cat header b))
            circ-id)
          (catch js/Object e (log/c-info e (str "failed circuit creation: " circ-id) (destroy circ-id))))))
 
@@ -114,12 +117,12 @@
 ;; 04 = ip6 16 | port 2 -> reliable (tcp) routed over udp & dtls
 ;; 05 = ip6 16 | port 2 -> unreliable (udp) routed over dtls
 ;; 06 = ip6 16 | port 2 -> unreliable (udp) routed over dtls
-(defn relay-extend [config circ-id next-hop]
-  (let [data   (@circuits circ-id)
-        socket (:conn data)
-        hs-data (go see create2)
-        header (b/new (cljs/clj->js [1 1 1 3]))]
-  ))
+;; (defn relay-extend [config circ-id next-hop]
+;;   (let [data   (@circuits circ-id)
+;;         socket (:conn data)
+;;         hs-data (go see create2)
+;;         header (b/new (cljs/clj->js [1 1 1 3]))]
+;;   ))
 
 
 ;; process recv ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
@@ -127,14 +130,20 @@
 (defn recv-create2 [config conn circ-id {payload :payload len :len}] ;; FIXME this will be a sub function of the actual recv create2
   (add circ-id conn {:type :server})
   (let [{pub-B :pub node-id :id sec-b :sec} (-> config :auth :aqua-id) ;; FIXME: renaming the keys is stupid.
-        [shared-sec created]                (hs/server-reply {:pub-B pub-B :node-id node-id :sec-b sec-b} payload 32)] ;; FIXME -> key len & iv len should be in configw
+        hs-type                             (.readUInt16BE payload 0)
+        len                                 (.readUInt16BE payload 2)
+        [shared-sec created]                (hs/server-reply {:pub-B pub-B :node-id node-id :sec-b sec-b} (.slice payload 4) 32)
+        header                              (b/new 2)]
+    (assert (= hs-type 2) "unsupported handshake type")
+    (.writeUInt16BE header (.-length created) 0)
     (update-data circ-id [:auth :secret] shared-sec)
-    (cell-send conn circ-id :created2 created)))
+    (cell-send conn circ-id :created2 (b/cat header created))))
 
 (defn recv-created2 [config conn circ-id {payload :payload len :len}]
   (assert (@circuits circ-id) "cicuit does not exist") ;; FIXME this assert will probably be done elsewhere (process?)
   (let [auth       (:auth (@circuits circ-id))
-        shared-sec (hs/client-finalise auth payload 32)] ;; FIXME aes 256 seems to want 32 len key. seems short to me.
+        len        (.readUInt16BE payload 0)
+        shared-sec (hs/client-finalise auth (.slice payload 2) 32)] ;; FIXME aes 256 seems to want 32 len key. seems short to me.
     (update-data circ-id [:auth :secret] shared-sec)))
 
 (defn parse-addr [buf]
