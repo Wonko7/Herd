@@ -5,6 +5,7 @@
             [aqua-node.buf :as b]
             [aqua-node.ntor :as hs]
             [aqua-node.conns :as c]
+            [aqua-node.parse :as conv]
             [aqua-node.crypto :as crypto]
             [aqua-node.conn-mgr :as conn]))
 
@@ -15,6 +16,11 @@
 ;;  - create2 will be used for ntor hs.
 ;;  - circ id: msb set to 1 when created on current node. otherwise 0.
 ;;  - will not be supporting create fast: tor spec: 221-stop-using-create-fast.txt
+;;  - we will be using the following link specifiers:
+;;      - 03 = ip4 4 | port 2 -> reliable (tcp) routed over udp & dtls
+;;      - 04 = ip6 16 | port 2 -> reliable (tcp) routed over udp & dtls
+;;      - 05 = ip6 16 | port 2 -> unreliable (udp) routed over dtls
+;;      - 06 = ip6 16 | port 2 -> unreliable (udp) routed over dtls
 
 
 ;; circuit state management ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
@@ -65,17 +71,19 @@
 
 ;; make requests ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
-(defn create [config socket srv-auth] ;; FIXME: the api will change. remove socket.  ;; since this looks like a good entry point, try goes here for now
-  (let [circ-id (gen-id)] ;; FIXME generate
-    (try (let [[auth b] (hs/client-init srv-auth)
+(defn mk-create [config socket srv-auth circ-id]
+    (let [[auth create] (hs/client-init srv-auth)
                header   (b/new 4)]
            (.writeUInt16BE header 2 0)
-           (.writeUInt16BE header (.-length b) 2)
-           (add circ-id socket {:type :app-proxy})
-           (update-data circ-id [:auth] auth)
-           (cell-send socket circ-id :create2 (b/cat header b))
-           circ-id)
-         (catch js/Object e (log/c-info e (str "failed circuit creation: " circ-id) (destroy circ-id))))))
+           (.writeUInt16BE header (.-length create) 2)
+           [auth (b/cat header create)]))
+
+(defn create [config socket srv-auth]
+  (let [circ-id        (gen-id)
+        [auth create]  (mk-create config socket srv-auth circ-id)]
+    (update-data circ-id [:auth] auth)
+    (cell-send socket circ-id :create2 create)
+    (add circ-id socket {:type :app-proxy})))
 
 (defn- enc-send [config socket circ-id circ-cmd msg]
   (assert (@circuits circ-id) "cicuit does not exist") ;; FIXME this assert will probably be done elsewhere (process?)
@@ -112,17 +120,15 @@
   (relay config (:conn (@circuits circ-id)) circ-id :data data))
 
 ;; see tor spec 5.1.2.
-;; lstype hardcoded to our link specifier. this will change. we are adding links:
-;; 03 = ip4 4 | port 2 -> reliable (tcp) routed over udp & dtls
-;; 04 = ip6 16 | port 2 -> reliable (tcp) routed over udp & dtls
-;; 05 = ip6 16 | port 2 -> unreliable (udp) routed over dtls
-;; 06 = ip6 16 | port 2 -> unreliable (udp) routed over dtls
-;; (defn relay-extend [config circ-id next-hop]
-;;   (let [data   (@circuits circ-id)
-;;         socket (:conn data)
-;;         hs-data (go see create2)
-;;         header (b/new (cljs/clj->js [1 1 1 3]))]
-;;   ))
+(defn relay-extend [config circ-id next-hop]
+  (let [data    (@circuits circ-id)
+        socket  (:conn data)
+        create  (mk-create config (:conn data) (:auth next-hop) circ-id) ;; FIXME use the same id or create a new one?
+        nspec   (condp = (:type next-hop)
+                  :ip4 (b/cat (b/new (cljs/clj->js [1 3 6 3]))  (conv/ip4-to-bin (:host next-hop)) (conv/port-to-bin (:port next-hop)))
+                  :ip6 (b/cat (b/new (cljs/clj->js [1 3 16 4])) (conv/ip6-to-bin (:host next-hop)) (conv/port-to-bin (:port next-hop)))
+                  (assert nil "unsupported next hop address type"))]
+    (relay config socket circ-id :relay (b/cat nspec create))))
 
 
 ;; process recv ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
@@ -146,24 +152,6 @@
         shared-sec (hs/client-finalise auth (.slice payload 2) 32)] ;; FIXME aes 256 seems to want 32 len key. seems short to me.
     (update-data circ-id [:auth :secret] shared-sec)))
 
-(defn parse-addr [buf]
-  (let [z            (->> (range (.-length buf))
-                          (map #(when (= 0 (.readUInt8 buf %)) %))
-                          (some identity))]
-    (assert z "bad buffer: no zero delimiter")
-    (let [buf        (.toString buf "ascii" 0 z)
-          ip4-re     #"^((\d+\.){3}\d+):(\d+)$"
-          ip6-re     #"^\[((\d|[a-fA-F]|:)+)\]:(\d+)$"
-          dns-p      #(let [u (.parse (node/require "url") %)]
-                        [(.-hostname u) (.-port u)])
-          re         #(let [res (cljs/js->clj (.match %2 %1))]
-                        [(nth res %3) (nth res %4)])
-          [t a p]    (->> [(re ip4-re buf 1 3) (re ip6-re buf 1 3) (dns-p buf)]
-                          (map cons [:ip4 :ip6 :dns])
-                          (filter second)
-                          first)]
-      {:type t :host a :port p})))
-
 (defn process-relay [config conn circ-id relay-data original-pl]
   (let [circ-data (@circuits circ-id)
         r-payload (:payload relay-data)
@@ -173,7 +161,7 @@
                       (.write dest (:payload relay-data))))
         p-begin   (fn []
                     (assert (= :server (:type circ-data)) "relay begin command makes no sense")
-                    (let [dest (parse-addr r-payload)
+                    (let [dest (conv/parse-addr r-payload)
                           sock (conn/new :tcp :client dest config (fn [config socket buf]
                                                                     (relay config conn circ-id :data buf)
                                                                     (c/add-listeners socket {:error #(do (c/rm socket)

@@ -1,5 +1,5 @@
 * aqua core:
-	- bootstrap manager
+	- relay -> finish relay begin (missing ack). extend + extended. also need parse/ip6-to-bin to make this work.
 	- circuit mgr -> cell protocol: single path, multipath.
 	- onioning: for now work with a hardcoded dir descriptor list. concentrate on onioning and take it from there. see tor dir-spec when the time comes.
 	- nw errors. automatic reconnection.
