@@ -30,3 +30,6 @@
 
 (defn get-data [conn]
   (@connections conn))
+
+(defn find-by-dest [{host :host port :port}] ;; FIXME make a map to link to sockets.
+  (keep #(when (and (= host (.-remoteHost %1)) (= port (.-remotePort %1))) %1) (seq @connections)))
