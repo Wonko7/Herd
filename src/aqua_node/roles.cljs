@@ -12,7 +12,8 @@
 (defn app-proxy-init [config socket dest]
   (let [[circ-id circ-data] (first (circ/get-all))] ;; FIXME -> choose (based on...?) or create circuit
     (c/update-data socket [:circuit] circ-id)
-    (circ/relay-begin config circ-id dest)
+    ;(circ/relay-begin config circ-id dest)
+    (circ/update-data circ-id [:ap-dest] dest)
     (circ/update-data circ-id [:backward-hop] socket)))
 
 (defn app-proxy-forward [config s b]
@@ -27,10 +28,15 @@
   (c/add-listeners s {:data #(circ/process config s %)}))
 
 (defn aqua-client-recv [config s]
-  (c/add-listeners s {:data #(circ/process config s %)})
-  ;; this is temporary:
-  (circ/create config s {:srv-id (js/Buffer. "h00z6mIWXCPWK4Pp1AQh+oHoHs8=" "base64")
-                         :pub-B  (js/Buffer. "KYi+NX2pCOQmYnscN0K+MB+NO9A6ynKiIp41B5GlkHc=" "base64")}))
+  (c/add-listeners s {:data #(circ/process config s %)}))
+
+(defn aqua-client-init-path-for-testing [config]
+  (circ/mk-single-path config [{:auth {:srv-id (js/Buffer. "h00z6mIWXCPWK4Pp1AQh+oHoHs8=" "base64")
+                                       :pub-B  (js/Buffer. "KYi+NX2pCOQmYnscN0K+MB+NO9A6ynKiIp41B5GlkHc=" "base64")}
+                                :dest {:type :ip4 :host "127.0.0.1" :port 6669}}
+                               {:auth {:srv-id (js/Buffer. "pQh62d3z8LisFWg8qENauDn7dtU=" "base64")
+                                       :pub-B  (js/Buffer. "JnJ35yUEiabocQUR6noo9JAB8prhvu7OP4kQlLVS4QI=" "base64")}
+                                :dest {:type :ip4 :host "127.0.0.1" :port 6667}}]))
 
 ;(js/setInterval#(circ/relay config s 42 :data "If at first you don't succeed, you fail.")  1000)
 
@@ -42,9 +48,8 @@
     (log/info "Bootstrapping as" roles)
     (when (some is? [:mix :entry :exit])
       (conn/new :aqua :server aq config aqua-server-recv))
+    (when ds ;; the following will be covered by conn-to all known nodes --> sooooon
+      (conn/new :aqua  :client ds config aqua-client-recv))
     (when (is? :app-proxy)
       (conn/new :socks :server ap config app-proxy-forward app-proxy-init)
-      ;; the following will be covered by conn-to all known nodes --> sooooon
-      (conn/new :aqua  :client ds config aqua-client-recv))
-    (when (and false (not (is? :dir-server))) ;; dir-servs also need to connect to other dir-sers, we'll see about that when we get there.
-      (conn/new :aqua  :client ds config get-dir-info))))
+      (aqua-client-init-path-for-testing config))))

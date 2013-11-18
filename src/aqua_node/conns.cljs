@@ -32,4 +32,6 @@
   (@connections conn))
 
 (defn find-by-dest [{host :host port :port}] ;; FIXME make a map to link to sockets.
-  (keep #(when (and (= host (.-remoteHost %1)) (= port (.-remotePort %1))) %1) (seq @connections)))
+  (first (keep (fn [[s d]]
+                 (when (and (= host (:host d)) (= port (:port d))) s))
+               (seq @connections))))

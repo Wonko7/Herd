@@ -9,7 +9,10 @@
             [aqua-node.crypto :as crypto]
             [aqua-node.conn-mgr :as conn]))
 
-(declare from-relay-cmd from-cmd to-cmd)
+(declare from-relay-cmd from-cmd to-cmd
+         create relay-begin relay-extend)
+
+;; General API FIXME: should get rid of most conn/sockets in prototypes because explicitly using :f-hop & :b-hop ensures we are doing the right thing
 
 ;; Tor doc. from tor spec file:
 ;;  - see section 5 for circ creation.
@@ -72,6 +75,24 @@
     (update-data id [:path] (concat ls [(merge l {:secret secret})]))))
 
 
+;; make requests: path level ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+(defn mk-single-path [config [n & nodes]]
+  "Creates a single path. Assumes a connection to the first node exists."
+  (let [socket (c/find-by-dest (:dest n))
+        id     (create config socket (:auth n))]
+    (update-data id [:type] :app-proxy) ;; ... still doesn't feel right. better than in create.
+    (update-data id [:remaining-nodes] nodes)
+    (update-data id [:mk-path-fn] (fn [config id]
+                                    (let [circ        (@circuits id)
+                                          [n & nodes] (:remaining-nodes circ)]
+                                      (cond n                           (do (relay-extend config id n)
+                                                                            (update-data id [:remaining-nodes] nodes))
+                                            (not= (:state circ) :relay) (do (relay-begin config id (:ap-dest circ))
+                                                                            (update-data id [:circuit :state] :relay)) ;; FIXME this should be done on r-begin ack. temp.
+                                            :else                       (log/error "mk-single-path called with nothing to do. Do not do this again.")))))))
+
+
 ;; send cell ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
 (defn cell-send [conn circ-id cmd payload & [len]]
@@ -84,9 +105,9 @@
     (.write conn buf)))
 
 
-;; make requests ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;; make requests: circuit level ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
-(defn mk-create [config socket srv-auth circ-id]
+(defn mk-create [config srv-auth circ-id]
     (let [[auth create] (hs/client-init srv-auth)
                header   (b/new 4)]
            (.writeUInt16BE header 2 0)
@@ -94,12 +115,13 @@
            [auth (b/cat header create)]))
 
 (defn create [config socket srv-auth]
-  (let [circ-id        (gen-id)
-        [auth create]  (mk-create config socket srv-auth circ-id)]
-    (add circ-id socket {:type :app-proxy}) ;; nope.
+  (let [circ-id        (gen-id) ;; FIXME may remove this. seems to make more sense to be path logic.
+        [auth create]  (mk-create config srv-auth circ-id)]
+    (add circ-id socket nil)
     (update-data circ-id [:forward-hop] socket)
-    (add-path-auth circ-id nil auth)
-    (cell-send socket circ-id :create2 create)))
+    (add-path-auth circ-id nil auth) ;; FIXME: PATH: mk pluggable
+    (cell-send socket circ-id :create2 create)
+    circ-id))
 
 (defn- enc-send [config socket circ-id circ-cmd msg]
   (assert (@circuits circ-id) "cicuit does not exist") ;; FIXME this assert will probably be done elsewhere (process?)
@@ -107,7 +129,7 @@
   (let [circ     (@circuits circ-id)
         c        (node/require "crypto")
         iv       #(.randomBytes c. 16)
-        keys     (reverse (get-path-keys circ))
+        keys     (reverse (get-path-keys circ)) ;; FIXME: PATH: mk pluggable
         msg      (reduce #(let [iv (iv)] (b/cat iv (crypto/enc-aes %2 iv %1))) msg keys)] ;; FIXME: new iv for each? seems overkill...
     (cell-send socket circ-id circ-cmd msg)))
 
@@ -130,20 +152,19 @@
         dest   (str host ":" port)
         len    (count dest)
         dest   (b/cat (b/new dest) (b/new (cljs/clj->js [0 160 0 0 0])))]
-    (update-data circ-id [:circuit :state :relay] true) ;; FIXME this should be done on r-begin ack. temp.
     (relay config socket circ-id :begin dest)))
 
 (defn relay-data [config circ-id data]
   (relay config (:conn (@circuits circ-id)) circ-id :data data))
 
 ;; see tor spec 5.1.2.
-(defn relay-extend [config circ-id next-hop]
+(defn relay-extend [config circ-id {nh-auth :auth nh-dest :dest}]
   (let [data          (@circuits circ-id)
         socket        (:conn data)
-        [auth create] (mk-create config (:conn data) (:auth next-hop) circ-id) ;; FIXME use the same id or create a new one?
-        nspec         (condp = (:type next-hop)
-                        :ip4 (b/cat (b/new (cljs/clj->js [1 3 6]))  (conv/ip4-to-bin (:host next-hop)) (conv/port-to-bin (:port next-hop)))
-                        :ip6 (b/cat (b/new (cljs/clj->js [1 4 16])) (conv/ip6-to-bin (:host next-hop)) (conv/port-to-bin (:port next-hop)))
+        [auth create] (mk-create config nh-auth circ-id) ;; FIXME use the same id or create a new one?
+        nspec         (condp = (:type nh-dest)
+                        :ip4 (b/cat (b/new (cljs/clj->js [1 3 6]))  (conv/ip4-to-bin (:host nh-dest)) (conv/port-to-bin (:port nh-dest)))
+                        :ip6 (b/cat (b/new (cljs/clj->js [1 4 16])) (conv/ip6-to-bin (:host nh-dest)) (conv/port-to-bin (:port nh-dest)))
                         (assert nil "unsupported next hop address type"))]
     (relay config socket circ-id :relay (b/cat nspec create))))
 
@@ -151,7 +172,7 @@
 ;; process recv ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
 (defn recv-create2 [config conn circ-id {payload :payload len :len}] ;; FIXME this will be a sub function of the actual recv create2
-  (add circ-id conn {:type :server})
+  (add circ-id conn {:type :mix})
   (let [{pub-B :pub node-id :id sec-b :sec} (-> config :auth :aqua-id) ;; FIXME: renaming the keys is stupid.
         hs-type                             (.readUInt16BE payload 0)
         len                                 (.readUInt16BE payload 2)
@@ -159,7 +180,7 @@
         header                              (b/new 2)]
     (assert (= hs-type 2) "unsupported handshake type")
     (.writeUInt16BE header (.-length created) 0)
-    (add-path-secret-to-last circ-id (@circuits circ-id) shared-sec)
+    (add-path-secret-to-last circ-id (@circuits circ-id) shared-sec) ;; FIXME: PATH: mk pluggable
     (update-data circ-id [:backward-hop] conn)
     (cell-send conn circ-id :created2 (b/cat header created))))
 
@@ -171,7 +192,9 @@
       (let [auth       (-> circ :path last :auth)
             len        (.readUInt16BE payload 0)
             shared-sec (hs/client-finalise auth (.slice payload 2) 32)] ;; FIXME aes 256 seems to want 32 len key. seems short to me.
-        (add-path-secret-to-last circ-id circ shared-sec)))))
+        (add-path-secret-to-last circ-id circ shared-sec) ;; FIXME: PATH: mk pluggable
+        (when (:mk-path-fn circ)
+          ((:mk-path-fn circ) config circ-id))))))
 
 (defn process-relay [config conn circ-id relay-data original-pl]
   (let [circ-data  (@circuits circ-id)
@@ -228,7 +251,7 @@
   (assert (@circuits circ-id) "cicuit does not exist")
   (let [circ        (@circuits circ-id)
         recognised? #(zero? (.readUInt16BE % 1)) ;; FIXME -> add digest
-        [k & ks]    (get-path-keys circ)
+        [k & ks]    (get-path-keys circ) ;; FIXME: PATH: mk pluggable
         msg         (loop [k k, ks ks, m payload]
                       (let [[iv m] (b/cut m 16)
                             m      (crypto/dec-aes k iv m)

@@ -16,7 +16,5 @@
 (defn connect [dest config conn-handler]
   (let [[dtls opts] (mk-dtls config dest)
         c           (.connect dtls opts)]
-    (set! (-> c .-remoteHost) (:host dest))
-    (set! (-> c .-remotePort) (:port dest))
     (c/add-listeners c {:secureConnect #(conn-handler c)}) ;; FIXME; do this on connect?
-    (c/add c {:cs :client :type :aqua})))
+    (c/add c {:cs :client :type :aqua :host (:host dest) :port (:port dest)})))

@@ -6,9 +6,15 @@
 
 (defn ip4-to-bin [ip]
   (let [re   #"^(\d+)\.(\d+)\.(\d+)\.(\d+)$" ]
-    (log/error "FIXME just testing" (next (.match ip re)))
     (-> (.match ip re) next cljs/clj->js b/new)))
 
+(defn ip6-to-bin [ip]
+  (assert nil "FIXME"))
+  
+(defn port-to-bin [port]
+  (let [p (b/new 2)]
+    (.writeUInt16BE p port 0)
+    p))
 
 (defn ip4-to-str [buf4]
   (->> (range 0 4) (map #(.readUInt8 buf4 %)) (interpose ".") (apply str)))
