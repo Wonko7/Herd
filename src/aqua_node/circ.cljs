@@ -164,41 +164,47 @@
     (cell-send conn circ-id :created2 (b/cat header created))))
 
 (defn recv-created2 [config conn circ-id {payload :payload len :len}]
-  (assert (@circuits circ-id) "cicuit does not exist") ;; FIXME this assert will probably be done elsewhere (process?)
-  (let [circ       (@circuits circ-id)
-        auth       (-> circ :path last :auth)
-        len        (.readUInt16BE payload 0)
-        shared-sec (hs/client-finalise auth (.slice payload 2) 32)] ;; FIXME aes 256 seems to want 32 len key. seems short to me.
-    (add-path-secret-to-last circ-id circ shared-sec)))
+  (let [circ       (@circuits circ-id)]
+    (assert circ "cicuit does not exist") ;; FIXME this assert will probably be done elsewhere (process?)
+    (if (= :mix (:type circ))
+      (relay config (:backward-hop circ) circ-id :extended2 payload)
+      (let [auth       (-> circ :path last :auth)
+            len        (.readUInt16BE payload 0)
+            shared-sec (hs/client-finalise auth (.slice payload 2) 32)] ;; FIXME aes 256 seems to want 32 len key. seems short to me.
+        (add-path-secret-to-last circ-id circ shared-sec)))))
 
 (defn process-relay [config conn circ-id relay-data original-pl]
-  (let [circ-data (@circuits circ-id)
-        r-payload (:payload relay-data)
-        p-data    (fn []
-                    (let [[fhop bhop :as hops] (map circ-data [:forward-hop :backward-hop])
-                          dest                 (if (= conn fhop) bhop fhop)]
-                      (assert (some (partial = conn) hops) "relay data came from neither forward or backward hop.")
-                      (assert dest "no destination, illegal state")
-                      (.write dest (:payload relay-data))))
-        p-begin   (fn []
-                    (assert (= :server (:type circ-data)) "relay begin command makes no sense")
-                    (let [dest (conv/parse-addr r-payload)
-                          sock (conn/new :tcp :client dest config (fn [config socket buf]
-                                                                    (relay config conn circ-id :data buf)
-                                                                    (c/add-listeners socket {:error #(do (c/rm socket)
-                                                                                                         (destroy circ-id))})))]
-                      (update-data circ-id [:forward-hop] sock)))
-        p-extend  (fn []
-                    (let [[r1 r2 r4] (b/mk-readers relay-data)
-                          nb-lspec   (r1 0) ;; FIXME we're assuming 1 for now.
-                          ls-type    (r1 1)
-                          ls-len     (r1 2)
-                          dest (condp = ls-type
-                                 3 {:type :ip4 :host (conv/ip4-to-str (r4 3)) :port (r2 7)}
-                                 4 {:type :ip6 :host (conv/ip6-to-str (.slice relay-data 3 19)) :port (r2 19)})
-                          sock (c/find-by-dest dest)]))
-        
-        ]
+  (let [circ-data  (@circuits circ-id)
+        r-payload  (:payload relay-data)
+        p-data     (fn []
+                     (let [[fhop bhop :as hops] (map circ-data [:forward-hop :backward-hop])
+                           dest                 (if (= conn fhop) bhop fhop)]
+                       (assert (some (partial = conn) hops) "relay data came from neither forward or backward hop.")
+                       (assert dest "no destination, illegal state")
+                       (.write dest (:payload relay-data))))
+        p-begin    (fn []
+                     (assert (not= :app-proxy (:type circ-data)) "relay begin command makes no sense")
+                     (update-data circ-id [:type] :exit)
+                     (let [dest (conv/parse-addr r-payload)
+                           sock (conn/new :tcp :client dest config (fn [config socket buf]
+                                                                     (relay config conn circ-id :data buf)
+                                                                     (c/add-listeners socket {:error #(do (c/rm socket)
+                                                                                                          (destroy circ-id))})))]
+                       (update-data circ-id [:forward-hop] sock)))
+        p-extend   (fn []
+                     (let [[r1 r2 r4] (b/mk-readers relay-data)
+                           nb-lspec   (r1 0) ;; FIXME we're assuming 1 for now.
+                           ls-type    (r1 1)
+                           ls-len     (r1 2)
+                           dest       (condp = ls-type
+                                        3 {:type :ip4 :host (conv/ip4-to-str (r4 3)) :port (r2 7) :create (.slice relay-data 9)}
+                                        4 {:type :ip6 :host (conv/ip6-to-str (.slice relay-data 3 19)) :port (r2 19) :create (.slice relay-data 21)})
+                           sock       (c/find-by-dest dest)]
+                       (assert sock "could not find destination")
+                       (update-data circ-id [:forward-hop] sock)
+                       (update-data circ-id [:type] :mix)
+                       (cell-send sock circ-id :create2 (:create dest))))
+        p-extended #(recv-created2 config conn circ-id {:payload relay-data})]
     (condp = (:relay-cmd relay-data)
       1  (p-begin)
       2  (p-data)
@@ -214,7 +220,7 @@
       12 (log/error :relay-resolved "is an unsupported relay command")
       13 (log/error :relay-begin_dir "is an unsupported relay command")
       14 (p-extend)
-      15 (log/error :relay-extended2 "is an unsupported relay command")
+      15 (p-extended)
       (log/error "unsupported relay command"))))
 
 ;; see tor spec 6.
