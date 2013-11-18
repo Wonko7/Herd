@@ -142,8 +142,8 @@
         socket        (:conn data)
         [auth create] (mk-create config (:conn data) (:auth next-hop) circ-id) ;; FIXME use the same id or create a new one?
         nspec         (condp = (:type next-hop)
-                        :ip4 (b/cat (b/new (cljs/clj->js [1 3 6 3]))  (conv/ip4-to-bin (:host next-hop)) (conv/port-to-bin (:port next-hop)))
-                        :ip6 (b/cat (b/new (cljs/clj->js [1 3 16 4])) (conv/ip6-to-bin (:host next-hop)) (conv/port-to-bin (:port next-hop)))
+                        :ip4 (b/cat (b/new (cljs/clj->js [1 3 6]))  (conv/ip4-to-bin (:host next-hop)) (conv/port-to-bin (:port next-hop)))
+                        :ip6 (b/cat (b/new (cljs/clj->js [1 4 16])) (conv/ip6-to-bin (:host next-hop)) (conv/port-to-bin (:port next-hop)))
                         (assert nil "unsupported next hop address type"))]
     (relay config socket circ-id :relay (b/cat nspec create))))
 
@@ -187,10 +187,17 @@
                                                                     (relay config conn circ-id :data buf)
                                                                     (c/add-listeners socket {:error #(do (c/rm socket)
                                                                                                          (destroy circ-id))})))]
-                      (update-data circ-id [:forward-hop] sock)
-                      ;(update-data circ-id [:forward-hop] (merge dest {:conn sock})) -> no need to keep dest?
-                      (log/info "forward-to:" dest)))
-        ;p-extend  (fn [])
+                      (update-data circ-id [:forward-hop] sock)))
+        p-extend  (fn []
+                    (let [[r1 r2 r4] (b/mk-readers relay-data)
+                          nb-lspec   (r1 0) ;; FIXME we're assuming 1 for now.
+                          ls-type    (r1 1)
+                          ls-len     (r1 2)
+                          dest (condp = ls-type
+                                 3 {:type :ip4 :host (conv/ip4-to-str (r4 3)) :port (r2 7)}
+                                 4 {:type :ip6 :host (conv/ip6-to-str (.slice relay-data 3 19)) :port (r2 19)})
+                          sock (c/find-by-dest dest)]))
+        
         ]
     (condp = (:relay-cmd relay-data)
       1  (p-begin)
