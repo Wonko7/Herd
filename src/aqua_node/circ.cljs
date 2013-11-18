@@ -197,7 +197,7 @@
                            ls-type    (r1 1)
                            ls-len     (r1 2)
                            dest       (condp = ls-type
-                                        3 {:type :ip4 :host (conv/ip4-to-str (r4 3)) :port (r2 7) :create (.slice relay-data 9)}
+                                        3 {:type :ip4 :host (conv/ip4-to-str (.slice relay-data 3 7))  :port (r2 7)  :create (.slice relay-data 9)}
                                         4 {:type :ip6 :host (conv/ip6-to-str (.slice relay-data 3 19)) :port (r2 19) :create (.slice relay-data 21)})
                            sock       (c/find-by-dest dest)]
                        (assert sock "could not find destination")

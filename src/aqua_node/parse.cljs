@@ -9,6 +9,13 @@
     (log/error "FIXME just testing" (next (.match ip re)))
     (-> (.match ip re) next cljs/clj->js b/new)))
 
+
+(defn ip4-to-str [buf4]
+  (->> (range 0 4) (map #(.readUInt8 buf4 %)) (interpose ".") (apply str)))
+
+(defn ip6-to-str [buf16]
+  (->> (.toString buf16 "hex") (partition 4) (interpose [\:]) (apply concat) (apply str)))
+
 (defn parse-addr [buf]
   (let [z            (->> (range (.-length buf))
                           (map #(when (= 0 (.readUInt8 buf %)) %))
