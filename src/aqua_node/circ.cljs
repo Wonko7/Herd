@@ -159,6 +159,7 @@
 
 ;; see tor spec 5.1.2.
 (defn relay-extend [config circ-id {nh-auth :auth nh-dest :dest}]
+  (log/error :extending!)
   (let [data          (@circuits circ-id)
         socket        (:conn data)
         [auth create] (mk-create config nh-auth circ-id) ;; FIXME use the same id or create a new one?
@@ -251,7 +252,7 @@
 (defn recv-relay [config conn circ-id {payload :payload len :len}]
   (assert (@circuits circ-id) "cicuit does not exist")
   (let [circ        (@circuits circ-id)
-        recognised? #(zero? (.readUInt16BE % 0)) ;; FIXME -> add digest
+        recognised? #(zero? (.readUInt16BE % 1)) ;; FIXME -> add digest
         [k & ks]    (get-path-keys circ) ;; FIXME: PATH: mk pluggable
         msg         (loop [k k, ks ks, m payload]
                       (let [[iv m] (b/cut m 16)
