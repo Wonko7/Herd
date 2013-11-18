@@ -57,6 +57,20 @@
       i)))
 
 
+;; path management ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+(defn get-path-keys [circ-data]
+  (filter identity (map #(-> % :secret) (:path circ-data))))
+
+(defn add-path-auth [id circ-data auth]
+  (update-data id [:path] (concat (:path circ-data) [{:auth auth}])))
+
+(defn add-path-secret-to-last [id circ-data secret]
+  (let [l  (last (:path circ-data))
+        ls (drop-last (:path circ-data))]
+    (update-data id [:path] (concat ls [(merge l {:secret secret})]))))
+
+
 ;; send cell ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
 (defn cell-send [conn circ-id cmd payload & [len]]
@@ -82,7 +96,7 @@
   (let [circ-id        (gen-id)
         [auth create]  (mk-create config socket srv-auth circ-id)]
     (add circ-id socket {:type :app-proxy})
-    (update-data circ-id [:auth] auth)
+    (add-path-auth circ-id nil auth)
     (cell-send socket circ-id :create2 create)))
 
 (defn- enc-send [config socket circ-id circ-cmd msg]
@@ -90,9 +104,10 @@
   ;; FIXME assert state.
   (let [circ     (@circuits circ-id)
         c        (node/require "crypto")
-        iv       (.randomBytes c. 16)
-        msg      (crypto/enc-aes (-> circ :auth :secret) iv msg)]
-    (cell-send socket circ-id circ-cmd (b/cat iv msg))))
+        iv       #(.randomBytes c. 16)
+        keys     (reverse (get-path-keys circ))
+        msg      (reduce #(let [iv (iv)] (b/cat iv (crypto/enc-aes %2 iv %1))) msg keys)] ;; FIXME: new iv for each? seems overkill...
+    (cell-send socket circ-id circ-cmd msg)))
 
 (defn- relay [config socket circ-id relay-cmd msg]
   (let [pl-len       (.-length msg)
@@ -121,13 +136,13 @@
 
 ;; see tor spec 5.1.2.
 (defn relay-extend [config circ-id next-hop]
-  (let [data    (@circuits circ-id)
-        socket  (:conn data)
-        create  (mk-create config (:conn data) (:auth next-hop) circ-id) ;; FIXME use the same id or create a new one?
-        nspec   (condp = (:type next-hop)
-                  :ip4 (b/cat (b/new (cljs/clj->js [1 3 6 3]))  (conv/ip4-to-bin (:host next-hop)) (conv/port-to-bin (:port next-hop)))
-                  :ip6 (b/cat (b/new (cljs/clj->js [1 3 16 4])) (conv/ip6-to-bin (:host next-hop)) (conv/port-to-bin (:port next-hop)))
-                  (assert nil "unsupported next hop address type"))]
+  (let [data          (@circuits circ-id)
+        socket        (:conn data)
+        [auth create] (mk-create config (:conn data) (:auth next-hop) circ-id) ;; FIXME use the same id or create a new one?
+        nspec         (condp = (:type next-hop)
+                        :ip4 (b/cat (b/new (cljs/clj->js [1 3 6 3]))  (conv/ip4-to-bin (:host next-hop)) (conv/port-to-bin (:port next-hop)))
+                        :ip6 (b/cat (b/new (cljs/clj->js [1 3 16 4])) (conv/ip6-to-bin (:host next-hop)) (conv/port-to-bin (:port next-hop)))
+                        (assert nil "unsupported next hop address type"))]
     (relay config socket circ-id :relay (b/cat nspec create))))
 
 
@@ -142,15 +157,16 @@
         header                              (b/new 2)]
     (assert (= hs-type 2) "unsupported handshake type")
     (.writeUInt16BE header (.-length created) 0)
-    (update-data circ-id [:auth :secret] shared-sec)
+    (add-path-secret-to-last circ-id (@circuits circ-id) shared-sec)
     (cell-send conn circ-id :created2 (b/cat header created))))
 
 (defn recv-created2 [config conn circ-id {payload :payload len :len}]
   (assert (@circuits circ-id) "cicuit does not exist") ;; FIXME this assert will probably be done elsewhere (process?)
-  (let [auth       (:auth (@circuits circ-id))
+  (let [circ       (@circuits circ-id)
+        auth       (-> circ :path last :auth)
         len        (.readUInt16BE payload 0)
         shared-sec (hs/client-finalise auth (.slice payload 2) 32)] ;; FIXME aes 256 seems to want 32 len key. seems short to me.
-    (update-data circ-id [:auth :secret] shared-sec)))
+    (add-path-secret-to-last circ-id circ shared-sec)))
 
 (defn process-relay [config conn circ-id relay-data original-pl]
   (let [circ-data (@circuits circ-id)
@@ -191,16 +207,23 @@
 ;; see tor spec 6.
 (defn recv-relay [config conn circ-id {payload :payload len :len}]
   (assert (@circuits circ-id) "cicuit does not exist")
-  (let [circ       (@circuits circ-id)
-        [iv msg]   (b/cut payload 16)
-        msg        (crypto/dec-aes (-> circ :auth :secret) iv msg)
-        [r1 r2 r4] (b/mk-readers msg)
-        relay-data {:relay-cmd  (r1 0)
-                    :recognised (r2 1)
-                    :stream-id  (r2 3)
-                    :digest     (r4 5)
-                    :relay-len  (r2 9)
-                    :payload    (.slice msg 11 (.-length msg))}] ;; FIXME check how aes padding is handled.
+  (let [circ        (@circuits circ-id)
+        recognised? #(zero? (.readUInt16BE % 1)) ;; FIXME -> add digest
+        [k & ks]    (get-path-keys circ)
+        msg         (loop [k k, ks ks, m payload]
+                      (let [[iv m] (b/cut m 16)
+                            m      (crypto/dec-aes k iv m)
+                            [k & ks] ks]
+                        (cond (recognised? m) m ;; should probably return the auth to know where in the path this comes from.
+                              k               (recur k ks m)
+                              :else           (assert nil "undecipherable relay, something has gone wrong in the path"))))
+        [r1 r2 r4]  (b/mk-readers msg)
+        relay-data  {:relay-cmd  (r1 0)
+                     :recognised (r2 1)
+                     :stream-id  (r2 3)
+                     :digest     (r4 5)
+                     :relay-len  (r2 9)
+                     :payload    (.slice msg 11 (.-length msg))}] ;; FIXME check how aes padding is handled.
     (process-relay config conn circ-id relay-data {:unused? true})))
 
 
