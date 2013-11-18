@@ -193,7 +193,6 @@
       (let [auth       (-> circ :path last :auth)
             len        (.readUInt16BE payload 0)
             shared-sec (hs/client-finalise auth (.slice payload 2) 32)] ;; FIXME aes 256 seems to want 32 len key. seems short to me.
-        (log/debug (count (:path circ)))
         (add-path-secret-to-last circ-id circ shared-sec) ;; FIXME: PATH: mk pluggable
         (when (:mk-path-fn circ)
           ((:mk-path-fn circ) config circ-id))))))
