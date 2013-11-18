@@ -10,7 +10,7 @@
 
 (defn ip6-to-bin [ip]
   (assert nil "FIXME"))
-  
+
 (defn port-to-bin [port]
   (let [p (b/new 2)]
     (.writeUInt16BE p port 0)

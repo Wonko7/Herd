@@ -166,7 +166,8 @@
                         :ip4 (b/cat (b/new (cljs/clj->js [1 3 6]))  (conv/ip4-to-bin (:host nh-dest)) (conv/port-to-bin (:port nh-dest)))
                         :ip6 (b/cat (b/new (cljs/clj->js [1 4 16])) (conv/ip6-to-bin (:host nh-dest)) (conv/port-to-bin (:port nh-dest)))
                         (assert nil "unsupported next hop address type"))]
-    (relay config socket circ-id :relay (b/cat nspec create))))
+    (add-path-auth circ-id data auth) ;; FIXME: PATH: mk pluggable
+    (relay config socket circ-id :extend2 (b/cat nspec create))))
 
 
 ;; process recv ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
@@ -192,6 +193,7 @@
       (let [auth       (-> circ :path last :auth)
             len        (.readUInt16BE payload 0)
             shared-sec (hs/client-finalise auth (.slice payload 2) 32)] ;; FIXME aes 256 seems to want 32 len key. seems short to me.
+        (log/debug (count (:path circ)))
         (add-path-secret-to-last circ-id circ shared-sec) ;; FIXME: PATH: mk pluggable
         (when (:mk-path-fn circ)
           ((:mk-path-fn circ) config circ-id))))))
@@ -204,7 +206,7 @@
                            dest                 (if (= conn fhop) bhop fhop)]
                        (assert (some (partial = conn) hops) "relay data came from neither forward or backward hop.")
                        (assert dest "no destination, illegal state")
-                       (.write dest (:payload relay-data))))
+                       (.write dest r-payload)))
         p-begin    (fn []
                      (assert (not= :app-proxy (:type circ-data)) "relay begin command makes no sense")
                      (update-data circ-id [:type] :exit)
@@ -215,19 +217,19 @@
                                                                                                           (destroy circ-id))})))]
                        (update-data circ-id [:forward-hop] sock)))
         p-extend   (fn []
-                     (let [[r1 r2 r4] (b/mk-readers relay-data)
+                     (let [[r1 r2 r4] (b/mk-readers r-payload)
                            nb-lspec   (r1 0) ;; FIXME we're assuming 1 for now.
                            ls-type    (r1 1)
                            ls-len     (r1 2)
                            dest       (condp = ls-type
-                                        3 {:type :ip4 :host (conv/ip4-to-str (.slice relay-data 3 7))  :port (r2 7)  :create (.slice relay-data 9)}
-                                        4 {:type :ip6 :host (conv/ip6-to-str (.slice relay-data 3 19)) :port (r2 19) :create (.slice relay-data 21)})
+                                        3 {:type :ip4 :host (conv/ip4-to-str (.slice r-payload 3 7))  :port (r2 7)  :create (.slice r-payload 9)}
+                                        4 {:type :ip6 :host (conv/ip6-to-str (.slice r-payload 3 19)) :port (r2 19) :create (.slice r-payload 21)})
                            sock       (c/find-by-dest dest)]
                        (assert sock "could not find destination")
                        (update-data circ-id [:forward-hop] sock)
                        (update-data circ-id [:type] :mix)
                        (cell-send sock circ-id :create2 (:create dest))))
-        p-extended #(recv-created2 config conn circ-id {:payload relay-data})]
+        p-extended #(recv-created2 config conn circ-id {:payload r-payload})]
     (condp = (:relay-cmd relay-data)
       1  (p-begin)
       2  (p-data)
