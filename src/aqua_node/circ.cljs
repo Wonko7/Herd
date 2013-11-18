@@ -159,6 +159,7 @@
 
 ;; see tor spec 5.1.2.
 (defn relay-extend [config circ-id {nh-auth :auth nh-dest :dest}]
+  (log/error :extending!)
   (let [data          (@circuits circ-id)
         socket        (:conn data)
         [auth create] (mk-create config nh-auth circ-id) ;; FIXME use the same id or create a new one?
@@ -257,9 +258,7 @@
                       (let [[iv m] (b/cut m 16)
                             m      (crypto/dec-aes k iv m)
                             [k & ks] ks]
-                        (cond (recognised? m) m ;; should probably return the auth to know where in the path this comes from.
-                              k               (recur k ks m)
-                              :else           (assert nil "undecipherable relay, something has gone wrong in the path"))))
+                        (if k (recur k ks m) m)))
         [r1 r2 r4]  (b/mk-readers msg)
         relay-data  {:relay-cmd  (r1 0)
                      :recognised (r2 1)
@@ -267,7 +266,9 @@
                      :digest     (r4 5)
                      :relay-len  (r2 9)
                      :payload    (.slice msg 11 (.-length msg))}] ;; FIXME check how aes padding is handled.
-    (process-relay config conn circ-id relay-data {:unused? true})))
+    (if (recognised? msg)
+      (process-relay config conn circ-id relay-data {:unused? true})
+      (process-relay config conn circ-id {:relay-cmd 2 :payload msg} {:unused? true}))))
 
 
 ;; cell management (no state logic here) ;;;;;;;;;;;;;;;;;;;;;;;;;
