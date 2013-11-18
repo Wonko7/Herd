@@ -99,7 +99,7 @@
         data         (b/new (+ pl-len 11))
         [w8 w16 w32] (b/mk-writers data)]
     (w8 (from-relay-cmd relay-cmd) 0)
-    (w16 101 1) ;; Recognized
+    (w16 0 1) ;; Recognized
     (w16 101 3) ;; StreamID
     (w32 101 5) ;; Digest
     (w16 101 9) ;; Length
@@ -167,7 +167,9 @@
                                                                     (c/add-listeners socket {:error #(do (c/rm socket)
                                                                                                          (destroy circ-id))})))]
                       (update-data circ-id [:exit-hop] (merge dest {:conn sock}))
-                      (log/info "forward-to:" dest)))]
+                      (log/info "forward-to:" dest)))
+        ;p-extend  (fn [])
+        ]
     (condp = (:relay-cmd relay-data)
               1  (p-begin)
               2  (p-data)
@@ -182,7 +184,7 @@
               11 (log/error :relay-resolve "is an unsupported relay command")
               12 (log/error :relay-resolved "is an unsupported relay command")
               13 (log/error :relay-begin_dir "is an unsupported relay command")
-              14 (log/error :relay-extend2 "is an unsupported relay command")
+              14 (p-extend)
               15 (log/error :relay-extended2 "is an unsupported relay command")
               (log/error "unsupported relay command"))))
 
