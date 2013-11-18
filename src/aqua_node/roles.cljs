@@ -19,7 +19,7 @@
 (defn app-proxy-forward [config s b]
   (let [circ-id   (:circuit (c/get-data s))
         circ-data (circ/get-data circ-id)]
-    (if (-> circ-data :circuit :state :relay)
+    (if (= (-> circ-data :state) :relay)
       (circ/relay-data config circ-id b)
       (log/info "not ready for data, dropping on circuit" circ-id))))
 

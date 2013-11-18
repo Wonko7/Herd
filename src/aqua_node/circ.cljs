@@ -89,7 +89,7 @@
                                       (cond n                           (do (relay-extend config id n)
                                                                             (update-data id [:remaining-nodes] nodes))
                                             (not= (:state circ) :relay) (do (relay-begin config id (:ap-dest circ))
-                                                                            (update-data id [:circuit :state] :relay)) ;; FIXME this should be done on r-begin ack. temp.
+                                                                            (update-data id [:state] :relay)) ;; FIXME this should be done on r-begin ack. temp.
                                             :else                       (log/error "mk-single-path called with nothing to do. Do not do this again.")))))))
 
 
