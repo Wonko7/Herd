@@ -1,4 +1,4 @@
-{:roles [:mix :exit :entry :dir-server :test-mix]
+{:roles [:mix :exit :entry :dir-server]
  :aqua-conn {:host "127.0.0.1"
              :port 6669}
  :dir-server {:host "127.0.0.1"
