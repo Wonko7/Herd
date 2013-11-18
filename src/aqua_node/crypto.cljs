@@ -13,11 +13,15 @@
 (defn enc-aes [key iv msg]
   (let [c    (node/require "crypto")
         aes  (.createCipheriv c. "aes-256-ctr" key iv)]
+    (b/print-x key :enc-key)
+    (b/print-x iv :enc-iv)
     (b/cat (.update aes msg) (fin aes))))
 
 (defn dec-aes [key iv msg]
   (let [c    (node/require "crypto")
         aes  (.createDecipheriv c. "aes-256-ctr" key iv)]
+    (b/print-x key :dec-key)
+    (b/print-x iv :dec-iv)
     (b/cat (.update aes msg) (fin aes))))
 
 

@@ -28,6 +28,7 @@
 (def circuits (atom {}))
 
 (defn add [circ-id conn & [state]]
+  ;; FIXME remove conn from there. this shall become :forward-hop.
   (assert (nil? (@circuits circ-id)) (str "could not create circuit, " circ-id " already exists"))
   (swap! circuits merge {circ-id (merge state {:conn conn})}))
 
@@ -95,7 +96,8 @@
 (defn create [config socket srv-auth]
   (let [circ-id        (gen-id)
         [auth create]  (mk-create config socket srv-auth circ-id)]
-    (add circ-id socket {:type :app-proxy})
+    (add circ-id socket {:type :app-proxy}) ;; nope.
+    (update-data circ-id [:forward-hop] socket)
     (add-path-auth circ-id nil auth)
     (cell-send socket circ-id :create2 create)))
 
@@ -158,6 +160,7 @@
     (assert (= hs-type 2) "unsupported handshake type")
     (.writeUInt16BE header (.-length created) 0)
     (add-path-secret-to-last circ-id (@circuits circ-id) shared-sec)
+    (update-data circ-id [:backward-hop] conn)
     (cell-send conn circ-id :created2 (b/cat header created))))
 
 (defn recv-created2 [config conn circ-id {payload :payload len :len}]
@@ -172,7 +175,9 @@
   (let [circ-data (@circuits circ-id)
         r-payload (:payload relay-data)
         p-data    (fn []
-                    (let [dest (-> circ-data :exit-hop :conn)]
+                    (let [[fhop bhop :as hops] (map circ-data [:forward-hop :backward-hop])
+                          dest                 (if (= conn fhop) bhop fhop)]
+                      (assert (some (partial = conn) hops) "relay data came from neither forward or backward hop.")
                       (assert dest "no destination, illegal state")
                       (.write dest (:payload relay-data))))
         p-begin   (fn []
@@ -182,27 +187,28 @@
                                                                     (relay config conn circ-id :data buf)
                                                                     (c/add-listeners socket {:error #(do (c/rm socket)
                                                                                                          (destroy circ-id))})))]
-                      (update-data circ-id [:exit-hop] (merge dest {:conn sock}))
+                      (update-data circ-id [:forward-hop] sock)
+                      ;(update-data circ-id [:forward-hop] (merge dest {:conn sock})) -> no need to keep dest?
                       (log/info "forward-to:" dest)))
         ;p-extend  (fn [])
         ]
     (condp = (:relay-cmd relay-data)
-              1  (p-begin)
-              2  (p-data)
-              3  (log/error :relay-end "is an unsupported relay command")
-              4  (log/error :relay-connected "is an unsupported relay command")
-              5  (log/error :relay-sendme "is an unsupported relay command")
-              6  (log/error :relay-extend "is an unsupported relay command")
-              7  (log/error :relay-extended "is an unsupported relay command")
-              8  (log/error :relay-truncate "is an unsupported relay command")
-              9  (log/error :relay-truncated "is an unsupported relay command")
-              10 (log/error :relay-drop "is an unsupported relay command")
-              11 (log/error :relay-resolve "is an unsupported relay command")
-              12 (log/error :relay-resolved "is an unsupported relay command")
-              13 (log/error :relay-begin_dir "is an unsupported relay command")
-              14 (p-extend)
-              15 (log/error :relay-extended2 "is an unsupported relay command")
-              (log/error "unsupported relay command"))))
+      1  (p-begin)
+      2  (p-data)
+      3  (log/error :relay-end "is an unsupported relay command")
+      4  (log/error :relay-connected "is an unsupported relay command")
+      5  (log/error :relay-sendme "is an unsupported relay command")
+      6  (log/error :relay-extend "is an unsupported relay command")
+      7  (log/error :relay-extended "is an unsupported relay command")
+      8  (log/error :relay-truncate "is an unsupported relay command")
+      9  (log/error :relay-truncated "is an unsupported relay command")
+      10 (log/error :relay-drop "is an unsupported relay command")
+      11 (log/error :relay-resolve "is an unsupported relay command")
+      12 (log/error :relay-resolved "is an unsupported relay command")
+      13 (log/error :relay-begin_dir "is an unsupported relay command")
+      14 (p-extend)
+      15 (log/error :relay-extended2 "is an unsupported relay command")
+      (log/error "unsupported relay command"))))
 
 ;; see tor spec 6.
 (defn recv-relay [config conn circ-id {payload :payload len :len}]
