@@ -14,7 +14,7 @@
          process)
 
 ;; General API FIXME:
-;;  - should get rid of most conn/sockets in prototypes because explicitly using :f-hop & :b-hop ensures we are doing the right thing
+;;  - should get rid of most conn/sockets in prototypes because explicitly using :f-hop & :b-hop ensures we are doing the right thing --> give direction instead.
 
 ;; * Notes from tor spec:
 ;;  - see section 5 for circ creation.
@@ -336,8 +336,7 @@
    :resolved   12
    :begin_dir  13
    :extend2    14
-   :extended2  15
-   :forward    16})
+   :extended2  15})
 
 (defn process [config conn buff]
   ;; FIXME check len first -> match with fix buf size
