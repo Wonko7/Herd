@@ -14,6 +14,7 @@
     (c/update-data socket [:circuit] circ-id)
     ;(circ/relay-begin config circ-id dest)
     (circ/update-data circ-id [:ap-dest] dest)
+    ((:mk-path-fn circ-data) config circ-id)
     (circ/update-data circ-id [:backward-hop] socket)))
 
 (defn app-proxy-forward [config s b]

@@ -81,15 +81,16 @@
   "Creates a single path. Assumes a connection to the first node exists."
   (let [socket (c/find-by-dest (:dest n))
         id     (create config socket (:auth n))]
-    (update-data id [:type] :app-proxy) ;; ... still doesn't feel right. better than in create.
+    (update-data id [:type] :app-proxy) ;; ... still doesn't feel right. better than in create. ;; FIXME s/app-proxy/origin/ was looking for "role in this circ" not type.
     (update-data id [:remaining-nodes] nodes)
     (update-data id [:mk-path-fn] (fn [config id]
                                     (let [circ        (@circuits id)
                                           [n & nodes] (:remaining-nodes circ)]
                                       (cond n                           (do (relay-extend config id n)
                                                                             (update-data id [:remaining-nodes] nodes))
-                                            (not= (:state circ) :relay) (do (relay-begin config id (:ap-dest circ))
-                                                                            (update-data id [:state] :relay)) ;; FIXME this should be done on r-begin ack. temp.
+                                            (not= (:state circ) :relay) (when (:ap-dest circ)
+                                                                          (relay-begin config id (:ap-dest circ))
+                                                                          (update-data id [:state] :relay)) ;; FIXME this should be done on r-begin ack. temp.
                                             :else                       (log/error "mk-single-path called with nothing to do. Do not do this again.")))))))
 
 
@@ -159,7 +160,6 @@
 
 ;; see tor spec 5.1.2.
 (defn relay-extend [config circ-id {nh-auth :auth nh-dest :dest}]
-  (log/error :extending!)
   (let [data          (@circuits circ-id)
         socket        (:conn data)
         [auth create] (mk-create config nh-auth circ-id) ;; FIXME use the same id or create a new one?
@@ -251,24 +251,26 @@
 ;; see tor spec 6.
 (defn recv-relay [config conn circ-id {payload :payload len :len}]
   (assert (@circuits circ-id) "cicuit does not exist")
-  (let [circ        (@circuits circ-id)
-        recognised? #(zero? (.readUInt16BE % 1)) ;; FIXME -> add digest
-        [k & ks]    (get-path-keys circ) ;; FIXME: PATH: mk pluggable
-        msg         (loop [k k, ks ks, m payload]
-                      (let [[iv m] (b/cut m 16)
-                            m      (crypto/dec-aes k iv m)
-                            [k & ks] ks]
-                        (if k (recur k ks m) m)))
-        [r1 r2 r4]  (b/mk-readers msg)
-        relay-data  {:relay-cmd  (r1 0)
-                     :recognised (r2 1)
-                     :stream-id  (r2 3)
-                     :digest     (r4 5)
-                     :relay-len  (r2 9)
-                     :payload    (.slice msg 11 (.-length msg))}] ;; FIXME check how aes padding is handled.
-    (if (recognised? msg)
-      (process-relay config conn circ-id relay-data {:unused? true})
-      (process-relay config conn circ-id {:relay-cmd 2 :payload msg} {:unused? true}))))
+  (let [circ        (@circuits circ-id)]
+    (if (and (not= (:type circ) :app-proxy) (= (:forward-hop circ) conn)) ;; FIXME s/app-proxy/origin/ was looking for "role in this circ" not type.
+      (enc-send config (:backward-hop circ) circ-id :relay payload)
+      (let [recognised? #(zero? (.readUInt16BE % 1)) ;; FIXME -> add digest
+            [k & ks]    (get-path-keys circ) ;; FIXME: PATH: mk pluggable
+            msg         (loop [k k, ks ks, m payload]
+                          (let [[iv m] (b/cut m 16)
+                                m      (crypto/dec-aes k iv m)
+                                [k & ks] ks]
+                            (if k (recur k ks m) m)))
+            [r1 r2 r4]  (b/mk-readers msg)
+            relay-data  {:relay-cmd  (r1 0)
+                         :recognised (r2 1)
+                         :stream-id  (r2 3)
+                         :digest     (r4 5)
+                         :relay-len  (r2 9)
+                         :payload    (.slice msg 11 (.-length msg))}] ;; FIXME check how aes padding is handled.
+        (if (recognised? msg)
+          (process-relay config conn circ-id relay-data {:unused? true})
+          (cell-send (:forward-hop circ) circ-id :relay msg))))))
 
 
 ;; cell management (no state logic here) ;;;;;;;;;;;;;;;;;;;;;;;;;
