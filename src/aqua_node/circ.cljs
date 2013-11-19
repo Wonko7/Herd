@@ -14,16 +14,21 @@
 
 ;; General API FIXME: should get rid of most conn/sockets in prototypes because explicitly using :f-hop & :b-hop ensures we are doing the right thing
 
-;; Tor doc. from tor spec file:
+;; * Notes from tor spec:
 ;;  - see section 5 for circ creation.
 ;;  - create2 will be used for ntor hs.
 ;;  - circ id: msb set to 1 when created on current node. otherwise 0.
 ;;  - will not be supporting create fast: tor spec: 221-stop-using-create-fast.txt
+;;
+;; * Extensions to tor spec:
+;;
+;;  - adding forward cell: ignores circ id, reads host & address from header and forwards.
+;;
 ;;  - we will be using the following link specifiers:
-;;      - 03 = ip4 4 | port 2 -> reliable (tcp) routed over udp & dtls
-;;      - 04 = ip6 16 | port 2 -> reliable (tcp) routed over udp & dtls
-;;      - 05 = ip6 16 | port 2 -> unreliable (udp) routed over dtls
-;;      - 06 = ip6 16 | port 2 -> unreliable (udp) routed over dtls
+;;   - 03 = ip4 4 | port 2 -> reliable (tcp) routed over udp & dtls
+;;   - 04 = ip6 16 | port 2 -> reliable (tcp) routed over udp & dtls
+;;   - 05 = ip6 16 | port 2 -> unreliable (udp) routed over dtls
+;;   - 06 = ip6 16 | port 2 -> unreliable (udp) routed over dtls
 
 
 ;; circuit state management ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
@@ -318,7 +323,8 @@
    :resolved   12
    :begin_dir  13
    :extend2    14
-   :extended2  15})
+   :extended2  15
+   :forward    16})
 
 (defn process [config conn buff]
   ;; FIXME check len first -> match with fix buf size

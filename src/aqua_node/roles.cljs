@@ -12,7 +12,6 @@
 (defn app-proxy-init [config socket dest]
   (let [[circ-id circ-data] (first (circ/get-all))] ;; FIXME -> choose (based on...?) or create circuit
     (c/update-data socket [:circuit] circ-id)
-    ;(circ/relay-begin config circ-id dest)
     (circ/update-data circ-id [:ap-dest] dest)
     ((:mk-path-fn circ-data) config circ-id)
     (circ/update-data circ-id [:backward-hop] socket)))

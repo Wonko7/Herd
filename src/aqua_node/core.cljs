@@ -12,4 +12,4 @@
 
 (set! *main-cli-fn* #(try
                        (apply -main %&)
-                       (catch js/Object e (log/c-error "I don't know what I excepted:" e))))
+                       (catch js/Object e (log/c-error "No one expects the Spanish Inquisition." e))))
