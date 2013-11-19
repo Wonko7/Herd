@@ -155,10 +155,9 @@
     (enc-send config socket circ-id :relay data)))
 
 ;; see tor spec 6.2. 160 = ip6 ok & prefered.
-(defn relay-begin [config circ-id {host :host port :port type :type}]
+(defn relay-begin [config circ-id dest]
   (let [socket (:conn (@circuits circ-id))
-        host   (if (= type :ip6) (str "[" host "]") host)
-        dest   (str host ":" port)
+        dest   (conv/dest-to-tor-str dest)
         len    (count dest)
         dest   (b/cat (b/new dest) (b/new (cljs/clj->js [0 160 0 0 0])))]
     (relay config socket circ-id :begin dest)))
@@ -177,6 +176,13 @@
                         (assert nil "unsupported next hop address type"))]
     (add-path-auth circ-id data auth) ;; FIXME: PATH: mk pluggable
     (relay config socket circ-id :extend2 (b/cat nspec create))))
+
+(defn forward [config circ-id dest cell]
+  (let [socket  (:conn (@circuits circ-id))
+        dest    (conv/dest-to-tor-str dest)
+        len     (count dest)
+        payload (b/cat (b/new dest) (b/new (cljs/clj->js [0])) cell)]
+    (cell-send config socket circ-id :forward payload)))
 
 
 ;; process recv ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;

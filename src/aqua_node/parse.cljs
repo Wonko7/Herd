@@ -22,6 +22,10 @@
 (defn ip6-to-str [buf16]
   (->> (.toString buf16 "hex") (partition 4) (interpose [\:]) (apply concat) (apply str)))
 
+(defn dest-to-tor-str [{host :host port :port type :type}]
+  (let [host   (if (= type :ip6) (str "[" host "]") host)]
+    (str host ":" port)))
+
 (defn parse-addr [buf]
   (let [z            (->> (range (.-length buf))
                           (map #(when (= 0 (.readUInt8 buf %)) %))
