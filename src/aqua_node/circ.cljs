@@ -10,9 +10,11 @@
             [aqua-node.conn-mgr :as conn]))
 
 (declare from-relay-cmd from-cmd to-cmd
-         create relay-begin relay-extend)
+         create relay-begin relay-extend
+         process)
 
-;; General API FIXME: should get rid of most conn/sockets in prototypes because explicitly using :f-hop & :b-hop ensures we are doing the right thing
+;; General API FIXME:
+;;  - should get rid of most conn/sockets in prototypes because explicitly using :f-hop & :b-hop ensures we are doing the right thing
 
 ;; * Notes from tor spec:
 ;;  - see section 5 for circ creation.
@@ -179,7 +181,7 @@
 
 ;; process recv ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
-(defn recv-create2 [config conn circ-id {payload :payload len :len}] ;; FIXME this will be a sub function of the actual recv create2
+(defn recv-create2 [config conn circ-id payload] ;; FIXME this will be a sub function of the actual recv create2
   (add circ-id conn {:role :mix})
   (let [{pub-B :pub node-id :id sec-b :sec} (-> config :auth :aqua-id) ;; FIXME: renaming the keys is stupid.
         hs-type                             (.readUInt16BE payload 0)
@@ -192,7 +194,7 @@
     (update-data circ-id [:backward-hop] conn)
     (cell-send conn circ-id :created2 (b/cat header created))))
 
-(defn recv-created2 [config conn circ-id {payload :payload len :len}]
+(defn recv-created2 [config conn circ-id payload]
   "Process created2, add the resulting shared secret to the path, call
   the path's :mk-path-fn to proceed to the next step."
   (let [circ       (@circuits circ-id)]
@@ -206,7 +208,17 @@
         (when (:mk-path-fn circ)
           ((:mk-path-fn circ) config circ-id))))))
 
-(defn process-relay [config conn circ-id relay-data original-pl]
+(defn recv-forward [config conn circ-id payload]
+  "upon receiving a forward, decide if it's for us, otherwise forward."
+  (let [circ (@circuits circ-id)]
+    (if (and circ (= (:role circ) :mux)) ;; FIXME do something cleaner with digests
+      (process config conn payload)
+      (let [[dest pl] (conv/parse-addr payload)
+            socket    (c/find-by-dest dest)]
+        (assert socket "could not find next hop for forwarding")
+        (cell-send socket circ-id :forward pl)))))
+
+(defn process-relay [config conn circ-id relay-data]
   (let [circ-data  (@circuits circ-id)
         r-payload  (:payload relay-data)
         p-data     (fn []
@@ -218,7 +230,7 @@
         p-begin    (fn []
                      (assert (not= :origin (:role circ-data)) "relay begin command makes no sense") ;; FIXME this assert is good, but more like these are needed. roles are not inforced.
                      (update-data circ-id [:role] :exit)
-                     (let [dest (conv/parse-addr r-payload)
+                     (let [dest (first (conv/parse-addr r-payload))
                            sock (conn/new :tcp :client dest config (fn [config socket buf]
                                                                      (relay config conn circ-id :data buf)
                                                                      (c/add-listeners socket {:error #(do (c/rm socket)
@@ -237,7 +249,7 @@
                        (update-data circ-id [:forward-hop] sock)
                        (update-data circ-id [:role] :mix)
                        (cell-send sock circ-id :create2 (:create dest))))
-        p-extended #(recv-created2 config conn circ-id {:payload r-payload})]
+        p-extended #(recv-created2 config conn circ-id r-payload)]
     (condp = (:relay-cmd relay-data)
       1  (p-begin)
       2  (p-data)
@@ -257,7 +269,7 @@
       (log/error "unsupported relay command"))))
 
 ;; see tor spec 6.
-(defn recv-relay [config conn circ-id {payload :payload len :len}]
+(defn recv-relay [config conn circ-id payload]
   "If relay message is going backward add an onion skin and send.
   Otherwise, take off the onion skins we can, process it if we can or forward."
   (assert (@circuits circ-id) "cicuit does not exist")
@@ -279,7 +291,7 @@
                          :relay-len  (r2 9)
                          :payload    (.slice msg 11 (.-length msg))}] ;; FIXME check how aes padding is handled.
         (if (recognised? msg)
-          (process-relay config conn circ-id relay-data {:unused? true})
+          (process-relay config conn circ-id relay-data)
           (cell-send (:forward-hop circ) circ-id :relay msg))))))
 
 
@@ -302,7 +314,8 @@
    129 {:name :certs           :fun nil}
    130 {:name :auth_challenge  :fun nil}
    131 {:name :authenticate    :fun nil}
-   132 {:name :authorize       :fun nil}})
+   132 {:name :authorize       :fun nil}
+   256 {:name :forward         :fun recv-forward}})
 
 (def from-cmd
   (apply merge (for [k (keys to-cmd)]
@@ -336,5 +349,5 @@
     (log/debug "recv cell: id:" circ-id "cmd:" (:name command))
     (when (:fun command)
       (try
-        ((:fun command) config conn  circ-id {:payload payload :len (- len 5)})
+        ((:fun command) config conn  circ-id payload)
         (catch js/Object e (log/c-info e (str "Killed circuit " circ-id)) (destroy circ-id))))))

@@ -27,15 +27,15 @@
                           (map #(when (= 0 (.readUInt8 buf %)) %))
                           (some identity))]
     (assert z "bad buffer: no zero delimiter")
-    (let [buf        (.toString buf "ascii" 0 z)
+    (let [str        (.toString buf "ascii" 0 z)
           ip4-re     #"^((\d+\.){3}\d+):(\d+)$"
           ip6-re     #"^\[((\d|[a-fA-F]|:)+)\]:(\d+)$"
           dns-p      #(let [u (.parse (node/require "url") %)]
                         [(.-hostname u) (.-port u)])
           re         #(let [res (cljs/js->clj (.match %2 %1))]
                         [(nth res %3) (nth res %4)])
-          [t a p]    (->> [(re ip4-re buf 1 3) (re ip6-re buf 1 3) (dns-p buf)]
+          [t a p]    (->> [(re ip4-re str 1 3) (re ip6-re str 1 3) (dns-p str)]
                           (map cons [:ip4 :ip6 :dns])
                           (filter second)
                           first)]
-      {:type t :host a :port p})))
+      [{:type t :host a :port p} (.slice buf (inc z))])))
