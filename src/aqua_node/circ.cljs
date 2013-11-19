@@ -81,7 +81,7 @@
   "Creates a single path. Assumes a connection to the first node exists."
   (let [socket (c/find-by-dest (:dest n))
         id     (create config socket (:auth n))]
-    (update-data id [:type] :app-proxy) ;; ... still doesn't feel right. better than in create. ;; FIXME s/app-proxy/origin/ was looking for "role in this circ" not type.
+    (update-data id [:role] :origin)
     (update-data id [:remaining-nodes] nodes)
     (update-data id [:mk-path-fn] (fn [config id]
                                     (let [circ        (@circuits id)
@@ -125,6 +125,7 @@
     circ-id))
 
 (defn- enc-send [config socket circ-id circ-cmd msg]
+  "Add all onion skins before sending the packet."
   (assert (@circuits circ-id) "cicuit does not exist") ;; FIXME this assert will probably be done elsewhere (process?)
   ;; FIXME assert state.
   (let [circ     (@circuits circ-id)
@@ -174,7 +175,7 @@
 ;; process recv ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
 (defn recv-create2 [config conn circ-id {payload :payload len :len}] ;; FIXME this will be a sub function of the actual recv create2
-  (add circ-id conn {:type :mix})
+  (add circ-id conn {:role :mix})
   (let [{pub-B :pub node-id :id sec-b :sec} (-> config :auth :aqua-id) ;; FIXME: renaming the keys is stupid.
         hs-type                             (.readUInt16BE payload 0)
         len                                 (.readUInt16BE payload 2)
@@ -187,9 +188,11 @@
     (cell-send conn circ-id :created2 (b/cat header created))))
 
 (defn recv-created2 [config conn circ-id {payload :payload len :len}]
+  "Process created2, add the resulting shared secret to the path, call
+  the path's :mk-path-fn to proceed to the next step."
   (let [circ       (@circuits circ-id)]
     (assert circ "cicuit does not exist") ;; FIXME this assert will probably be done elsewhere (process?)
-    (if (= :mix (:type circ))
+    (if (= :mix (:role circ))
       (relay config (:backward-hop circ) circ-id :extended2 payload)
       (let [auth       (-> circ :path last :auth)
             len        (.readUInt16BE payload 0)
@@ -208,8 +211,8 @@
                        (assert dest "no destination, illegal state")
                        (.write dest r-payload)))
         p-begin    (fn []
-                     (assert (not= :app-proxy (:type circ-data)) "relay begin command makes no sense")
-                     (update-data circ-id [:type] :exit)
+                     (assert (not= :origin (:role circ-data)) "relay begin command makes no sense") ;; FIXME this assert is good, but more like these are needed. roles are not inforced.
+                     (update-data circ-id [:role] :exit)
                      (let [dest (conv/parse-addr r-payload)
                            sock (conn/new :tcp :client dest config (fn [config socket buf]
                                                                      (relay config conn circ-id :data buf)
@@ -227,7 +230,7 @@
                            sock       (c/find-by-dest dest)]
                        (assert sock "could not find destination")
                        (update-data circ-id [:forward-hop] sock)
-                       (update-data circ-id [:type] :mix)
+                       (update-data circ-id [:role] :mix)
                        (cell-send sock circ-id :create2 (:create dest))))
         p-extended #(recv-created2 config conn circ-id {:payload r-payload})]
     (condp = (:relay-cmd relay-data)
@@ -250,9 +253,11 @@
 
 ;; see tor spec 6.
 (defn recv-relay [config conn circ-id {payload :payload len :len}]
+  "If relay message is going backward add an onion skin and send.
+  Otherwise, take off the onion skins we can, process it if we can or forward."
   (assert (@circuits circ-id) "cicuit does not exist")
   (let [circ        (@circuits circ-id)]
-    (if (and (not= (:type circ) :app-proxy) (= (:forward-hop circ) conn)) ;; FIXME s/app-proxy/origin/ was looking for "role in this circ" not type.
+    (if (and (not= (:role circ) :origin) (= (:forward-hop circ) conn))
       (enc-send config (:backward-hop circ) circ-id :relay payload)
       (let [recognised? #(zero? (.readUInt16BE % 1)) ;; FIXME -> add digest
             [k & ks]    (get-path-keys circ) ;; FIXME: PATH: mk pluggable
