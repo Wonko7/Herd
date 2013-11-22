@@ -20,7 +20,7 @@
   (let [circ-id   (:circuit (c/get-data s))
         circ-data (circ/get-data circ-id)]
     (if (= (-> circ-data :state) :relay)
-      (circ/relay-data config circ-id b)
+      (doall (map (partial circ/relay-data config circ-id) (apply (partial b/cut b) (range 0 (.-length b) 1600))))
       (log/info "not ready for data, dropping on circuit" circ-id))))
 
 (defn aqua-server-recv [config s]
