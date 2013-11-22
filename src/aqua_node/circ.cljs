@@ -36,7 +36,6 @@
 ;; role helpers ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
 (defn is? [role circ]
-  (log/error (:roles circ))
   (some #(= % role) (:roles circ)))
 
 (defn is-not? [role circ]
@@ -120,6 +119,8 @@
     (w32 circ-id 0)
     (w8 (from-cmd cmd) 4)
     (.copy payload buf 5)
+    (log/error (nil? socket))
+    (b/print-x buf :sending)
     (if (-> config :mk-packet)
       buf
       (.write socket buf))))
@@ -227,7 +228,8 @@
   (let [circ       (@circuits circ-id)]
     (assert circ "cicuit does not exist") ;; FIXME this assert will probably be done elsewhere (process?)
     (if (is? :mix circ)
-      (relay config (:backward-hop circ) circ-id :extended2 payload)
+      (do (log/error "relaying")
+       (relay config (:backward-hop circ) circ-id :extended2 payload))
       (let [mux?       (is? :mux circ)
             auth       (if mux? (-> circ :mux :auth) (-> circ :path last :auth))
             len        (.readUInt16BE payload 0)
@@ -281,9 +283,9 @@
                      (assert (is-not? :origin circ) "relay begin command makes no sense") ;; FIXME this assert is good, but more like these are needed. roles are not inforced.
                      (update-data circ-id [:roles] (cons :exit (:roles circ)))
                      (let [dest (first (conv/parse-addr r-payload))
-                           sock (conn/new :tcp :client dest config (fn [config socket buf]
+                           sock (conn/new :tcp :client dest config (fn [config soc buf]
                                                                      (relay config socket circ-id :data buf)
-                                                                     (c/add-listeners socket {:error #(do (c/rm socket)
+                                                                     (c/add-listeners soc {:error #(do (c/rm soc)
                                                                                                           (destroy circ-id))})))]
                        (update-data circ-id [:forward-hop] sock)))
         p-extend   (fn []
@@ -323,12 +325,13 @@
   "If relay message is going backward add an onion skin and send.
   Otherwise, take off the onion skins we can, process it if we can or forward."
   (assert (@circuits circ-id) "cicuit does not exist")
+  (log/error (.readUInt8 payload 0) :cmd)
   (let [circ        (@circuits circ-id)
         mux?        (is? :mux circ)]
-    (if (and (is-not? :origin circ-id) (= (:forward-hop circ) socket)) ;; FIXME: change to cond
+    (if (and (is-not? :origin circ) (= (:forward-hop circ) socket))
       (if (and mux? (-> circ :mux :fhop))
-        (forward config circ-id (-> circ :mux :fhop) payload)
-        (enc-send config (:backward-hop circ) circ-id :relay payload))
+        (do (log/error :mux :forwarding) (forward config circ-id (-> circ :mux :fhop) payload))
+        (do (log/error :mux :backing) (enc-send config (:backward-hop circ) circ-id :relay payload)))
       (let [recognised? #(zero? (.readUInt16BE % 1)) ;; FIXME -> add digest
             [k & ks]    (get-path-keys circ) ;; FIXME: PATH: mk pluggable
             msg         (loop [k k, ks ks, m payload]
@@ -343,7 +346,6 @@
                          :digest     (r4 5)
                          :relay-len  (r2 9)
                          :payload    (.slice msg 11 (.-length msg))}] ;; FIXME check how aes padding is handled.
-        (log/error (r1 0) :cmd)
         (cond (recognised? msg)               (process-relay config socket circ-id relay-data)
               (and mux? (-> circ :mux :bhop)) (forward config circ-id (-> circ :mux :bhop) msg)
               :else                           (cell-send config (:forward-hop circ) circ-id :relay msg))))))
@@ -394,6 +396,7 @@
    :extended2  15})
 
 (defn process [config socket buff]
+    (b/print-x buff :recving)
   ;; FIXME check len first -> match with fix buf size
   (let [[r8 r16 r32] (b/mk-readers buff)
         len          (.-length buff)
