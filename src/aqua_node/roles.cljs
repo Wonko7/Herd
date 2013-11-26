@@ -18,9 +18,17 @@
 
 (defn app-proxy-forward [config s b]
   (let [circ-id   (:circuit (c/get-data s))
-        circ-data (circ/get-data circ-id)]
+        circ-data (circ/get-data circ-id)
+        len       (.-length b)]
     (if (= (-> circ-data :state) :relay)
-      (doall (map (partial circ/relay-data config circ-id) (apply (partial b/cut b) (range 0 (.-length b) 1600))))
+      ;(doall (map (partial circ/relay-data config circ-id) (apply (partial b/cut b) (range 0 (.-length b) 1600))))
+      (loop [s 0 e (min 1600 len)]
+        (if (< e len)
+          (do (circ/relay-data config circ-id (.slice b s e))
+              (recur e (+ 1600 e)))
+          (circ/relay-data config circ-id (.slice b s len))));; minimal. keep the doall
+      ;(doseq [b (apply (partial b/cut b) (range 0 (.-length b) 1600))]
+      ;  (.nextTick js/process #(circ/relay-data config circ-id b)))
       (log/info "not ready for data, dropping on circuit" circ-id))))
 
 (defn aqua-server-recv [config s]
