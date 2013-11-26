@@ -41,10 +41,10 @@
 (defn aqua-client-init-path-for-testing [config]
   (circ/mk-single-path config [{:auth {:srv-id (js/Buffer. "h00z6mIWXCPWK4Pp1AQh+oHoHs8=" "base64")
                                        :pub-B  (js/Buffer. "KYi+NX2pCOQmYnscN0K+MB+NO9A6ynKiIp41B5GlkHc=" "base64")}
-                                :dest {:type :ip4 :host "127.0.0.1" :port 6669}}
+                                :dest {:type :ip4 :host "139.19.176.82" :port 6669}}
                                {:auth {:srv-id (js/Buffer. "pQh62d3z8LisFWg8qENauDn7dtU=" "base64")
                                        :pub-B  (js/Buffer. "JnJ35yUEiabocQUR6noo9JAB8prhvu7OP4kQlLVS4QI=" "base64")}
-                                :dest {:type :ip4 :host "127.0.0.1" :port 6667}}]))
+                                :dest {:type :ip4 :host "139.19.176.83" :port 6667}}]))
 
 ;(js/setInterval#(circ/relay config s 42 :data "If at first you don't succeed, you fail.")  1000)
 

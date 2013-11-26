@@ -281,7 +281,7 @@
                            sock (conn/new :tcp :client dest config (fn [config soc buf]
                                                                      (relay config socket circ-id :data buf)
                                                                      (c/add-listeners soc {:error #(do (c/rm soc)
-                                                                                                          (destroy circ-id))})))]
+                                                                                                       (destroy circ-id))})))]
                        (update-data circ-id [:forward-hop] sock)))
         p-extend   (fn []
                      (let [[r1 r2 r4] (b/mk-readers r-payload)
