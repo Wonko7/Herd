@@ -20,13 +20,16 @@
   (let [circ-id   (:circuit (c/get-data s))
         circ-data (circ/get-data circ-id)
         len       (.-length b)]
+    (log/debug "sending: " len)
     (if (= (-> circ-data :state) :relay)
-      ;(doall (map (partial circ/relay-data config circ-id) (apply (partial b/cut b) (range 0 (.-length b) 1600))))
-      (loop [s 0 e (min 1600 len)]
-        (if (< e len)
-          (do (circ/relay-data config circ-id (.slice b s e))
-              (recur e (+ 1600 e)))
-          (circ/relay-data config circ-id (.slice b s len))));; minimal. keep the doall
+      ;(circ/relay-data config circ-id b)
+      (doall (map (fn [b] (.nextTick js/process #(circ/relay-data config circ-id b)))
+                  (apply (partial b/cut b) (next (range 0 (.-length b) 1350)))))
+      ;(loop [s 0 e (min 1350 len)]
+      ;  (if (< e len)
+      ;    (do (circ/relay-data config circ-id (.slice b s e))
+      ;        (recur e (+ 1350 e)))
+      ;    (.nextTick js/process #(circ/relay-data config circ-id (.slice b s len)))));; minimal. keep the doall
       ;(doseq [b (apply (partial b/cut b) (range 0 (.-length b) 1600))]
       ;  (.nextTick js/process #(circ/relay-data config circ-id b)))
       (log/info "not ready for data, dropping on circuit" circ-id))))

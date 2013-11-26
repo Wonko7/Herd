@@ -155,12 +155,12 @@
   "Add all onion skins before sending the packet."
   (assert (@circuits circ-id) "cicuit does not exist") ;; FIXME this assert will probably be done elsewhere (process?)
   ;; FIXME assert state.
-  (.nextTick js/process (fn [] (let [circ     (@circuits circ-id)
-                                     c        (node/require "crypto")
-                                     iv       #(.randomBytes c 16)
-                                     keys     (or keys (reverse (get-path-keys circ))) ;; FIXME: PATH: mk pluggable
-                                     msg      (reduce #(let [iv (iv)] (b/cat iv (crypto/enc-aes %2 iv %1))) msg keys)] ;; FIXME: new iv for each? seems overkill...
-                                 (cell-send config socket circ-id circ-cmd msg)))))
+  (let [circ     (@circuits circ-id)
+        c        (node/require "crypto")
+        iv       #(.randomBytes c. 16)
+        keys     (or keys (reverse (get-path-keys circ))) ;; FIXME: PATH: mk pluggable
+        msg      (reduce #(let [iv (iv)] (b/cat iv (crypto/enc-aes %2 iv %1))) msg keys)] ;; FIXME: new iv for each? seems overkill...
+    (cell-send config socket circ-id circ-cmd msg)))
 
 (defn- relay [config socket circ-id relay-cmd msg]
   (let [pl-len       (.-length msg)
@@ -182,6 +182,7 @@
     (relay config socket circ-id :begin dest)))
 
 (defn relay-data [config circ-id data]
+  (log/debug :sending (.-length data))
   (relay config (:conn (@circuits circ-id)) circ-id :data data))
 
 ;; see tor spec 5.1.2.
@@ -340,7 +341,7 @@
                          :digest     (r4 5)
                          :relay-len  (r2 9)
                          :payload    (.slice msg 11 (.-length msg))}] ;; FIXME check how aes padding is handled.
-        (cond (recognised? msg)               (.nextTick js/process #(process-relay config socket circ-id relay-data))
+        (cond (recognised? msg)               (process-relay config socket circ-id relay-data)
               (and mux? (-> circ :mux :bhop)) (forward config circ-id (-> circ :mux :bhop) msg)
               :else                           (cell-send config (:forward-hop circ) circ-id :relay msg))))))
 
