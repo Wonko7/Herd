@@ -25,6 +25,10 @@
       ;(circ/relay-data config circ-id b)
       (doall (map (fn [b] (.nextTick js/process #(circ/relay-data config circ-id b)))
                   (apply (partial b/cut b) (next (range 0 (.-length b) 1350)))))
+      ;(doall (map (fn [b] ((fn []
+      ;                      (let [socket (:forward-hop circ-data)]
+      ;                        (circ/enc-send2 config socket circ-id :relay b 101)))))
+      ;            (apply (partial b/cut b) (next (range 0 (.-length b) 1350)))))
       ;(loop [s 0 e (min 1350 len)]
       ;  (if (< e len)
       ;    (do (circ/relay-data config circ-id (.slice b s e))

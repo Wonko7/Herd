@@ -12,6 +12,15 @@
   "concatenate buffers"
   (js/Buffer.concat (cljs/clj->js bs)))
 
+(defn copycat [& bs]
+  (let [len  (reduce #(+ %1 (.-length %2)) 0 bs)
+        data (js/Buffer. len)]
+    (loop [[b & bs] bs i 0]
+      (if b
+        (do (.copy b data i)
+            (recur bs (+ i (.-length b))))
+        data))))
+
 (defn b= [a b]
   "buffer content equality"
   (= (.toString b) (.toString a)))
