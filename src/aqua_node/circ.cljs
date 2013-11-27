@@ -151,7 +151,7 @@
     (update-data circ-id [:roles] (cons :mux (:roles (circ-id @circuits))))
     (cell-send config socket circ-id :create-mux create)))
 
-(defn enc-send [config socket circ-id circ-cmd msg]
+(defn- enc-send [config socket circ-id circ-cmd msg]
   "Add all onion skins before sending the packet."
   (assert (@circuits circ-id) "cicuit does not exist") ;; FIXME this assert will probably be done elsewhere (process?)
   ;; FIXME assert state.
@@ -164,58 +164,8 @@
                     (.copy %1 data)
                     (.copy %2 data (-> %1 .-length))
                     data)
-        msg      (reduce #(let [iv (iv)] (copycat iv (crypto/enc-aes %2 iv %1))) msg keys)
-                   ] ;; FIXME: new iv for each? seems overkill...
+        msg      (reduce #(let [iv (iv)] (copycat iv (crypto/enc-aes %2 iv %1))) msg keys)] ;; FIXME: new iv for each? seems overkill...
     (cell-send config socket circ-id circ-cmd msg)))
-
-;(defn enc-send [config socket circ-id circ-cmd msg]
-;  "Add all onion skins before sending the packet."
-;  (assert (@circuits circ-id) "cicuit does not exist") ;; FIXME this assert will probably be done elsewhere (process?)
-;  ;; FIXME assert state.
-;  (let [circ     (@circuits circ-id)
-;        c        (node/require "crypto")
-;        mk-iv       #(.randomBytes c. 16)
-;        [k & keys]     (reverse (get-path-keys circ)) ;; FIXME: PATH: mk pluggable
-;        copycat  #(let [len  (+ (.-length %1) (.-length %2))
-;                        data (js/Buffer. len)]
-;                    (.copy %1 data)
-;                    (.copy %2 data (-> %1 .-length))
-;                    data)
-;        fiv      (mk-iv)
-;        msg      (apply copycat (reduce (fn [[iv msg] k]
-;                                          (let [niv (mk-iv)]
-;                                            [niv (crypto/enc-aes k niv msg iv)]))
-;                                        [fiv (crypto/enc-aes k fiv msg)]
-;                                        keys))
-;        ] ;; FIXME: new iv for each? seems overkill...
-;    (cell-send config socket circ-id circ-cmd msg)))
-
-;(defn enc-send [config socket circ-id circ-cmd msg]
-;  "Add all onion skins before sending the packet."
-;  (assert (@circuits circ-id) "cicuit does not exist") ;; FIXME this assert will probably be done elsewhere (process?)
-;  ;; FIXME assert state.
-;  (let [circ     (@circuits circ-id)
-;        c        (node/require "crypto")
-;        mk-iv    #(.randomBytes c. 16)
-;        [fk & keys]     (reverse (get-path-keys circ)) ;; FIXME: PATH: mk pluggable
-;        ;keys     (reverse (get-path-keys circ)) ;; FIXME: PATH: mk pluggable
-;        copycat  #(let [len  (+ (.-length %1) (.-length %2))
-;                        data (js/Buffer. len)]
-;                    (.copy %1 data)
-;                    (.copy %2 data (-> %1 .-length))
-;                    data)
-;        fiv      (mk-iv)
-;        ;msg      (reduce #(let [iv (iv)] (copycat iv (crypto/enc-aes %2 iv %1))) msg keys)
-;                   ] ;; FIXME: new iv for each? seems overkill...
-;    ;(cell-send config socket circ-id circ-cmd msg)
-;    (cell-send config socket circ-id circ-cmd (if fk
-;                                                (loop [[k & ks] keys, m (crypto/enc-aes fk fiv msg), iv fiv]
-;                                                  (if k
-;                                                    (let [niv (mk-iv)]
-;                                                      (recur ks (crypto/enc-aes k niv m iv) niv))
-;                                                    (copycat iv m)))
-;                                                msg))
-;    ))
 
 (defn- relay [config socket circ-id relay-cmd msg]
   (let [data         (b/new (+ (.-length msg) 11))
@@ -236,7 +186,6 @@
     (relay config socket circ-id :begin dest)))
 
 (defn relay-data [config circ-id data]
-  (log/debug :sending (.-length data))
   (relay config (:conn (@circuits circ-id)) circ-id :data data))
 
 ;; see tor spec 5.1.2.
