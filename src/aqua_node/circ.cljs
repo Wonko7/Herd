@@ -157,7 +157,7 @@
   ;; FIXME assert state.
   (let [circ     (@circuits circ-id)
         c        (node/require "crypto")
-        iv    #(.randomBytes c. 16)
+        iv       #(.randomBytes c. 16)
         keys     (reverse (get-path-keys circ)) ;; FIXME: PATH: mk pluggable
         copycat  #(let [len  (+ (.-length %1) (.-length %2))
                         data (js/Buffer. len)]

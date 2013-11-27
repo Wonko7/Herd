@@ -10,23 +10,15 @@
   "work around reserved final keyword"
   (.apply (aget c "final") c))
 
-(defn enc-aes [key iv msg & [extra]]
+(defn enc-aes [key iv msg]
   (let [c    (node/require "crypto")
         aes  (.createCipheriv c. "aes-256-ctr" key iv)
         copycat2  #(let [len  (+ (.-length %1) (.-length %2))
                          data (js/Buffer. len)]
                      (.copy %1 data)
                      (.copy %2 data (-> %1 .-length))
-                     data)
-        copycat3  #(let [len  (+ (.-length %1) (.-length %2) (.-length %3))
-                         data (js/Buffer. len)]
-                     (.copy %1 data)
-                     (.copy %2 data (-> %1 .-length))
-                     (.copy %3 data (-> %2 .-length))
                      data)]
-    (if extra
-      (copycat3 (.update aes extra) (.update aes msg) (fin aes))
-      (copycat2 (.update aes msg) (fin aes)))))
+      (copycat2 (.update aes msg) (fin aes))))
 
 (defn dec-aes [key iv msg]
   (let [c    (node/require "crypto")
