@@ -11,4 +11,5 @@
                                    :output-to "target/aqua.js"
                                    ;:optimizations :advanced
                                    :optimizations :simple
+                                   :static-fns true
                                    :pretty-print true}}]})

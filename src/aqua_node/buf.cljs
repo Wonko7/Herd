@@ -21,6 +21,13 @@
             (recur bs (+ i (.-length b))))
         data))))
 
+(defn copycat2 [a b]
+  (let [len  (+ (.-length a) (.-length b))
+        data (js/Buffer. len)]
+    (.copy a data)
+    (.copy b data (.-length a))
+    data))
+
 (defn b= [a b]
   "buffer content equality"
   (= (.toString b) (.toString a)))

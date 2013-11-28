@@ -12,13 +12,8 @@
 
 (defn enc-aes [key iv msg]
   (let [c    (node/require "crypto")
-        aes  (.createCipheriv c. "aes-256-ctr" key iv)
-        copycat2  #(let [len  (+ (.-length %1) (.-length %2))
-                         data (js/Buffer. len)]
-                     (.copy %1 data)
-                     (.copy %2 data (-> %1 .-length))
-                     data)]
-      (copycat2 (.update aes msg) (fin aes))))
+        aes  (.createCipheriv c. "aes-256-ctr" key iv)]
+      (b/copycat2 (.update aes msg) (fin aes))))
 
 (defn dec-aes [key iv msg]
   (let [c    (node/require "crypto")

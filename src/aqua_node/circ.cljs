@@ -157,14 +157,8 @@
   ;; FIXME assert state.
   (let [circ     (@circuits circ-id)
         c        (node/require "crypto")
-        iv       #(.randomBytes c. 16)
         keys     (reverse (get-path-keys circ)) ;; FIXME: PATH: mk pluggable
-        copycat  #(let [len  (+ (.-length %1) (.-length %2))
-                        data (js/Buffer. len)]
-                    (.copy %1 data)
-                    (.copy %2 data (-> %1 .-length))
-                    data)
-        msg      (reduce #(let [iv (iv)] (copycat iv (crypto/enc-aes %2 iv %1))) msg keys)] ;; FIXME: new iv for each? seems overkill...
+        msg      (reduce #(let [iv (.randomBytes c. 16)] (b/copycat2 iv (crypto/enc-aes %2 iv %1))) msg keys)] ;; FIXME: new iv for each? seems overkill...
     (cell-send config socket circ-id circ-cmd msg)))
 
 (defn- relay [config socket circ-id relay-cmd msg]
