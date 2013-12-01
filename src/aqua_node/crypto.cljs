@@ -10,15 +10,26 @@
   "work around reserved final keyword"
   (.apply (aget c "final") c))
 
+(def encode (atom {}))
+(def decode (atom {}))
+
 (defn enc-aes [key iv msg]
-  (let [c    (node/require "crypto")
-        aes  (.createCipheriv c. "aes-256-ctr" key iv)]
-      (b/copycat2 (.update aes msg) (fin aes))))
+  (if-let [enc (@encode key)]
+    (.update enc msg)
+    (let [c    (node/require "crypto")
+          aes  (.createCipheriv c. "aes-256-ctr" key iv)]
+      (swap! encode merge {key aes})
+      (.update aes msg))))
+
+(defn mk-enc-aes [key iv msg])
 
 (defn dec-aes [key iv msg]
-  (let [c    (node/require "crypto")
-        aes  (.createDecipheriv c. "aes-256-ctr" key iv)]
-    (b/cat (.update aes msg) (fin aes))))
+  (if-let [dec (@decode key)]
+    (.update dec (b/copycat2 iv msg))
+    (let [c    (node/require "crypto")
+          aes  (.createDecipheriv c. "aes-256-ctr" key iv)]
+      (swap! decode merge {key aes})
+      (.update aes msg))))
 
 
 ;; curve:

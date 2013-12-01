@@ -161,7 +161,16 @@
         msg      (reduce #(let [iv (.randomBytes c. 16)] (b/copycat2 iv (crypto/enc-aes %2 iv %1))) msg keys)] ;; FIXME: new iv for each? seems overkill...
     (cell-send config socket circ-id circ-cmd msg)))
 
-(defn- relay [config socket circ-id relay-cmd msg]
+(defn- enc-noiv-send [config socket circ-id circ-cmd msg]
+  "Add all onion skins before sending the packet."
+  (assert (@circuits circ-id) "cicuit does not exist") ;; FIXME this assert will probably be done elsewhere (process?)
+  ;; FIXME assert state.
+  (let [circ     (@circuits circ-id)
+        keys     (reverse (get-path-keys circ)) ;; FIXME: PATH: mk pluggable
+        msg      (reduce #(crypto/enc-aes %2 nil %1) msg keys)] ;; FIXME: new iv for each? seems overkill...
+    (cell-send config socket circ-id circ-cmd msg)))
+
+(defn- relay [config socket circ-id relay-cmd msg & [noiv]]
   (let [data         (b/new (+ (.-length msg) 11))
         [w8 w16 w32] (b/mk-writers data)]
     (w8 (from-relay-cmd relay-cmd) 0)
@@ -170,7 +179,9 @@
     (w32 101 5) ;; Digest
     (w16 101 9) ;; Length
     (.copy msg data 11)
-    (enc-send config socket circ-id :relay data)))
+    (if noiv
+      (enc-noiv-send config socket circ-id :relay data)
+      (enc-send config socket circ-id :relay data))))
 
 ;; see tor spec 6.2. 160 = ip6 ok & prefered.
 (defn relay-begin [config circ-id dest]
@@ -327,8 +338,8 @@
       (let [recognised? #(zero? (.readUInt16BE % 1)) ;; FIXME -> add digest
             [k & ks]    (get-path-keys circ) ;; FIXME: PATH: mk pluggable
             msg         (loop [k k, ks ks, m payload]
-                          (let [[iv m] (b/cut m 16)
-                                m      (crypto/dec-aes k iv m)
+                          (let [[iv m]   (b/cut m 16)
+                                m        (crypto/dec-aes k iv m)
                                 [k & ks] ks]
                             (if k (recur k ks m) m)))
             [r1 r2 r4]  (b/mk-readers msg)
