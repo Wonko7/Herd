@@ -8,8 +8,9 @@
                  [org.clojure/clojurescript "0.0-1978"]]
   :cljsbuild {:builds [{:source-path "src"
                         :compiler {:target :nodejs
+                                   :hashbang "/usr/bin/env node\nrequire('source-map-support').install();"
                                    :output-to "target/aqua.js"
-                                   ;:optimizations :advanced
+                                   :source-map "target/aqua.js.map"
                                    :optimizations :simple
                                    :static-fns true
                                    :pretty-print true}}]})
