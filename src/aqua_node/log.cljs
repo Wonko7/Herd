@@ -26,7 +26,7 @@
 (defn c-info [error message & [return-value]]
   (info message)
   (when (dbg?)
-    (println error)
+    ;(println error)
     (println (.-stack error)))
   return-value)
 

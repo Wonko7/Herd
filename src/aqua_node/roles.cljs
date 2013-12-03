@@ -22,6 +22,7 @@
     (if (= (-> circ-data :state) :relay)
       (doall (map (fn [b] (.nextTick js/process #(circ/relay-data config circ-id b)))
                   (apply (partial b/cut b) (next (range 0 (.-length b) 1350)))))
+      ;(.nextTick js/process #(circ/relay-data config circ-id b))
       (log/info "not ready for data, dropping on circuit" circ-id))))
 
 (defn aqua-server-recv [config s]
@@ -47,7 +48,6 @@
   (some #(= role %) roles))
 
 (defn bootstrap [{roles :roles ap :app-proxy-conn aq :aqua-conn ds :dir-server :as config}]
-  (log/info "No IV. Benchmarking only.")
   (let [is?   #(is? % roles)]
     (log/info "Bootstrapping as" roles)
     (when (some is? [:mix :entry :exit])

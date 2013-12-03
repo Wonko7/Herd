@@ -173,6 +173,9 @@
   ;; FIXME assert state.
   (let [circ     (@circuits circ-id)
         keys     (get-path-enc circ direction) ;; FIXME: PATH: mk pluggable
+        l        (.-length msg)
+        extra-l  (- 32 (rem l 32))
+        msg      (b/cat (b/new (cljs/clj->js [extra-l])) msg (b/new extra-l))
         msg      (reduce #(.update %2 %1) msg keys)] ;; FIXME: new iv for each? seems overkill...
     (cell-send config socket circ-id circ-cmd msg)))
 
@@ -341,6 +344,8 @@
         (enc-noiv-send config (:backward-hop circ) circ-id :relay :b-enc payload))
       (let [recognised? #(zero? (.readUInt16BE % 1)) ;; FIXME -> add digest
             msg         (reduce #(.update %2 %1) payload (get-path-enc circ direction))
+            padd-len    (.readUint8 msg 0)
+            msg         (.slice msg 1 (- (.-length msg) padd-len))
             [r1 r2 r4]  (b/mk-readers msg)
             relay-data  {:relay-cmd  (r1 0)
                          :recognised (r2 1)

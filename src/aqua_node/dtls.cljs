@@ -5,12 +5,12 @@
             [aqua-node.conns :as c]))
 
 (defn mk-dtls [config dest]
-  [(node/require "nodedtls") (cljs/clj->js (merge (-> config :auth :openssl) (select-keys dest [:host :port])))])
+  [(node/require "tls") (cljs/clj->js (merge (-> config :auth :openssl) (select-keys dest [:host :port]) {:rejectUnauthorized false}))])
 
 (defn create-server [{host :host port :port :as dest} config new-conn-handler]
   (let [[dtls opts] (mk-dtls config dest)
-        srv         (.createServer dtls port opts new-conn-handler)] ;; FIXME: based on tls api, this is not what a nice dtls api should look like.
-    (log/info "Aqua listening on:" host port)
+        srv         (.createServer dtls opts new-conn-handler)] ;; FIXME: based on tls api, this is not what a nice dtls api should look like.
+    (.listen srv port host)
     (c/add srv {:cs :server :type :aqua})))
 
 (defn connect [dest config conn-handler]
