@@ -79,16 +79,25 @@
 
 ;; path management ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
-(defn get-path-keys [circ-data]
-  (filter identity (map #(-> % :secret) (:path circ-data))))
+(defn get-path-enc [circ-data direction] ;; FIXME unused
+  (log/error direction)
+  (filter identity (map #(-> % direction) (if (= :f-enc direction)
+                                            (:path circ-data)
+                                            (reverse (:path circ-data))))))
 
 (defn add-path-auth [id circ-data auth]
   (update-data id [:path] (concat (:path circ-data) [{:auth auth}])))
 
-(defn add-path-secret-to-last [id circ-data secret]
-  (let [l  (last (:path circ-data))
-        ls (drop-last (:path circ-data))]
-    (update-data id [:path] (concat ls [(merge l {:secret secret})]))))
+(defn add-path-secret-to-last [config id circ-data secret]
+  (let [l        (last (:path circ-data))
+        ls       (drop-last (:path circ-data))
+        [key iv] (b/cut secret (-> config :enc :key-len))
+        enc      [(crypto/create-enc key iv) (crypto/create-dec key iv)]
+        [f b]    (if (is? :app-proxy circ-data)
+                   enc
+                   (reverse enc))]
+    (update-data id [:path] (concat ls [(merge l {:f-enc f
+                                                  :b-enc b})]))))
 
 
 ;; make requests: path level ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
@@ -161,16 +170,16 @@
         msg      (reduce #(let [iv (.randomBytes c. 16)] (b/copycat2 iv (crypto/enc-aes %2 iv %1))) msg keys)] ;; FIXME: new iv for each? seems overkill...
     (cell-send config socket circ-id circ-cmd msg)))
 
-(defn- enc-noiv-send [config socket circ-id circ-cmd msg]
+(defn- enc-noiv-send [config socket circ-id circ-cmd direction msg]
   "Add all onion skins before sending the packet."
   (assert (@circuits circ-id) "cicuit does not exist") ;; FIXME this assert will probably be done elsewhere (process?)
   ;; FIXME assert state.
   (let [circ     (@circuits circ-id)
-        keys     (reverse (get-path-keys circ)) ;; FIXME: PATH: mk pluggable
-        msg      (reduce #(crypto/enc-aes %2 nil %1) msg keys)] ;; FIXME: new iv for each? seems overkill...
+        keys     (get-path-enc circ direction) ;; FIXME: PATH: mk pluggable
+        msg      (reduce #(.update %2 %1) msg keys)] ;; FIXME: new iv for each? seems overkill...
     (cell-send config socket circ-id circ-cmd msg)))
 
-(defn- relay [config socket circ-id relay-cmd msg & [noiv]]
+(defn- relay [config socket circ-id relay-cmd direction msg]
   (let [data         (b/new (+ (.-length msg) 11))
         [w8 w16 w32] (b/mk-writers data)]
     (w8 (from-relay-cmd relay-cmd) 0)
@@ -179,19 +188,17 @@
     (w32 101 5) ;; Digest
     (w16 101 9) ;; Length
     (.copy msg data 11)
-    (if noiv
-      (enc-noiv-send config socket circ-id :relay data)
-      (enc-send config socket circ-id :relay data))))
+    (enc-noiv-send config socket circ-id :relay direction data)))
 
 ;; see tor spec 6.2. 160 = ip6 ok & prefered.
 (defn relay-begin [config circ-id dest]
   (let [socket (:conn (@circuits circ-id))
         dest   (conv/dest-to-tor-str dest)
         dest   (b/cat (b/new dest) (b/new (cljs/clj->js [0 160 0 0 0])))]
-    (relay config socket circ-id :begin dest)))
+    (relay config socket circ-id :begin :f-enc dest)))
 
 (defn relay-data [config circ-id data]
-  (relay config (:conn (@circuits circ-id)) circ-id :data data))
+  (relay config (:conn (@circuits circ-id)) circ-id :data :f-enc data))
 
 ;; see tor spec 5.1.2.
 (defn relay-extend [config circ-id {nh-auth :auth nh-dest :dest}]
@@ -203,7 +210,7 @@
                         :ip6 (b/cat (b/new (cljs/clj->js [1 4 16])) (conv/ip6-to-bin (:host nh-dest)) (conv/port-to-bin (:port nh-dest)))
                         (assert nil "unsupported next hop address type"))]
     (add-path-auth circ-id data auth) ;; FIXME: PATH: mk pluggable
-    (relay config socket circ-id :extend2 (b/cat nspec create))))
+    (relay config socket circ-id :extend2 :f-enc (b/cat nspec create))))
 
 (defn forward [config circ-id dest-str cell]
   (let [socket  (c/find-by-dest {})
@@ -221,11 +228,11 @@
   (let [{pub-B :pub node-id :id sec-b :sec} (-> config :auth :aqua-id) ;; FIXME: renaming the keys is stupid.
         hs-type                             (.readUInt16BE payload 0)
         len                                 (.readUInt16BE payload 2)
-        [shared-sec created]                (hs/server-reply {:pub-B pub-B :node-id node-id :sec-b sec-b} (.slice payload 4) 32)
+        [shared-sec created]                (hs/server-reply {:pub-B pub-B :node-id node-id :sec-b sec-b} (.slice payload 4) (+ (-> config :enc :key-len) (-> config :enc :iv-len)))
         header                              (b/new 2)]
     (assert (= hs-type 2) "unsupported handshake type")
     (.writeUInt16BE header (.-length created) 0)
-    (add-path-secret-to-last circ-id (@circuits circ-id) shared-sec) ;; FIXME: PATH: mk pluggable
+    (add-path-secret-to-last config circ-id (@circuits circ-id) shared-sec) ;; FIXME: PATH: mk pluggable
     (update-data circ-id [:backward-hop] socket)
     (cell-send config socket circ-id :created2 (b/cat header created))))
 
@@ -235,15 +242,14 @@
   (let [circ       (@circuits circ-id)]
     (assert circ "cicuit does not exist") ;; FIXME this assert will probably be done elsewhere (process?)
     (if (is? :mix circ)
-      (relay config (:backward-hop circ) circ-id :extended2 payload)
+      (relay config (:backward-hop circ) circ-id :extended2 :b-enc payload)
       (let [mux?       (is? :mux circ)
             auth       (if mux? (-> circ :mux :auth) (-> circ :path last :auth))
             len        (.readUInt16BE payload 0)
-            shared-sec (hs/client-finalise auth (.slice payload 2) 32)] ;; FIXME aes 256 seems to want 32 len key. seems short to me.
-        (when mux? (b/print-x shared-sec))
+            shared-sec (hs/client-finalise auth (.slice payload 2) (+ (-> config :enc :key-len) (-> config :enc :iv-len)))] ;; FIXME aes 256 seems to want 32 len key. seems short to me.
         (if mux?
-          (update-data circ-id [:mux :auth :secret] shared-sec)
-          (add-path-secret-to-last circ-id circ shared-sec))
+          (update-data circ-id [:mux :auth :secret] shared-sec) ;; broken but unused on noiv.
+          (add-path-secret-to-last config circ-id circ shared-sec))
         (when (:mk-path-fn circ)
           ((:mk-path-fn circ) config circ-id))))))
 
@@ -288,7 +294,7 @@
                      (update-data circ-id [:roles] (cons :exit (:roles circ)))
                      (let [dest (first (conv/parse-addr r-payload))
                            sock (conn/new :tcp :client dest config (fn [config soc buf]
-                                                                     (relay config socket circ-id :data buf)
+                                                                     (relay config socket circ-id :data :b-enc buf)
                                                                      (c/add-listeners soc {:error #(do (c/rm soc)
                                                                                                        (destroy circ-id))})))]
                        (update-data circ-id [:forward-hop] sock)))
@@ -330,18 +336,14 @@
   Otherwise, take off the onion skins we can, process it if we can or forward."
   (assert (@circuits circ-id) "cicuit does not exist")
   (let [circ        (@circuits circ-id)
-        mux?        (is? :mux circ)]
-    (if (and (is-not? :origin circ) (= (:forward-hop circ) socket))
+        mux?        (is? :mux circ)
+        direction   (if (= (:forward-hop circ) socket) :b-enc :f-enc)]
+    (if (and (is-not? :origin circ) (= direction :b-enc))
       (if (and mux? (-> circ :mux :fhop))
         (forward config circ-id (-> circ :mux :fhop) payload)
-        (enc-send config (:backward-hop circ) circ-id :relay payload))
+        (enc-noiv-send config (:backward-hop circ) circ-id :relay :b-enc payload))
       (let [recognised? #(zero? (.readUInt16BE % 1)) ;; FIXME -> add digest
-            [k & ks]    (get-path-keys circ) ;; FIXME: PATH: mk pluggable
-            msg         (loop [k k, ks ks, m payload]
-                          (let [[iv m]   (b/cut m 16)
-                                m        (crypto/dec-aes k iv m)
-                                [k & ks] ks]
-                            (if k (recur k ks m) m)))
+            msg         (reduce #(.update %2 %1) payload (get-path-enc circ direction))
             [r1 r2 r4]  (b/mk-readers msg)
             relay-data  {:relay-cmd  (r1 0)
                          :recognised (r2 1)

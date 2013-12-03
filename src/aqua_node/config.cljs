@@ -22,7 +22,7 @@
                    :key-id-len  32
                    :g-len       32
                    :h-len       32}]
-    {:encr        {:iv-len 16 :key-len 32}
+    {:enc         {:iv-len 16 :key-len 32}
      :debug       false
      :ntor-values ntor}))
 
