@@ -80,10 +80,7 @@
 ;; path management ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
 (defn get-path-enc [circ-data direction] ;; FIXME unused
-  (log/error direction)
-  (filter identity (map #(-> % direction) (if (= :f-enc direction)
-                                            (:path circ-data)
-                                            (reverse (:path circ-data))))))
+  (filter identity (map #(-> % direction) (:path circ-data))))
 
 (defn add-path-auth [id circ-data auth]
   (update-data id [:path] (concat (:path circ-data) [{:auth auth}])))
