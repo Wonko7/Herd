@@ -80,7 +80,7 @@
 ;; path management ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
 (defn get-path-enc [circ-data direction] ;; FIXME unused
-  (filter identity (map #(-> % direction) (:path circ-data))))
+  (filter identity (map #(-> % direction) (:path circ-data)))) ;; FIXME may need to reverse order with mux
 
 (defn add-path-auth [id circ-data auth]
   (update-data id [:path] (concat (:path circ-data) [{:auth auth}])))

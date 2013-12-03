@@ -47,6 +47,7 @@
   (some #(= role %) roles))
 
 (defn bootstrap [{roles :roles ap :app-proxy-conn aq :aqua-conn ds :dir-server :as config}]
+  (log/info "No IV. Benchmarking only.")
   (let [is?   #(is? % roles)]
     (log/info "Bootstrapping as" roles)
     (when (some is? [:mix :entry :exit])
