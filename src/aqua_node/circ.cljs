@@ -88,9 +88,8 @@
 (defn add-path-secret-to-last [config id circ-data secret]
   (let [l        (last (:path circ-data))
         ls       (drop-last (:path circ-data))
-        [key iv] (b/cut secret (-> config :enc :key-len))
-        enc      [(crypto/create-enc key iv) (crypto/create-dec key iv)]
-        [f b]    (if (is? :app-proxy circ-data)
+        enc      [(partial crypto/create-tmp-enc secret) (partial crypto/create-tmp-dec secret)]
+        [f b]    (if (is? :origin circ-data)
                    enc
                    (reverse enc))]
     (update-data id [:path] (concat ls [(merge l {:f-enc f
@@ -129,10 +128,10 @@
     (println (.-length buf))
     (if (-> config :mk-packet)
       buf
-      (doall (map (fn [b] (do ;(println (.-length b))
-                              (.write socket b)));; FIXME test with next tick
-                  (apply (partial b/cut buf) (next (range 0 (.-length buf) 500)))))
-      ;(.nextTick js/process #(.write socket buf))
+      ;(doall (map (fn [b] (do ;(println (.-length b))
+      ;                        (.write socket b)));; FIXME test with next tick
+      ;            (apply (partial b/cut buf) (next (range 0 (.-length buf) 500)))))
+      (.nextTick js/process #(.write socket buf))
       )))
 
 
@@ -163,14 +162,17 @@
     (update-data circ-id [:roles] (cons :mux (:roles (circ-id @circuits))))
     (cell-send config socket circ-id :create-mux create)))
 
-(defn- enc-send [config socket circ-id circ-cmd msg]
+(defn- enc-send [config socket circ-id circ-cmd direction msg]
   "Add all onion skins before sending the packet."
   (assert (@circuits circ-id) "cicuit does not exist") ;; FIXME this assert will probably be done elsewhere (process?)
   ;; FIXME assert state.
   (let [circ     (@circuits circ-id)
         c        (node/require "crypto")
-        keys     (reverse (get-path-keys circ)) ;; FIXME: PATH: mk pluggable
-        msg      (reduce #(let [iv (.randomBytes c. 16)] (b/copycat2 iv (crypto/enc-aes %2 iv %1))) msg keys)] ;; FIXME: new iv for each? seems overkill...
+        encs     (get-path-enc circ direction) ;; FIXME: PATH: mk pluggable
+        encs     (if (= direction :f-enc) (reverse encs) encs)
+        msg      (reduce #(let [iv (.randomBytes c. (-> config :enc :iv-len))]
+                            (b/copycat2 iv (%2 iv %1)))
+                         msg encs)]
     (cell-send config socket circ-id circ-cmd msg)))
 
 (defn- enc-noiv-send [config socket circ-id circ-cmd direction msg]
@@ -178,8 +180,8 @@
   (assert (@circuits circ-id) "cicuit does not exist") ;; FIXME this assert will probably be done elsewhere (process?)
   ;; FIXME assert state.
   (let [circ     (@circuits circ-id)
-        keys     (get-path-enc circ direction) ;; FIXME: PATH: mk pluggable
-        msg      (reduce #(.update %2 %1) msg keys)] ;; FIXME: new iv for each? seems overkill...
+        encs     (get-path-enc circ direction) ;; FIXME: PATH: mk pluggable
+        msg      (reduce #(.update %2 %1) msg encs)] ;; FIXME: new iv for each? seems overkill...
     (cell-send config socket circ-id circ-cmd msg)))
 
 (defn- relay [config socket circ-id relay-cmd direction msg]
@@ -191,7 +193,7 @@
     (w32 101 5) ;; Digest
     (w16 101 9) ;; Length
     (.copy msg data 11)
-    (enc-noiv-send config socket circ-id :relay direction data)))
+    (enc-send config socket circ-id :relay direction data)))
 
 ;; see tor spec 6.2. 160 = ip6 ok & prefered.
 (defn relay-begin [config circ-id dest]
@@ -231,7 +233,7 @@
   (let [{pub-B :pub node-id :id sec-b :sec} (-> config :auth :aqua-id) ;; FIXME: renaming the keys is stupid.
         hs-type                             (.readUInt16BE payload 0)
         len                                 (.readUInt16BE payload 2)
-        [shared-sec created]                (hs/server-reply {:pub-B pub-B :node-id node-id :sec-b sec-b} (.slice payload 4) (+ (-> config :enc :key-len) (-> config :enc :iv-len)))
+        [shared-sec created]                (hs/server-reply {:pub-B pub-B :node-id node-id :sec-b sec-b} (.slice payload 4) (-> config :enc :key-len))
         header                              (b/new 2)]
     (assert (= hs-type 2) "unsupported handshake type")
     (.writeUInt16BE header (.-length created) 0)
@@ -249,7 +251,7 @@
       (let [mux?       (is? :mux circ)
             auth       (if mux? (-> circ :mux :auth) (-> circ :path last :auth))
             len        (.readUInt16BE payload 0)
-            shared-sec (hs/client-finalise auth (.slice payload 2) (+ (-> config :enc :key-len) (-> config :enc :iv-len)))] ;; FIXME aes 256 seems to want 32 len key. seems short to me.
+            shared-sec (hs/client-finalise auth (.slice payload 2) (-> config :enc :key-len))] ;; FIXME aes 256 seems to want 32 len key. seems short to me.
         (if mux?
           (update-data circ-id [:mux :auth :secret] shared-sec) ;; broken but unused on noiv.
           (add-path-secret-to-last config circ-id circ shared-sec))
@@ -344,8 +346,10 @@
     (if (and (is-not? :origin circ) (= direction :b-enc))
       (if (and mux? (-> circ :mux :fhop))
         (forward config circ-id (-> circ :mux :fhop) payload)
-        (enc-noiv-send config (:backward-hop circ) circ-id :relay :b-enc payload))
-      (let [msg         (reduce #(.update %2 %1) payload (get-path-enc circ direction))
+        (enc-send config (:backward-hop circ) circ-id :relay :b-enc payload))
+      (let [msg         (reduce #(let [[iv msg] (b/cut %1 (-> config :enc :iv-len))]
+                                   (%2 iv msg))
+                                payload (get-path-enc circ direction))
             [r1 r2 r4]  (b/mk-readers msg)
             recognised? (and (= 101 (r2 3) (r4 5) (r2 9)) (zero? (r2 1))) ;; FIXME -> add digest
             relay-data  {:relay-cmd  (r1 0)
@@ -403,10 +407,11 @@
    :extend2    14
    :extended2  15})
 
+(def recvd (atom 0))
 (def wait-buffer (atom nil)) ;; FIXME we need one per socket
-(defn process [config socket data]
+(defn process [config socket data-orig]
   ;; FIXME check len first -> match with fix buf size
-  (let [data         (if @wait-buffer (b/copycat2 @wait-buffer buff) data)
+  (let [data         (if @wait-buffer (b/copycat2 @wait-buffer data-orig) data-orig)
         [r8 r16 r32] (b/mk-readers data)
         len          (.-length data)
         cell-len     (r32 0)
@@ -414,11 +419,14 @@
         command      (to-cmd (r8 8))
         payload      (.slice data 9)]
     (log/debug "recv cell: id:" circ-id "cmd:" (:name command) "len:" len)
+    (log/debug "rlen:" (.-length data-orig) :recvd (swap! recvd inc))
     (cond (> len cell-len) (let [[f r] (b/cut data cell-len)]
                              (reset! wait-buffer nil)
                              (process config socket f)
                              (process config socket r))
-          (< len cell-len) (reset! wait-buffer data)
+          (< len cell-len) (cond (@circuits circ-id)                     (reset! wait-buffer data)
+                                 (@circuits (.readUInt32BE data-orig 4)) (reset! wait-buffer data-orig)
+                                 :else                                   (reset! wait-buffer nil))
           :else            (do (reset! wait-buffer nil)
                                (when (:fun command)
                                  (try

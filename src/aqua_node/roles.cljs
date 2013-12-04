@@ -20,9 +20,9 @@
   (let [circ-id   (:circuit (c/get-data s))
         circ-data (circ/get-data circ-id)]
     (if (= (-> circ-data :state) :relay)
-      ;(doall (map (fn [b] (.nextTick js/process #(circ/relay-data config circ-id b)))
-      ;            (apply (partial b/cut b) (next (range 0 (.-length b) 300)))))
-      (.nextTick js/process #(circ/relay-data config circ-id b))
+      (doall (map (fn [b] (.nextTick js/process #(circ/relay-data config circ-id b)))
+                  (apply (partial b/cut b) (next (range 0 (.-length b) 1350)))))
+      ;(.nextTick js/process #(circ/relay-data config circ-id b))
       (log/info "not ready for data, dropping on circuit" circ-id))))
 
 (defn aqua-server-recv [config s]
