@@ -11,17 +11,11 @@
   (.apply (aget c "final") c))
 
 (defn create-tmp-enc [key iv msg]
-  (println  :enc)
-  (b/print-x iv :iv)
-  (b/print-x key :key)
   (let [c    (node/require "crypto")
         aes  (.createCipheriv c. "aes-256-ctr" key iv)]
     (.update aes msg)))
 
 (defn create-tmp-dec [key iv msg]
-  (println  :dec)
-  (b/print-x iv :iv)
-  (b/print-x key :key)
   (let [c    (node/require "crypto")
         aes  (.createDecipheriv c. "aes-256-ctr" key iv)]
     (.update aes msg)))

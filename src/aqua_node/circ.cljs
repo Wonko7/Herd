@@ -169,14 +169,14 @@
     (update-data circ-id [:roles] (cons :mux (:roles (circ-id @circuits))))
     (cell-send config socket circ-id :create-mux create)))
 
-(defn- enc-send [config socket circ-id circ-cmd direction msg]
+(defn- enc-send [config socket circ-id circ-cmd direction msg & [iv]]
   "Add all onion skins before sending the packet."
   (assert (@circuits circ-id) "cicuit does not exist") ;; FIXME this assert will probably be done elsewhere (process?)
   ;; FIXME assert state.
   (let [circ     (@circuits circ-id)
         c        (node/require "crypto")
         encs     (get-path-enc circ direction) ;; FIXME: PATH: mk pluggable
-        iv       (.randomBytes c. (-> config :enc :iv-len))
+        iv       (or iv (.randomBytes c. (-> config :enc :iv-len)))
         msg      (b/copycat2 iv (reduce #(%2 iv %1) msg encs))]
     (cell-send config socket circ-id circ-cmd msg)))
 
@@ -272,7 +272,6 @@
         [shared-sec created]                (hs/server-reply {:pub-B pub-B :node-id node-id :sec-b sec-b} (.slice payload 4) 32)
         header                              (b/new 2)]
     (assert (= hs-type 2) "unsupported handshake type")
-    (b/print-x shared-sec)
     (.writeUInt16BE header (.-length created) 0)
     (update-data circ-id [:mux :auth] {:secret shared-sec}) ;; FIXME: PATH: mk pluggable
     (update-data circ-id [:mux :bhop] (conv/dest-to-tor-str dest))
@@ -304,9 +303,9 @@
                      (update-data circ-id [:roles] (cons :exit (:roles circ)))
                      (let [dest (first (conv/parse-addr r-payload))
                            sock (conn/new :tcp :client dest config (fn [config soc buf]
-                                                                     (relay config socket circ-id :data :b-enc buf)
-                                                                     (c/add-listeners soc {:error #(do (c/rm soc)
-                                                                                                       (destroy circ-id))})))]
+                                                                     (relay config socket circ-id :data :b-enc buf)))]
+                       (c/add-listeners sock {:error #(do (c/rm sock)
+                                                         (destroy circ-id))})
                        (update-data circ-id [:forward-hop] sock)))
         p-extend   (fn []
                      (let [[r1 r2 r4] (b/mk-readers r-payload)
@@ -344,19 +343,19 @@
 (defn recv-relay [config socket circ-id payload]
   "If relay message is going backward add an onion skin and send.
   Otherwise, take off the onion skins we can, process it if we can or forward."
-  
+
   (assert (@circuits circ-id) "cicuit does not exist")
   (let [circ        (@circuits circ-id)
         mux?        (is? :mux circ)
-        direction   (if (= (:forward-hop circ) socket) :b-enc :f-enc)]
-    
+        direction   (if (= (:forward-hop circ) socket) :b-enc :f-enc)
+        [iv msg]    (b/cut payload (-> config :enc :iv-len))]
+
     (if (and (is-not? :origin circ) (= direction :b-enc)) ;; then message is going back to origin -> add enc & forwad
       (if (and mux? (-> circ :mux :fhop))
         (forward config circ-id (-> circ :mux :fhop) payload)
-        (enc-send config (:backward-hop circ) circ-id :relay :b-enc payload))
-      
-      (let [[iv msg]    (b/cut payload (-> config :enc :iv-len)) ;; message going towards exit -> rm our enc layer. OR message @ origin, peel of all layers.
-            msg         (reduce #(%2 iv %1) msg (get-path-enc circ direction))
+        (enc-send config (:backward-hop circ) circ-id :relay :b-enc msg iv))
+
+      (let [msg         (reduce #(%2 iv %1) msg (get-path-enc circ direction)) ;; message going towards exit -> rm our enc layer. OR message @ origin, peel of all layers.
             [r1 r2 r4]  (b/mk-readers msg)
             recognised? (and (= 101 (r2 3) (r4 5) (r2 9)) (zero? (r2 1))) ;; FIXME -> add digest
             relay-data  {:relay-cmd  (r1 0)
@@ -366,7 +365,7 @@
                          :relay-len  (r2 9)
                          :payload    (when recognised? (.slice msg 11))}] ;; FIXME check how aes padding is handled.
 
-        (cond recognised?                     (process-relay config socket circ-id relay-data)
+        (cond (:recognised relay-data)        (process-relay config socket circ-id relay-data)
               (and mux? (-> circ :mux :bhop)) (forward config circ-id (-> circ :mux :bhop) msg)
               :else                           (cell-send config (:forward-hop circ) circ-id :relay (b/copycat2 iv msg)))))))
 
