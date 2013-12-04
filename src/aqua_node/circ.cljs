@@ -127,7 +127,8 @@
     (.copy payload buf 9)
     (if (-> config :mk-packet)
       buf
-      (.nextTick js/process #(.write socket buf)))))
+      ;(js/setImmediate #(.write socket buf)))))
+      (.write socket buf))))
 
 
 ;; make requests: circuit level ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;

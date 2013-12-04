@@ -20,8 +20,11 @@
   (let [circ-id   (:circuit (c/get-data s))
         circ-data (circ/get-data circ-id)]
     (if (= (-> circ-data :state) :relay)
-      (doall (map (fn [b] (.nextTick js/process #(circ/relay-data config circ-id b)))
-                  (apply (partial b/cut b) (next (range 0 (.-length b) 1350)))))
+      (doseq [start (concat (range 0 (.-length b) 1350) [(.-length b)])
+              :let [end (min (+ start 1350) (.-length b))]]
+        (js/setImmediate #(circ/relay-data config circ-id (.slice b start end))))
+      ;(doall (map (fn [b] (.nextTick js/process #(circ/relay-data config circ-id b)))
+      ;            (apply (partial b/cut b) (next (range 0 (.-length b) 1350)))))
       ;(.nextTick js/process #(circ/relay-data config circ-id b))
       (log/info "not ready for data, dropping on circuit" circ-id))))
 
@@ -48,6 +51,7 @@
   (some #(= role %) roles))
 
 (defn bootstrap [{roles :roles ap :app-proxy-conn aq :aqua-conn ds :dir-server :as config}]
+  (set! js/process.maxTickDepth 10)
   (let [is?   #(is? % roles)]
     (log/info "Bootstrapping as" roles)
     (when (some is? [:mix :entry :exit])
