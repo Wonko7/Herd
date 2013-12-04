@@ -174,9 +174,9 @@
   ;; FIXME assert state.
   (let [circ     (@circuits circ-id)
         keys     (get-path-enc circ direction) ;; FIXME: PATH: mk pluggable
-        l        (.-length msg)
-        extra-l  (- 32 (rem (inc l) 32))
-        msg      (b/cat (b/new (cljs/clj->js [extra-l])) msg (b/new extra-l))
+        ;l        (.-length msg)
+        ;extra-l  (- 32 (rem (inc l) 32))
+        ;msg      (b/cat (b/new (cljs/clj->js [extra-l])) msg (b/new extra-l))
         msg      (reduce #(.update %2 %1) msg keys)] ;; FIXME: new iv for each? seems overkill...
     (cell-send config socket circ-id circ-cmd msg)))
 
@@ -344,15 +344,16 @@
         (forward config circ-id (-> circ :mux :fhop) payload)
         (enc-noiv-send config (:backward-hop circ) circ-id :relay :b-enc payload))
       (let [msg         (reduce #(.update %2 %1) payload (get-path-enc circ direction))
-            padd-len    (.readUInt8 msg 0)
-            [r1 r2 r4]  (b/mk-readers (.slice msg 1))
+            ;padd-len    (.readUInt8 msg 0)
+            [r1 r2 r4]  (b/mk-readers msg)
+            ;[r1 r2 r4]  (b/mk-readers (.slice msg 1))
             recognised? (and (= 101 (r2 3) (r4 5) (r2 9)) (zero? (r2 1))) ;; FIXME -> add digest
             relay-data  {:relay-cmd  (r1 0)
                          :recognised recognised?
                          :stream-id  (r2 3)
                          :digest     (r4 5)
                          :relay-len  (r2 9)
-                         :payload    (when recognised? (.slice msg 12 (- (.-length msg) padd-len)))}] ;; FIXME check how aes padding is handled.
+                         :payload    (when recognised? (.slice msg 11))}] ;; FIXME check how aes padding is handled.
         (cond (:recognised relay-data)        (process-relay config socket circ-id relay-data)
               (and mux? (-> circ :mux :bhop)) (forward config circ-id (-> circ :mux :bhop) msg)
               :else                           (cell-send config (:forward-hop circ) circ-id :relay msg))))))
