@@ -125,7 +125,6 @@
     (w32 circ-id 4)
     (w8 (from-cmd cmd) 8)
     (.copy payload buf 9)
-    (println (.-length buf))
     (if (-> config :mk-packet)
       buf
       ;(doall (map (fn [b] (do ;(println (.-length b))
