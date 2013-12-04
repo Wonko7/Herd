@@ -126,9 +126,14 @@
     (w32 circ-id 4)
     (w8 (from-cmd cmd) 8)
     (.copy payload buf 9)
+    (println (.-length buf))
     (if (-> config :mk-packet)
       buf
-      (.nextTick js/process #(.write socket buf)))))
+      (doall (map (fn [b] (do ;(println (.-length b))
+                              (.write socket b)));; FIXME test with next tick
+                  (apply (partial b/cut buf) (next (range 0 (.-length buf) 500)))))
+      ;(.nextTick js/process #(.write socket buf))
+      )))
 
 
 ;; make requests: circuit level ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
@@ -398,22 +403,22 @@
    :extend2    14
    :extended2  15})
 
-(def wait-buffer (atom nil))
-(defn process [config socket buff]
+(def wait-buffer (atom nil)) ;; FIXME we need one per socket
+(defn process [config socket data]
   ;; FIXME check len first -> match with fix buf size
-  (let [buff         (if @wait-buffer (b/copycat2 @wait-buffer buff) buff)
-        [r8 r16 r32] (b/mk-readers buff)
-        len          (.-length buff)
+  (let [data         (if @wait-buffer (b/copycat2 @wait-buffer buff) data)
+        [r8 r16 r32] (b/mk-readers data)
+        len          (.-length data)
         cell-len     (r32 0)
         circ-id      (r32 4)
         command      (to-cmd (r8 8))
-        payload      (.slice buff 9)]
+        payload      (.slice data 9)]
     (log/debug "recv cell: id:" circ-id "cmd:" (:name command) "len:" len)
-    (cond (> len cell-len) (let [[f r] (b/cut buff cell-len)]
+    (cond (> len cell-len) (let [[f r] (b/cut data cell-len)]
                              (reset! wait-buffer nil)
                              (process config socket f)
                              (process config socket r))
-          (< len cell-len) (reset! wait-buffer buff)
+          (< len cell-len) (reset! wait-buffer data)
           :else            (do (reset! wait-buffer nil)
                                (when (:fun command)
                                  (try
