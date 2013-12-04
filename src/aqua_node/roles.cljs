@@ -18,10 +18,13 @@
 
 (defn app-proxy-forward [config s b]
   (let [circ-id   (:circuit (c/get-data s))
-        circ-data (circ/get-data circ-id)]
+        circ-data (circ/get-data circ-id)
+        config    (merge config {:data s})]
+    (.pause s)
     (if (= (-> circ-data :state) :relay)
       (doseq [start (concat (range 0 (.-length b) 1350) [(.-length b)])
               :let [end (min (+ start 1350) (.-length b))]]
+        (circ/inc-block)
         (js/setImmediate #(circ/relay-data config circ-id (.slice b start end))))
       ;(doall (map (fn [b] (.nextTick js/process #(circ/relay-data config circ-id b)))
       ;            (apply (partial b/cut b) (next (range 0 (.-length b) 1350)))))

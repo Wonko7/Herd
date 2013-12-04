@@ -117,6 +117,15 @@
 
 ;; send cell ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
+(def block-count (atom 0))
+
+(defn inc-block []
+  (swap! block-count inc))
+
+(defn dec-block [s]
+  (when (zero? (swap! block-count dec))
+    (.resume s)))
+
 (defn cell-send [config socket circ-id cmd payload & [len]]
   (let [len          (or len (.-length payload))
         buf          (b/new (+ 9 len)) ;; add len to cells -> fixme
@@ -125,6 +134,8 @@
     (w32 circ-id 4)
     (w8 (from-cmd cmd) 8)
     (.copy payload buf 9)
+    (when (:data config)
+      (dec-block (:data config)))
     (if (-> config :mk-packet)
       buf
       ;(js/setImmediate #(.write socket buf)))))
