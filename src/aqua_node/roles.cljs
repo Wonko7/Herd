@@ -22,12 +22,14 @@
         config    (merge config {:data s})]
     (.pause s)
     (if (= (-> circ-data :state) :relay)
-      (doseq [start (concat (range 0 (.-length b) 1350) [(.-length b)])
-              :let [end (min (+ start 1350) (.-length b))]]
-        (circ/inc-block)
-        (js/setImmediate #(circ/relay-data config circ-id (.slice b start end))))
-      ;(doall (map (fn [b] (.nextTick js/process #(circ/relay-data config circ-id b)))
-      ;            (apply (partial b/cut b) (next (range 0 (.-length b) 1350)))))
+      ;(doseq [start (concat (range 0 (.-length b) 1350) [(.-length b)])
+      ;        :let [end (min (+ start 1350) (.-length b))]]
+      ;  (circ/inc-block)
+      ;  (js/setImmediate #(circ/relay-data config circ-id (.slice b start end))))
+      (doall (map (fn [b]
+                    (circ/inc-block)
+                    (js/setImmediate #(circ/relay-data config circ-id b)))
+                  (apply (partial b/cut b) (range 1350 (.-length b) 1350))))
       ;(.nextTick js/process #(circ/relay-data config circ-id b))
       (log/info "not ready for data, dropping on circuit" circ-id))))
 

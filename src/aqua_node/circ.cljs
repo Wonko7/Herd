@@ -176,11 +176,8 @@
   (let [circ     (@circuits circ-id)
         c        (node/require "crypto")
         encs     (get-path-enc circ direction) ;; FIXME: PATH: mk pluggable
-        encs     (if (= direction :f-enc) (reverse encs) encs)
-        iv-len   (-> config :enc :iv-len)
-        msg      (reduce #(let [iv (.randomBytes c. iv-len)]
-                            (b/copycat2 iv (%2 iv %1)))
-                         msg encs)]
+        iv       (.randomBytes c. (-> config :enc :iv-len))
+        msg      (b/copycat2 iv (reduce #(%2 iv %1) msg encs))]
     (cell-send config socket circ-id circ-cmd msg)))
 
 (defn- enc-noiv-send [config socket circ-id circ-cmd direction msg]
@@ -347,17 +344,19 @@
 (defn recv-relay [config socket circ-id payload]
   "If relay message is going backward add an onion skin and send.
   Otherwise, take off the onion skins we can, process it if we can or forward."
+  
   (assert (@circuits circ-id) "cicuit does not exist")
   (let [circ        (@circuits circ-id)
         mux?        (is? :mux circ)
         direction   (if (= (:forward-hop circ) socket) :b-enc :f-enc)]
-    (if (and (is-not? :origin circ) (= direction :b-enc))
+    
+    (if (and (is-not? :origin circ) (= direction :b-enc)) ;; then message is going back to origin -> add enc & forwad
       (if (and mux? (-> circ :mux :fhop))
         (forward config circ-id (-> circ :mux :fhop) payload)
         (enc-send config (:backward-hop circ) circ-id :relay :b-enc payload))
-      (let [msg         (reduce #(let [[iv msg] (b/cut %1 (-> config :enc :iv-len))]
-                                   (%2 iv msg))
-                                payload (get-path-enc circ direction))
+      
+      (let [[iv msg]    (b/cut payload (-> config :enc :iv-len)) ;; message going towards exit -> rm our enc layer. OR message @ origin, peel of all layers.
+            msg         (reduce #(%2 iv %1) msg (get-path-enc circ direction))
             [r1 r2 r4]  (b/mk-readers msg)
             recognised? (and (= 101 (r2 3) (r4 5) (r2 9)) (zero? (r2 1))) ;; FIXME -> add digest
             relay-data  {:relay-cmd  (r1 0)
@@ -366,9 +365,10 @@
                          :digest     (r4 5)
                          :relay-len  (r2 9)
                          :payload    (when recognised? (.slice msg 11))}] ;; FIXME check how aes padding is handled.
-        (cond (:recognised relay-data)        (process-relay config socket circ-id relay-data)
+
+        (cond recognised?                     (process-relay config socket circ-id relay-data)
               (and mux? (-> circ :mux :bhop)) (forward config circ-id (-> circ :mux :bhop) msg)
-              :else                           (cell-send config (:forward-hop circ) circ-id :relay msg))))))
+              :else                           (cell-send config (:forward-hop circ) circ-id :relay (b/copycat2 iv msg)))))))
 
 
 ;; cell management (no state logic here) ;;;;;;;;;;;;;;;;;;;;;;;;;
