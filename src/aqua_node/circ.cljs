@@ -127,11 +127,7 @@
     (.copy payload buf 9)
     (if (-> config :mk-packet)
       buf
-      ;(doall (map (fn [b] (do ;(println (.-length b))
-      ;                        (.write socket b)));; FIXME test with next tick
-      ;            (apply (partial b/cut buf) (next (range 0 (.-length buf) 500)))))
-      (.nextTick js/process #(.write socket buf))
-      )))
+      (.nextTick js/process #(.write socket buf)))))
 
 
 ;; make requests: circuit level ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
@@ -169,7 +165,8 @@
         c        (node/require "crypto")
         encs     (get-path-enc circ direction) ;; FIXME: PATH: mk pluggable
         encs     (if (= direction :f-enc) (reverse encs) encs)
-        msg      (reduce #(let [iv (.randomBytes c. (-> config :enc :iv-len))]
+        iv-len   (-> config :enc :iv-len)
+        msg      (reduce #(let [iv (.randomBytes c. iv-len)]
                             (b/copycat2 iv (%2 iv %1)))
                          msg encs)]
     (cell-send config socket circ-id circ-cmd msg)))
@@ -406,7 +403,6 @@
    :extend2    14
    :extended2  15})
 
-(def recvd (atom 0))
 (def wait-buffer (atom nil)) ;; FIXME we need one per socket
 (defn process [config socket data-orig]
   ;; FIXME check len first -> match with fix buf size
@@ -418,7 +414,6 @@
         command      (to-cmd (r8 8))
         payload      (.slice data 9)]
     (log/debug "recv cell: id:" circ-id "cmd:" (:name command) "len:" len)
-    (log/debug "rlen:" (.-length data-orig) :recvd (swap! recvd inc))
     (cond (> len cell-len) (let [[f r] (b/cut data cell-len)]
                              (reset! wait-buffer nil)
                              (process config socket f)
