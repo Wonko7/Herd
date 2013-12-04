@@ -120,11 +120,12 @@
 
 (defn cell-send [config socket circ-id cmd payload & [len]]
   (let [len          (or len (.-length payload))
-        buf          (b/new (+ 5 len))
+        buf          (b/new (+ 9 len)) ;; add len to cells -> fixme
         [w8 w16 w32] (b/mk-writers buf)]
-    (w32 circ-id 0)
-    (w8 (from-cmd cmd) 4)
-    (.copy payload buf 5)
+    (w32 (+ 9 len) 0)
+    (w32 circ-id 4)
+    (w8 (from-cmd cmd) 8)
+    (.copy payload buf 9)
     (if (-> config :mk-packet)
       buf
       (.nextTick js/process #(.write socket buf)))))
@@ -174,7 +175,7 @@
   (let [circ     (@circuits circ-id)
         keys     (get-path-enc circ direction) ;; FIXME: PATH: mk pluggable
         l        (.-length msg)
-        extra-l  (- 32 (rem l 32))
+        extra-l  (- 32 (rem (inc l) 32))
         msg      (b/cat (b/new (cljs/clj->js [extra-l])) msg (b/new extra-l))
         msg      (reduce #(.update %2 %1) msg keys)] ;; FIXME: new iv for each? seems overkill...
     (cell-send config socket circ-id circ-cmd msg)))
@@ -192,18 +193,18 @@
 
 ;; see tor spec 6.2. 160 = ip6 ok & prefered.
 (defn relay-begin [config circ-id dest]
-  (let [socket (:conn (@circuits circ-id))
+  (let [socket (:forward-hop (@circuits circ-id))
         dest   (conv/dest-to-tor-str dest)
         dest   (b/cat (b/new dest) (b/new (cljs/clj->js [0 160 0 0 0])))]
     (relay config socket circ-id :begin :f-enc dest)))
 
 (defn relay-data [config circ-id data]
-  (relay config (:conn (@circuits circ-id)) circ-id :data :f-enc data))
+  (relay config (:forward-hop (@circuits circ-id)) circ-id :data :f-enc data))
 
 ;; see tor spec 5.1.2.
 (defn relay-extend [config circ-id {nh-auth :auth nh-dest :dest}]
   (let [data          (@circuits circ-id)
-        socket        (:conn data)
+        socket        (:forward-hop data)
         [auth create] (mk-create config nh-auth circ-id) ;; FIXME use the same id or create a new one?
         nspec         (condp = (:type nh-dest)
                         :ip4 (b/cat (b/new (cljs/clj->js [1 3 6]))  (conv/ip4-to-bin (:host nh-dest)) (conv/port-to-bin (:port nh-dest)))
@@ -342,18 +343,17 @@
       (if (and mux? (-> circ :mux :fhop))
         (forward config circ-id (-> circ :mux :fhop) payload)
         (enc-noiv-send config (:backward-hop circ) circ-id :relay :b-enc payload))
-      (let [recognised? #(zero? (.readUInt16BE % 1)) ;; FIXME -> add digest
-            msg         (reduce #(.update %2 %1) payload (get-path-enc circ direction))
-            padd-len    (.readUint8 msg 0)
-            msg         (.slice msg 1 (- (.-length msg) padd-len))
-            [r1 r2 r4]  (b/mk-readers msg)
+      (let [msg         (reduce #(.update %2 %1) payload (get-path-enc circ direction))
+            padd-len    (.readUInt8 msg 0)
+            [r1 r2 r4]  (b/mk-readers (.slice msg 1))
+            recognised? (and (= 101 (r2 3) (r4 5) (r2 9)) (zero? (r2 1))) ;; FIXME -> add digest
             relay-data  {:relay-cmd  (r1 0)
-                         :recognised (r2 1)
+                         :recognised recognised?
                          :stream-id  (r2 3)
                          :digest     (r4 5)
                          :relay-len  (r2 9)
-                         :payload    (.slice msg 11 (.-length msg))}] ;; FIXME check how aes padding is handled.
-        (cond (recognised? msg)               (process-relay config socket circ-id relay-data)
+                         :payload    (when recognised? (.slice msg 12 (- (.-length msg) padd-len)))}] ;; FIXME check how aes padding is handled.
+        (cond (:recognised relay-data)        (process-relay config socket circ-id relay-data)
               (and mux? (-> circ :mux :bhop)) (forward config circ-id (-> circ :mux :bhop) msg)
               :else                           (cell-send config (:forward-hop circ) circ-id :relay msg))))))
 
@@ -402,15 +402,24 @@
    :extend2    14
    :extended2  15})
 
+(def wait-buffer (atom nil))
 (defn process [config socket buff]
   ;; FIXME check len first -> match with fix buf size
-  (let [[r8 r16 r32] (b/mk-readers buff)
+  (let [buff         (if @wait-buffer (b/copycat2 @wait-buffer buff) buff)
+        [r8 r16 r32] (b/mk-readers buff)
         len          (.-length buff)
-        circ-id      (r32 0)
-        command      (to-cmd (r8 4))
-        payload      (.slice buff 5 len)]
+        cell-len     (r32 0)
+        circ-id      (r32 4)
+        command      (to-cmd (r8 8))
+        payload      (.slice buff 9)]
     (log/debug "recv cell: id:" circ-id "cmd:" (:name command) "len:" len)
-    (when (:fun command)
-      (try
-        ((:fun command) config socket circ-id payload)
-        (catch js/Object e (log/c-info e (str "Killed circuit " circ-id)) (destroy circ-id))))))
+    (cond (> len cell-len) (let [[f r] (b/cut buff cell-len)]
+                             (reset! wait-buffer nil)
+                             (process config socket f)
+                             (process config socket r))
+          (< len cell-len) (reset! wait-buffer buff)
+          :else            (do (reset! wait-buffer nil)
+                               (when (:fun command)
+                                 (try
+                                   ((:fun command) config socket circ-id payload)
+                                   (catch js/Object e (log/c-info e (str "Killed circuit " circ-id)) (destroy circ-id))))))))
