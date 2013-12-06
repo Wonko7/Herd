@@ -20,6 +20,10 @@
   (swap! connections dissoc conn)
   conn)
 
+(defn destroy [conn]
+  (rm conn)
+  (.destroy conn))
+
 (defn add-listeners [conn listeners]
   (doseq [k (keys listeners) :let [fns (k listeners) fns (if (seq? fns) fns [fns])]]
     (dorun (map #(.on conn (name k) %) fns)))

@@ -60,7 +60,8 @@
   circ)
 
 (defn destroy [circ]
-  (when (@circuits circ) ;; FIXME also send destroy cells to the path
+  (when-let [c (@circuits circ)] ;; FIXME also send destroy cells to the path
+    (cond)
     (log/info "destroying circuit" circ)
     (rm circ)))
 
@@ -230,6 +231,9 @@
         payload (b/cat (b/new dest-str) (b/new (cljs/clj->js [0])) cell)]
     (cell-send config socket 0 :forward payload)))
 
+(defn send-destroy [config dest circ-id reason]
+  (cell-send config dest circ-id :destroy reason))
+
 
 ;; process recv ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
@@ -289,6 +293,20 @@
         (assert socket "could not find next hop for forwarding")
         (.write socket payload)))))
 
+(defn recv-destroy [config socket circ-id payload]
+  (let [circ                 (@circuits circ-id)
+        [fhop bhop :as hops] (map circ [:forward-hop :backward-hop])
+        dest                 (if (= socket fhop) bhop fhop)
+        d                    #(send-destroy config % circ-id payload)]
+    (when (and (some (partial = socket) hops))
+      (cond
+        (is? :app-proxy circ) (do (c/destroy bhop)
+                                  (when (nil? socket) (d fhop)))
+        (is? :exit circ)      (do (c/destroy fhop)
+                                  (when (nil? socket) (d bhop)))
+        :else                 (d dest))
+      (rm circ))))
+
 (defn process-relay [config socket circ-id relay-data]
   (let [circ       (@circuits circ-id)
         r-payload  (:payload relay-data)
@@ -305,7 +323,7 @@
                            sock (conn/new :tcp :client dest config (fn [config soc buf]
                                                                      (relay config socket circ-id :data :b-enc buf)))]
                        (c/add-listeners sock {:error #(do (c/rm sock)
-                                                         (destroy circ-id))})
+                                                          (destroy circ-id))})
                        (update-data circ-id [:forward-hop] sock)))
         p-extend   (fn []
                      (let [[r1 r2 r4] (b/mk-readers r-payload)
