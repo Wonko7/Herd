@@ -122,9 +122,11 @@
 (defn inc-block []
   (swap! block-count inc))
 
-(defn dec-block [s]
-  (when (zero? (swap! block-count dec))
-    (.resume s)))
+(defn done? []
+  (zero? @block-count))
+
+(defn dec-block []
+  (swap! block-count dec))
 
 (defn cell-send [config socket circ-id cmd payload & [len]]
   (let [len          (or len (.-length payload))
@@ -134,12 +136,13 @@
     (w32 circ-id 4)
     (w8 (from-cmd cmd) 8)
     (.copy payload buf 9)
-    (when (:data config)
-      (dec-block (:data config)))
+    (when (and (:data config) (zero? (dec-block)))
+      (.emit (:data config) "readable"))
     (if (-> config :mk-packet)
       buf
-      ;(js/setImmediate #(.write socket buf)))))
       (.write socket buf))))
+      ;(js/setImmediate #(.write socket buf))))) -> good perf, more drops
+      ;(.nextTick js/process #(.write socket buf)))))
 
 
 ;; make requests: circuit level ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
