@@ -61,7 +61,7 @@
 
 (defn destroy [circ]
   (when-let [c (@circuits circ)] ;; FIXME also send destroy cells to the path
-    (cond)
+    (recv-destroy config nil circ REASONS)
     (log/info "destroying circuit" circ)
     (rm circ)))
 
