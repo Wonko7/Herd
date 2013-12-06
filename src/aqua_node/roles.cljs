@@ -16,21 +16,20 @@
     ((:mk-path-fn circ-data) config circ-id)
     (circ/update-data circ-id [:backward-hop] socket)))
 
-(defn app-proxy-forward [config s b]
+(defn app-proxy-forward [config s]
   (let [circ-id   (:circuit (c/get-data s))
         circ-data (circ/get-data circ-id)
         config    (merge config {:data s})]
-    (.pause s)
     (if (= (-> circ-data :state) :relay)
-      ;(doseq [start (concat (range 0 (.-length b) 1350) [(.-length b)])
-      ;        :let [end (min (+ start 1350) (.-length b))]]
-      ;  (circ/inc-block)
-      ;  (js/setImmediate #(circ/relay-data config circ-id (.slice b start end))))
-      (doall (map (fn [b]
-                    (circ/inc-block)
-                    (js/setImmediate #(circ/relay-data config circ-id b)))
-                  (apply (partial b/cut b) (range 1350 (.-length b) 1350))))
-      ;(.nextTick js/process #(circ/relay-data config circ-id b))
+      (when (circ/done?)
+        (loop [b (.read s 1350)]
+          (if b
+            (do (circ/inc-block)
+                (js/setImmediate #(circ/relay-data config circ-id b))
+                (recur (.read s 1350)))
+            (when-let [b (.read s)]
+              (circ/inc-block)
+              (js/setImmediate #(circ/relay-data config circ-id b))))))
       (log/info "not ready for data, dropping on circuit" circ-id))))
 
 (defn aqua-server-recv [config s]

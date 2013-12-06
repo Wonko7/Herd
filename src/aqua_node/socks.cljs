@@ -11,8 +11,9 @@
   (-> conn c/rm .destroy))
 
 ;; FIXME: most kill-conns should be wait for more data.
-(defn socks-recv [c data-handler init-handle data]
-  (let [len        (.-length data)
+(defn socks-recv [c data-handler init-handle]
+  (let [data       (.read c)
+        len        (.-length data)
         [r8 r16]   (b/mk-readers data)
         socks-vers (r8 0)
         state      (-> c c/get-data :socks :state)
@@ -50,8 +51,8 @@
                                (init-handle c dest)
                                (-> c
                                    (c/update-data [:socks] {:dest dest, :state :relay})
-                                   (.removeAllListeners "data")
-                                   (c/add-listeners {:data (partial data-handler c)})
+                                   (.removeAllListeners "readable")
+                                   (c/add-listeners {:readable (partial data-handler c)})
                                    (.write reply))))))))]
     (if (not= socks-vers 5)
       (kill-conn c "bad socks version")
@@ -68,7 +69,7 @@
                                          (c/add {:cs :remote-client :type :socks :socks {:state :handshake}})
                                          (c/add-listeners {:end   #(log/debug "App-Proxy: connection end")
                                                            :error kill-conn
-                                                           :data  #(socks-recv c data-handler init-handle %)}))))
+                                                           :readable  #(socks-recv c data-handler init-handle)}))))
         new-srv #(log/info "App-Proxy listening on:" (-> srv .address .-ip) (-> srv .address .-port))]
     (if host
       (.listen srv port host new-srv)
