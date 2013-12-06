@@ -11,6 +11,7 @@
 
 (declare from-relay-cmd from-cmd to-cmd
          create relay-begin relay-extend
+         recv-destroy
          process)
 
 ;; General API FIXME:
@@ -59,11 +60,18 @@
   (swap! circuits dissoc circ)
   circ)
 
-(defn destroy [circ]
+(defn destroy [config circ]
   (when-let [c (@circuits circ)] ;; FIXME also send destroy cells to the path
-    (recv-destroy config nil circ REASONS)
+    (recv-destroy config nil circ (b/new "because reasons"))
     (log/info "destroying circuit" circ)
     (rm circ)))
+
+(defn destroy-from-socket [config s]
+  (let [circ-id   (:circuit (c/get-data s))
+        circ      (@circuits circ-id)]
+    (js/console.log "aoeu") ;; FIXME: doesn't find circuit on app-proxy kill
+    (when circ
+      (destroy config circ))))
 
 (defn get-all []
   @circuits)
@@ -301,13 +309,12 @@
         [fhop bhop :as hops] (map circ [:forward-hop :backward-hop])
         dest                 (if (= socket fhop) bhop fhop)
         d                    #(send-destroy config % circ-id payload)]
-    (when (and (some (partial = socket) hops))
-      (cond
-        (is? :app-proxy circ) (do (c/destroy bhop)
-                                  (when (nil? socket) (d fhop)))
-        (is? :exit circ)      (do (c/destroy fhop)
-                                  (when (nil? socket) (d bhop)))
-        :else                 (d dest))
+    (when (or (nil? socket) (and (some (partial = socket) hops)))
+      (cond (is? :origin circ) (do (c/destroy bhop)
+                                   (when (nil? socket) (d fhop)))
+            (is? :exit circ)   (do (c/destroy fhop)
+                                   (when (nil? socket) (d bhop)))
+            :else              (d dest))
       (rm circ))))
 
 (defn process-relay [config socket circ-id relay-data]
@@ -324,9 +331,9 @@
                      (update-data circ-id [:roles] (cons :exit (:roles circ)))
                      (let [dest (first (conv/parse-addr r-payload))
                            sock (conn/new :tcp :client dest config (fn [config soc buf]
-                                                                     (relay config socket circ-id :data :b-enc buf)))]
+                                                                     (relay config socket circ-id :data :b-enc buf)) nil nil)]
                        (c/add-listeners sock {:error #(do (c/rm sock)
-                                                          (destroy circ-id))})
+                                                          (destroy config circ-id))})
                        (update-data circ-id [:forward-hop] sock)))
         p-extend   (fn []
                      (let [[r1 r2 r4] (b/mk-readers r-payload)
@@ -398,7 +405,7 @@
    1   {:name :create          :fun nil}
    2   {:name :created         :fun nil}
    3   {:name :relay           :fun recv-relay}
-   4   {:name :destroy         :fun nil}
+   4   {:name :destroy         :fun recv-destroy}
    5   {:name :create_fast     :fun nil}
    6   {:name :created_fast    :fun nil}
    8   {:name :netinfo         :fun nil}
@@ -457,4 +464,4 @@
                                (when (:fun command)
                                  (try
                                    ((:fun command) config socket circ-id payload)
-                                   (catch js/Object e (log/c-info e (str "Killed circuit " circ-id)) (destroy circ-id))))))))
+                                   (catch js/Object e (log/c-info e (str "Killed circuit " circ-id)) (destroy config circ-id))))))))

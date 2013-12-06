@@ -7,16 +7,22 @@
 
 
 (defn kill-conn [conn & [err]]
-  (log/debug "App-Proxy: killing a conn:" (or err "unknow"))
-  (-> conn c/rm .destroy))
+  (log/debug "App-Proxy: killing a conn:" (or err "unknown"))
+  (try (-> conn c/rm .destroy)
+       (catch js/Object e identity nil)))
 
 ;; FIXME: most kill-conns should be wait for more data.
-(defn socks-recv [c data-handler init-handle]
+(defn socks-recv [c data-handler init-handle close-cb]
   (let [data       (.read c)
         len        (.-length data)
         [r8 r16]   (b/mk-readers data)
         socks-vers (r8 0)
         state      (-> c c/get-data :socks :state)
+        ;; error handling:
+        kill-conn  (fn [conn & [err]]
+                     (log/debug "App-Proxy: killing a conn:" (or err "unknow"))
+                     (close-cb conn)
+                     (-> conn c/rm .destroy))
         ;; handle socks states:
         handshake  (fn [c data]
                      (if (> len 2)
@@ -61,15 +67,16 @@
         :request     (request c data)
         (kill-conn c)))))
 
-(defn create-server [{host :host port :port} data-handler init-handle]
-  (let [net     (node/require "net")
+(defn create-server [{host :host port :port} data-handler init-handle close-cb]
+  (let [error   #(do (c/rm %) (close-cb %))
+        net     (node/require "net")
         srv     (.createServer net (fn [c]
                                      (log/debug "App-Proxy: new connection on:" (-> c .address .-ip) (-> c .address .-port))
                                      (-> c
                                          (c/add {:cs :remote-client :type :socks :socks {:state :handshake}})
-                                         (c/add-listeners {:end   #(log/debug "App-Proxy: connection end")
-                                                           :error kill-conn
-                                                           :readable  #(socks-recv c data-handler init-handle)}))))
+                                         (c/add-listeners {:end      #(error c)
+                                                           :error    #(error c)
+                                                           :readable #(socks-recv c data-handler init-handle close-cb)}))))
         new-srv #(log/info "App-Proxy listening on:" (-> srv .address .-ip) (-> srv .address .-port))]
     (if host
       (.listen srv port host new-srv)

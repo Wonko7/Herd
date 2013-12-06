@@ -21,8 +21,9 @@
   conn)
 
 (defn destroy [conn]
-  (rm conn)
-  (.destroy conn))
+  (when (@connections conn)
+    (rm conn)
+    (.destroy conn)))
 
 (defn add-listeners [conn listeners]
   (doseq [k (keys listeners) :let [fns (k listeners) fns (if (seq? fns) fns [fns])]]
