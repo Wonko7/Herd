@@ -69,7 +69,6 @@
 (defn destroy-from-socket [config s]
   (let [circ-id   (:circuit (c/get-data s))
         circ      (@circuits circ-id)]
-    (println :destroy circ-id)
     (when circ
       (destroy config circ-id))))
 
@@ -335,9 +334,8 @@
                      (update-data circ-id [:roles] (cons :exit (:roles circ)))
                      (let [dest (first (conv/parse-addr r-payload))
                            sock (conn/new :tcp :client dest config (fn [config soc buf]
-                                                                     (relay config socket circ-id :data :b-enc buf)) nil nil)]
-                       (c/add-listeners sock {:error #(do (c/rm sock)
-                                                          (destroy config circ-id))})
+                                                                     (relay config socket circ-id :data :b-enc buf)) nil #(destroy config circ-id))]
+                       (c/update-data sock [:circuit] circ-id)
                        (update-data circ-id [:forward-hop] sock)))
         p-extend   (fn []
                      (let [[r1 r2 r4] (b/mk-readers r-payload)
