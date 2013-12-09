@@ -9,11 +9,22 @@
             [aqua-node.conn-mgr :as conn]))
 
 
+(defn aqua-client-init-path-for-testing [config]
+  (circ/mk-single-path config [{:auth {:srv-id (js/Buffer. "h00z6mIWXCPWK4Pp1AQh+oHoHs8=" "base64")
+                                       :pub-B  (js/Buffer. "KYi+NX2pCOQmYnscN0K+MB+NO9A6ynKiIp41B5GlkHc=" "base64")}
+                                :dest {:type :ip4 :host "127.0.0.1" :port 6669}}
+                                ;:dest {:type :ip4 :host "139.19.176.82" :port 6669}}
+                               {:auth {:srv-id (js/Buffer. "pQh62d3z8LisFWg8qENauDn7dtU=" "base64")
+                                       :pub-B  (js/Buffer. "JnJ35yUEiabocQUR6noo9JAB8prhvu7OP4kQlLVS4QI=" "base64")}
+                                :dest {:type :ip4 :host "127.0.0.1" :port 6667}}]))
+                                ;:dest {:type :ip4 :host "139.19.176.83" :port 6667}}]))
+
 (defn app-proxy-init [config socket dest]
-  (let [[circ-id circ-data] (first (circ/get-all))] ;; FIXME -> choose (based on...?) or create circuit
+  (let [circ-id   (ffirst (circ/get-all))
+        circ-id   (or circ-id (aqua-client-init-path-for-testing config)) ;; for now this is always the case.
+        circ-data (circ/get-data circ-id)]
     (c/update-data socket [:circuit] circ-id)
     (circ/update-data circ-id [:ap-dest] dest)
-    ((:mk-path-fn circ-data) config circ-id)
     (circ/update-data circ-id [:backward-hop] socket)))
 
 (defn app-proxy-forward [config s]
@@ -39,16 +50,6 @@
 (defn aqua-client-recv [config s]
   (c/add-listeners s {:data #(circ/process config s %)}))
 
-(defn aqua-client-init-path-for-testing [config]
-  (circ/mk-single-path config [{:auth {:srv-id (js/Buffer. "h00z6mIWXCPWK4Pp1AQh+oHoHs8=" "base64")
-                                       :pub-B  (js/Buffer. "KYi+NX2pCOQmYnscN0K+MB+NO9A6ynKiIp41B5GlkHc=" "base64")}
-                                :dest {:type :ip4 :host "127.0.0.1" :port 6669}}
-                                ;:dest {:type :ip4 :host "139.19.176.82" :port 6669}}
-                               {:auth {:srv-id (js/Buffer. "pQh62d3z8LisFWg8qENauDn7dtU=" "base64")
-                                       :pub-B  (js/Buffer. "JnJ35yUEiabocQUR6noo9JAB8prhvu7OP4kQlLVS4QI=" "base64")}
-                                :dest {:type :ip4 :host "127.0.0.1" :port 6667}}]))
-                                ;:dest {:type :ip4 :host "139.19.176.83" :port 6667}}]))
-
 ;(js/setInterval#(circ/relay config s 42 :data "If at first you don't succeed, you fail.")  1000)
 
 (defn is? [role roles] ;; FIXME -> when needed elsewhere move to roles
@@ -63,5 +64,4 @@
     (when ds ;; the following will be covered by conn-to all known nodes --> sooooon
       (conn/new :aqua  :client ds config aqua-client-recv nil nil))
     (when (is? :app-proxy)
-      (conn/new :socks :server ap config app-proxy-forward app-proxy-init circ/destroy-from-socket)
-      (aqua-client-init-path-for-testing config))))
+      (conn/new :socks :server ap config app-proxy-forward app-proxy-init circ/destroy-from-socket))))
