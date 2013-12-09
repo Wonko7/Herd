@@ -69,9 +69,9 @@
 (defn destroy-from-socket [config s]
   (let [circ-id   (:circuit (c/get-data s))
         circ      (@circuits circ-id)]
-    (js/console.log "aoeu") ;; FIXME: doesn't find circuit on app-proxy kill
+    (println :destroy circ-id)
     (when circ
-      (destroy config circ))))
+      (destroy config circ-id))))
 
 (defn get-all []
   @circuits)
@@ -310,11 +310,15 @@
         dest                 (if (= socket fhop) bhop fhop)
         d                    #(send-destroy config % circ-id payload)]
     (when (or (nil? socket) (and (some (partial = socket) hops)))
-      (cond (is? :origin circ) (do (c/destroy bhop)
-                                   (when (nil? socket) (d fhop)))
-            (is? :exit circ)   (do (c/destroy fhop)
-                                   (when (nil? socket) (d bhop)))
-            :else              (d dest))
+      (cond (is? :origin circ) (do (if socket
+                                     (c/destroy bhop)
+                                     (d fhop)))
+            (is? :exit circ)   (do (if socket
+                                     (c/destroy fhop)
+                                     (d bhop)))
+            :else              (do (if socket
+                                     (d dest)
+                                     (map d hops))))
       (rm circ))))
 
 (defn process-relay [config socket circ-id relay-data]

@@ -13,6 +13,7 @@
         data-handle (partial data-handle config)
         new-tcp-c   (fn [] (let [socket (.connect (node/require "net") (cljs/clj->js (select-keys conn [:host :port])))]
                              (.on socket "data" (partial data-handle socket))
+                             (c/add socket {:type :tcp-exit :cs :client})
                              socket))]
     (cond (is? :socks :server) (socks/create-server conn data-handle (partial new-handle config) (partial error-cb config))
           (is? :aqua  :server) (dtls/create-server conn config data-handle)

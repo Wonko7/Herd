@@ -68,7 +68,7 @@
         (kill-conn c)))))
 
 (defn create-server [{host :host port :port} data-handler init-handle close-cb]
-  (let [error   #(do (c/rm %) (close-cb %))
+  (let [error   #(do (close-cb %) (c/rm %))
         net     (node/require "net")
         srv     (.createServer net (fn [c]
                                      (log/debug "App-Proxy: new connection on:" (-> c .address .-ip) (-> c .address .-port))
