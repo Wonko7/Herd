@@ -47,7 +47,16 @@
                                {:auth {:srv-id (js/Buffer. "pQh62d3z8LisFWg8qENauDn7dtU=" "base64")
                                        :pub-B  (js/Buffer. "JnJ35yUEiabocQUR6noo9JAB8prhvu7OP4kQlLVS4QI=" "base64")}
                                 ;:dest {:type :ip4 :host "127.0.0.1" :port 6667}}]))
-                                :dest {:type :ip4 :host "139.19.176.83" :port 6667}}]))
+                                :dest {:type :ip4 :host "139.19.176.83" :port 6667}}
+                               ;{:auth {:srv-id (js/Buffer. "/kYydVqsBs2ssFGq6270h5cw9lg=" "base64")
+                               ;        :pub-B  (js/Buffer. "MVoWVfmV+DDUQTPU/vrhROnrnIOowFKvx1ZNSf0wjCY=" "base64")}
+                               ; ;:dest {:type :ip4 :host "127.0.0.1" :port 6660}}]))
+                               ; :dest {:type :ip4 :host "139.19.176.83" :port 6660}}
+                               ;{:auth {:srv-id (js/Buffer. "Spfv2p0qoXnW/4HotIOUMSDt2bk=" "base64")
+                               ;        :pub-B  (js/Buffer. "EiRtu6iEoFT9te0QS6uOJWHo7P95/uWbLAhsU+Oxjnc=" "base64")}
+                               ; ;:dest {:type :ip4 :host "127.0.0.1" :port 6661}}]))
+                               ; :dest {:type :ip4 :host "139.19.176.83" :port 6661}}
+                               ]))
 
 ;(js/setInterval#(circ/relay config s 42 :data "If at first you don't succeed, you fail.")  1000)
 

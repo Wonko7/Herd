@@ -108,6 +108,7 @@
                                     (let [circ        (@circuits id)
                                           [n & nodes] (:remaining-nodes circ)]
                                       (cond n                           (do (relay-extend config id n)
+                                                                            (println "extended remaining=" (count nodes))
                                                                             (update-data id [:remaining-nodes] nodes))
                                             (not= (:state circ) :relay) (when (:ap-dest circ)
                                                                           (relay-begin config id (:ap-dest circ))
