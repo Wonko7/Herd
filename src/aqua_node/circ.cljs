@@ -137,12 +137,13 @@
     (w32 circ-id 4)
     (w8 (from-cmd cmd) 8)
     (.copy payload buf 9)
-    (when (and (:data config) (zero? (dec-block)))
-      (.emit (:data config) "readable"))
     (if (-> config :mk-packet)
       buf
-      (.write socket buf))))
-      ;(js/setImmediate #(.write socket buf))))) -> good perf, more drops
+      ;(.write socket buf))))
+      (js/setImmediate (do 
+                         (when (and (:data config) (zero? (dec-block)))
+                           (.emit (:data config) "readable"))
+                         #(.write socket buf)))))) ;-> good perf, more drops
       ;(.nextTick js/process #(.write socket buf)))))
 
 

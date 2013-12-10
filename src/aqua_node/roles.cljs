@@ -25,11 +25,15 @@
         (loop [b (.read s 1350)]
           (if b
             (do (circ/inc-block)
-                (js/setImmediate #(circ/relay-data config circ-id b))
-                (recur (.read s 1350)))
+                ;(js/setImmediate #(circ/relay-data config circ-id b))
+                (circ/relay-data config circ-id b)
+                (recur (.read s 1350))
+                )
             (when-let [b (.read s)]
               (circ/inc-block)
-              (js/setImmediate #(circ/relay-data config circ-id b))))))
+              ;(js/setImmediate #(circ/relay-data config circ-id b))
+              (circ/relay-data config circ-id b)
+              ))))
       (log/info "not ready for data, dropping on circuit" circ-id))))
 
 (defn aqua-server-recv [config s]
