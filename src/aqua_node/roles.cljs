@@ -71,10 +71,8 @@
   (let [is?   #(is? % roles)]
     (log/info "Bootstrapping as" roles)
     (when (some is? [:mix :entry :exit])
-      (conn/new :aqua :server aq config aqua-server-recv))
+      (conn/new :aqua :server aq config aqua-server-recv nil nil))
     (when ds ;; the following will be covered by conn-to all known nodes --> sooooon
-      (conn/new :aqua  :client ds config aqua-client-recv))
+      (conn/new :aqua  :client ds config aqua-client-recv nil nil))
     (when (is? :app-proxy)
-      (conn/new :socks :server ap config app-proxy-forward app-proxy-init)
-      ;(aqua-client-init-path-for-testing config)
-      )))
+      (conn/new :socks :server ap config app-proxy-forward app-proxy-init circ/destroy-from-socket))))
