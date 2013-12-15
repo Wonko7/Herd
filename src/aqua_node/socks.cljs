@@ -38,7 +38,7 @@
                      (if (> len 4)
                        (let [cmd       (r8 1)
                              host-type (r8 3)
-                             reply     (js/Buffer. len)
+                             reply     (js/Buffer. (cljs/clj->js [5 0 0 1 0 0 0 0 0 0]))
                              [too-short? type to-port to-ip] (condp = host-type
                                                                1 [(< len 10) :ip4 #(r16 8)  #(->> (range 4 8) (map r8) (interpose ".") (apply str))]
                                                                4 [(< len 5)  :ip6 #(r16 20) #(->> (.toString data "hex" 4 20) (partition 4) (interpose [\:]) (apply concat) (apply str))]
@@ -47,8 +47,8 @@
                                                                        aend (when ml? (+ alen 5))]
                                                                    [(or (not ml?) (< len (+ 2 aend))) :dns #(r16 aend) #(.toString data "utf8" 5 aend)])
                                                                (repeat false))]
-                         (.copy data reply)
-                         (.writeUInt8 reply 0 1)
+                         ;(.copy data reply)
+                         ;(.writeUInt8 reply 0 1)
                          (if (or (= cmd 3) (= cmd 1))
                            (if too-short? ;; to-[ip/port] are functions to avoid executing the code if not enough data
                              (kill-conn c (str "not enough data. conn type: " type))

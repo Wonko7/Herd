@@ -120,6 +120,7 @@
                                                                             (update-data id [:remaining-nodes] nodes))
                                             (not= (:state circ) :relay) (when (:ap-dest circ)
                                                                           (relay-begin config id (:ap-dest circ))
+                                                                          (println :relaying)
                                                                           (update-data id [:state] :relay)) ;; FIXME this should be done on r-begin ack. temp.
                                             :else                       (log/error "mk-single-path called with nothing to do. Do not do this again.")))))))
 
@@ -336,7 +337,7 @@
                      (update-data circ-id [:roles] (cons :exit (:roles circ)))
                      (let [dest (first (conv/parse-addr r-payload))
                            sock (conn/new :tcp :client dest config (fn [config soc buf]
-                                                                     (relay config socket circ-id :data :b-enc buf)) nil #(destroy config circ-id))]
+                                                                     (relay config socket circ-id :data :b-enc buf)) nil #(do (log/error "couldn't connect to:" dest) (destroy config circ-id)))]
                        (c/update-data sock [:circuit] circ-id)
                        (update-data circ-id [:forward-hop] sock)))
         p-extend   (fn []
