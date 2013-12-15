@@ -45,9 +45,11 @@
             (do (circ/inc-block)
                 ;(js/setImmediate #(circ/relay-data config circ-id b))
                 (circ/relay-data config circ-id b)
+                (println :send 1350)
                 ;(recur (.read s 1350))
                 )
             (when-let [b (.read s)]
+              (println :send (.-length b))
               (circ/inc-block)
               ;(js/setImmediate #(circ/relay-data config circ-id b))
               (circ/relay-data config circ-id b)
