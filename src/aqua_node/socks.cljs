@@ -43,17 +43,18 @@
                                                                (repeat false))]
                          (.copy data reply)
                          (.writeUInt8 reply 0 1)
-                         (if (not= cmd 1) ;; FIXME: Add udp here.
-                           (kill-conn c "bad request command")
+                         (if (or (= cmd 3) (= cmd 1))
                            (if too-short? ;; to-[ip/port] are functions to avoid executing the code if not enough data
                              (kill-conn c (str "not enough data. conn type: " type))
                              (let [dest {:type type :host (to-ip) :port (to-port)}]
+                               (println :type cmd dest)
                                (init-handle c dest)
                                (-> c
                                    (c/update-data [:socks] {:dest dest, :state :relay})
                                    (.removeAllListeners "readable")
                                    (c/add-listeners {:readable (partial data-handler c)})
-                                   (.write reply))))))))]
+                                   (.write reply))))
+                           (kill-conn c "bad request command")))))]
     (if (not= socks-vers 5)
       (kill-conn c "bad socks version")
       (condp = state
