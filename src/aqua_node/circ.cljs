@@ -116,12 +116,11 @@
                                     (let [circ        (@circuits id)
                                           [n & nodes] (:remaining-nodes circ)]
                                       (cond n                           (do (relay-extend config id n)
-                                                                            (println "extended remaining=" (count nodes))
+                                                                            (println "extended remaining=" (count nodes)) ;; debug
                                                                             (update-data id [:remaining-nodes] nodes))
                                             (not= (:state circ) :relay) (when (:ap-dest circ)
                                                                           (relay-begin config id (:ap-dest circ))
                                                                           (update-data id [:state] :relay)
-                                                                          (println :now-relay)
                                                                           (.emit (:backward-hop circ) "readable")) ;; FIXME this should be done on r-begin ack. temp.
                                             :else                       (log/error "mk-single-path called with nothing to do. Do not do this again.")))))))
 

@@ -40,20 +40,12 @@
         config    (merge config {:data s})]
     (if (= (-> circ-data :state) :relay)
       (when (circ/done?)
-        (loop [b (.read s 1350)]
-          (if b
-            (do (circ/inc-block)
-                ;(js/setImmediate #(circ/relay-data config circ-id b))
-                (circ/relay-data config circ-id b)
-                (println :send 1350)
-                ;(recur (.read s 1350))
-                )
-            (when-let [b (.read s)]
-              (println :send (.-length b))
-              (circ/inc-block)
-              ;(js/setImmediate #(circ/relay-data config circ-id b))
-              (circ/relay-data config circ-id b)
-              ))))
+        (if-let [b (.read s 1350)]
+          (do (circ/inc-block)
+              (circ/relay-data config circ-id b))
+          (when-let [b (.read s)]
+            (circ/inc-block)
+            (circ/relay-data config circ-id b))))
       (log/info "not ready for data, dropping on circuit" circ-id))))
 
 (defn aqua-server-recv [config s]

@@ -47,12 +47,10 @@
                                                                        aend (when ml? (+ alen 5))]
                                                                    [(or (not ml?) (< len (+ 2 aend))) :dns #(r16 aend) #(.toString data "utf8" 5 aend)])
                                                                (repeat false))]
-                         ;(.copy data reply)
-                         ;(.writeUInt8 reply 0 1)
                          (if (or (= cmd 3) (= cmd 1))
                            (if too-short? ;; to-[ip/port] are functions to avoid executing the code if not enough data
                              (kill-conn c (str "not enough data. conn type: " type))
-                             (let [dest {:type type :host (to-ip) :port (to-port)}]
+                             (let [dest {:proto (if (= 1 cmd) :tcp :udp) :type type :host (to-ip) :port (to-port)}]
                                (println :type cmd dest)
                                (init-handle c dest)
                                (-> c
