@@ -20,7 +20,7 @@
         state      (-> c c/get-data :socks :state)
         ;; error handling:
         kill-conn  (fn [conn & [err]]
-                     (log/debug "App-Proxy: killing a conn:" (or err "unknow"))
+                     (log/error "App-Proxy: killing a conn:" (or err "unknow"))
                      (close-cb conn)
                      (-> conn c/rm .destroy))
         ;; handle socks states:
@@ -38,8 +38,8 @@
                      (if (> len 4)
                        (let [cmd       (r8 1)
                              host-type (r8 3)
-                             reply     (js/Buffer. (cljs/clj->js [5 0 0 1 0 0 0 0 0 0]))
-                             [too-short? type to-port to-ip] (condp = host-type
+                             
+                             [too-short? type to-port to-ip] (condp = host-type ;; to-[ip/port] are functions to avoid executing the code if not enough data
                                                                1 [(< len 10) :ip4 #(r16 8)  #(->> (range 4 8) (map r8) (interpose ".") (apply str))]
                                                                4 [(< len 5)  :ip6 #(r16 20) #(->> (.toString data "hex" 4 20) (partition 4) (interpose [\:]) (apply concat) (apply str))]
                                                                3 (let [ml?  (>= len 5)
@@ -47,18 +47,30 @@
                                                                        aend (when ml? (+ alen 5))]
                                                                    [(or (not ml?) (< len (+ 2 aend))) :dns #(r16 aend) #(.toString data "utf8" 5 aend)])
                                                                (repeat false))]
-                         (if (or (= cmd 3) (= cmd 1))
-                           (if too-short? ;; to-[ip/port] are functions to avoid executing the code if not enough data
-                             (kill-conn c (str "not enough data. conn type: " type))
-                             (let [dest {:proto (if (= 1 cmd) :tcp :udp) :type type :host (to-ip) :port (to-port)}]
-                               (println :type cmd dest)
-                               (init-handle c dest)
-                               (-> c
-                                   (c/update-data [:socks] {:dest dest, :state :relay})
-                                   (.removeAllListeners "readable")
-                                   (c/add-listeners {:readable (partial data-handler c)})
-                                   (.write reply))))
-                           (kill-conn c "bad request command")))))]
+                         (cond (= cmd 3) (if too-short? ;; UDP
+                                           (kill-conn c (str "not enough data. conn type: " type))
+                                           (let [associate {:proto (if (= 1 cmd) :tcp :udp) :type type :host (to-ip) :port (to-port)}
+                                                 udp-sock  (.bind (require "node/dgram"))
+                                                 reply     ]
+                                             (println :type cmd dest)
+                                             (init-handle c dest)
+                                             (-> c
+                                                 (c/update-data [:socks] {:dest dest, :state :relay})
+                                                 (.removeAllListeners "readable")
+                                                 (c/add-listeners {:readable (partial data-handler c)})
+                                                 (.write reply))))
+                               (= cmd 1) (if too-short? ;; TCP
+                                           (kill-conn c (str "not enough data. conn type: " type))
+                                           (let [dest   {:proto (if (= 1 cmd) :tcp :udp) :type type :host (to-ip) :port (to-port)}
+                                                 reply  (js/Buffer. (cljs/clj->js [5 0 0 1 0 0 0 0 0 0]))]
+                                             (println :type cmd dest)
+                                             (init-handle c dest)
+                                             (-> c
+                                                 (c/update-data [:socks] {:dest dest, :state :relay})
+                                                 (.removeAllListeners "readable")
+                                                 (c/add-listeners {:readable (partial data-handler c)})
+                                                 (.write reply))))
+                               :else     (kill-conn c "bad request command")))))]
     (if (not= socks-vers 5)
       (kill-conn c "bad socks version")
       (condp = state

@@ -152,8 +152,9 @@
       (js/setImmediate (do 
                          (when (and (:data config) (zero? (dec-block)))
                            (.emit (:data config) "readable"))
-                         #(.write socket buf)))))) ;-> good perf, more drops
-      ;(.nextTick js/process #(.write socket buf)))))
+                         #(when socket
+                            (.write socket buf))))))) ;-> good perf, more drops --> socket can be killed before we send
+;(.nextTick js/process #(.write socket buf)))))
 
 
 ;; make requests: circuit level ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
@@ -331,13 +332,15 @@
                            dest                 (if (= socket fhop) bhop fhop)]
                        (assert (some (partial = socket) hops) "relay data came from neither forward or backward hop.")
                        (assert dest "no destination, illegal state")
-                       (.write dest r-payload)))
+                       (if-let [send (:send (c/get-data dest))]
+                         (send r-payload)
+                         (.write dest r-payload))))
         p-begin    (fn []
                      (assert (is-not? :origin circ) "relay begin command makes no sense") ;; FIXME this assert is good, but more like these are needed. roles are not inforced.
                      (update-data circ-id [:roles] (cons :exit (:roles circ)))
                      (let [dest (first (conv/parse-addr r-payload))
-                           sock (conn/new :tcp :client dest config (fn [config soc buf]
-                                                                     (relay config socket circ-id :data :b-enc buf)) nil #(do (log/error "couldn't connect to:" dest) (destroy config circ-id)))]
+                           sock (conn/new (:proto dest) :client dest config (fn [config soc buf]
+                                                                              (relay config socket circ-id :data :b-enc buf)) nil #(do (log/error "closed:" dest) (destroy config circ-id)))]
                        (c/update-data sock [:circuit] circ-id)
                        (update-data circ-id [:forward-hop] sock)))
         p-extend   (fn []

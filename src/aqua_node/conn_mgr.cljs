@@ -16,9 +16,18 @@
                              (c/add-listeners socket {:data     (partial data-handle socket)
                                                       :error    error-cb
                                                       :end      error-cb})
+                             socket))
+        new-udp-c   (fn [] (let [socket (.createSocket (node/require "dgram") (if (= :ip6 (:ip conn)) "udp6" "udp4"))]
+                             (c/add socket {:type :tcp-exit :cs :client :send #(do (println :sending-udp 0 (.-length %) (:port conn) (:host conn))
+                                                                                   (.send socket % 0 (.-length %) (:port conn) (:host conn)))})
+                             (c/add-listeners socket {:message  (partial data-handle socket)
+                                                      :error    error-cb
+                                                      :close    error-cb})
                              socket))]
+    (println type cs conn)
     (cond (is? :socks :server) (socks/create-server conn data-handle (partial new-handle config) (partial error-cb config))
           (is? :aqua  :server) (dtls/create-server conn config data-handle)
           (is? :aqua  :client) (dtls/connect conn config data-handle)
           (is? :tcp   :client) (new-tcp-c)
+          (is? :udp   :client) (new-udp-c)
           :else                (log/error "Unsupported connection type:" type "as" cs))))

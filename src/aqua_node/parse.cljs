@@ -37,8 +37,9 @@
           dns-re        #"^([ut]):(.*):(\d+)$"
           re            #(let [res (cljs/js->clj (.match %2 %1))]
                            (map (partial nth res) %&))
-          [prot ip h p] (->> [(re ip4-re str 1 2 4) (re ip6-re str 1 2 4) (re dns-re str 1 2 3)]
+          [ip prot h p] (->> [(re ip4-re str 1 2 4) (re ip6-re str 1 2 4) (re dns-re str 1 2 3)]
                              (map cons [:ip4 :ip6 :dns])
                              (filter second)
                              first)]
+      (println str prot ip h g)
       [{:proto (if (= "u" prot) :udp :tcp) :type ip :host h :port p} (.slice buf (inc z))])))
