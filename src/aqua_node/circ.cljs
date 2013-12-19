@@ -1,13 +1,15 @@
 (ns aqua-node.circ
   (:require [cljs.core :as cljs]
             [cljs.nodejs :as node]
+            [cljs.core.async :refer [chan <! >!]]
             [aqua-node.log :as log]
             [aqua-node.buf :as b]
             [aqua-node.ntor :as hs]
             [aqua-node.conns :as c]
             [aqua-node.parse :as conv]
             [aqua-node.crypto :as crypto]
-            [aqua-node.conn-mgr :as conn]))
+            [aqua-node.conn-mgr :as conn])
+  (:require-macros [cljs.core.async.macros :as m :refer [go]]))
 
 (declare from-relay-cmd from-cmd to-cmd
          create relay-begin relay-extend
@@ -121,7 +123,7 @@
                                             (not= (:state circ) :relay) (when (:ap-dest circ)
                                                                           (relay-begin config id (:ap-dest circ))
                                                                           (update-data id [:state] :relay)
-                                                                          (.emit (:backward-hop circ) "readable")) ;; FIXME this should be done on r-begin ack. temp.
+                                                                          (go (>! (-> circ :backward-hop c/get-data :ctrl) :relay)))
                                             :else                       (log/error "mk-single-path called with nothing to do. Do not do this again.")))))))
 
 

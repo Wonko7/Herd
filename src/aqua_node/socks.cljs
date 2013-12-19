@@ -38,7 +38,8 @@
                        (kill-conn c "too small")))
         request    (fn [c data]
                      (if (> len 4)
-                       (let [cmd       (r8 1)
+                       (let [ctrl      (chan)
+                             cmd       (r8 1)
                              host-type (r8 3)
                              [too-short? type to-port to-ip] (condp = host-type ;; to-[ip/port] are functions to avoid executing the code if not enough data
                                                                1 [(< len 10) :ip4 #(r16 8)  #(->> (range 4 8) (map r8) (interpose ".") (apply str))]
@@ -51,7 +52,6 @@
                          (cond (= cmd 3) (go (if too-short? ;; UDP
                                                (kill-conn c (str "not enough data. conn type: " type))
                                                (let [associate {:proto (if (= 1 cmd) :tcp :udp) :type type :host (to-ip) :port (to-port)}
-                                                     ctrl      (chan)
                                                      udp-sock  (.createSocket (node/require "dgram") "udp4") ;; FIXME should not be hardcoded to ip4
                                                      port      (do (.bind udp-sock 0 host #(go (>! ctrl :done)))
                                                                    (log/debug "UDP bind:" (<! ctrl))
@@ -62,14 +62,18 @@
                                                    (.writeUInt8 reply v i))
                                                  (.writeUInt16BE reply port 4)
                                                  (-> udp-sock 
-                                                     (c/add {:type :udp-ap :socks {:control-tcp c :dest dest}})
+                                                     (c/add {:ctrl ctrl :type :udp-ap :socks {:control-tcp c :dest dest}})
                                                      (c/add-listeners {:message (partial udp-data-handler c)})
                                                      (init-handle dest))
                                                  (-> c
                                                      (.removeAllListeners "readable")
-                                                     (c/add-listeners {:error #(.close udp-sock)
-                                                                       :close #(.close udp-sock)})
-                                                     (.write (b/copycat2 (b/new (cljs/clj->js [5 0 0 1])) reply))))))
+                                                     ;(c/add-listeners {:error #(.close udp-sock)
+                                                     ;                  :close #(.close udp-sock)})
+                                                     )
+                                                 (when (= :relay (<! ctrl))
+                                                       (do (println :relay-sock-reply)
+                                                           (.write c reply)))
+                                                 )))
                                (= cmd 1) (if too-short? ;; TCP
                                            (kill-conn c (str "not enough data. conn type: " type))
                                            (let [dest   {:proto :tcp :type type :host (to-ip) :port (to-port)}
@@ -78,9 +82,11 @@
                                              (init-handle c dest)
                                              (-> c
                                                  (c/update-data [:socks] {:dest dest, :state :relay})
+                                                 (c/update-data [:ctrl] ctrl)
                                                  (.removeAllListeners "readable")
-                                                 (c/add-listeners {:readable (partial data-handler c)})
-                                                 (.write reply))))
+                                                 (c/add-listeners {:readable (partial data-handler c)}))
+                                             (go (when (= :relay (<! ctrl))
+                                                   (.write c reply)))))
                                :else     (kill-conn c "bad request command")))))]
     (if (not= socks-vers 5)
       (kill-conn c "bad socks version")
