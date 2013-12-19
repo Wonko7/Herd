@@ -41,7 +41,7 @@
         config    (merge config {:data s})]
     (println :forward (keys (c/get-data s)))
     (if (= (-> circ-data :state) :relay)
-      (b/print-x b :udp-recv)
+      (circ/relay-data config circ-id b)
       (log/info "UDP: not ready for data, dropping on circuit" circ-id))))
 
 (defn app-proxy-forward [config s]

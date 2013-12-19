@@ -63,7 +63,7 @@
                                                  (.writeUInt16BE reply port 4)
                                                  (-> udp-sock 
                                                      (c/add {:ctrl ctrl :type :udp-ap :socks {:control-tcp c :dest dest}})
-                                                     (c/add-listeners {:message (partial udp-data-handler c)})
+                                                     (c/add-listeners {:message (partial udp-data-handler udp-sock)})
                                                      (init-handle dest))
                                                  (-> c
                                                      (.removeAllListeners "readable")
