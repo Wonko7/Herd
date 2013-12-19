@@ -331,21 +331,22 @@
         r-payload  (:payload relay-data)
         p-data     (fn []
                      (let [[fhop bhop :as hops] (map circ [:forward-hop :backward-hop])
-                           dest                 (if (= socket fhop) bhop fhop)]
+                           dest                 (if (= socket fhop) bhop fhop)
+                           dest-data            (c/get-data dest)]
                        (assert (some (partial = socket) hops) "relay data came from neither forward or backward hop.")
                        (assert dest "no destination, illegal state")
-                       (if (= :udp-exit (:type (c/get-data dest)))
-                         (let [[r1 r2]    (b/mk-readers r-payload)
-                               type       (r1 3)
-                               [h p data] (cond (= 1) [(conv/ip4-to-str (.slice r-payload 4 8)) (r2 8) (.slice r-payload 10)]
-                                                (= 4) [(conv/ip6-to-str (.slice r-payload 4 20)) (r2 20) (.slice r-payload 22)]
-                                                (= 3) (let [len  (.-length r-payload)
-                                                            ml?  (>= len 5)
-                                                            alen (when ml? (r1 4))
-                                                            aend (when ml? (+ alen 5))]
-                                                        [(.toString r-payload "utf8" 5 aend) (r2 aend) (.slice r-payload (inc aend))]))]
-                           (.send dest data 0 (.-length data) p h))
-                         (.write dest r-payload))))
+                       (cond (= :udp-exit (:type dest-data)) (let [[r1 r2]    (b/mk-readers r-payload)
+                                                                   type       (r1 3)
+                                                                   [h p data] (cond (= 1) [(conv/ip4-to-str (.slice r-payload 4 8)) (r2 8) (.slice r-payload 10)]
+                                                                                    (= 4) [(conv/ip6-to-str (.slice r-payload 4 20)) (r2 20) (.slice r-payload 22)]
+                                                                                    (= 3) (let [len  (.-length r-payload)
+                                                                                                ml?  (>= len 5)
+                                                                                                alen (when ml? (r1 4))
+                                                                                                aend (when ml? (+ alen 5))]
+                                                                                            [(.toString r-payload "utf8" 5 aend) (r2 aend) (.slice r-payload (inc aend))]))]
+                                                               (.send dest data 0 (.-length data) p h))
+                             (= :udp-ap (:type dest-data))   (.send dest r-payload 0 (.-length r-payload) (-> dest-data :from :port) (-> dest-data :from :host))
+                             :else                           (.write dest r-payload))))
         p-begin    (fn []
                      (assert (is-not? :origin circ) "relay begin command makes no sense") ;; FIXME this assert is good, but more like these are needed. roles are not inforced.
                      (update-data circ-id [:roles] (cons :exit (:roles circ)))
@@ -355,7 +356,7 @@
                                                                                (relay config socket circ-id :data :b-enc buf))
                                                                       :error #(do (log/error "closed:" dest) (destroy config circ-id))})
                                   (conn/new :udp :client nil config {:data  (fn [config soc msg rinfo]
-                                                                              (let [data       (js/new (+ 10 (.-length msg)))
+                                                                              (let [data       (b/new (+ 10 (.-length msg)))
                                                                                     [w1 w2 w4] (b/mk-writers data)]
                                                                                 (w4 0 0)
                                                                                 (w1 1 3)

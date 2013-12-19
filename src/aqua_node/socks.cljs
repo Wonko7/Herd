@@ -51,7 +51,7 @@
                                                                (repeat false))]
                          (cond (= cmd 3) (go (if too-short? ;; UDP
                                                (kill-conn c (str "not enough data. conn type: " type))
-                                               (let [associate {:proto (if (= 1 cmd) :tcp :udp) :type type :host (to-ip) :port (to-port)}
+                                               (let [from      {:proto (if (= 1 cmd) :tcp :udp) :type type :host (to-ip) :port (to-port)}
                                                      udp-sock  (.createSocket (node/require "dgram") "udp4") ;; FIXME should not be hardcoded to ip4
                                                      port      (do (.bind udp-sock 0 host #(go (>! ctrl :done)))
                                                                    (log/debug "UDP bind:" (<! ctrl))
@@ -62,7 +62,7 @@
                                                    (.writeUInt8 reply v i))
                                                  (.writeUInt16BE reply port 4)
                                                  (-> udp-sock 
-                                                     (c/add {:ctrl ctrl :type :udp-ap :socks {:control-tcp c :dest dest}})
+                                                     (c/add {:from from :ctrl ctrl :type :udp-ap :socks {:control-tcp c :dest dest}})
                                                      (c/add-listeners {:message (partial udp-data-handler udp-sock)})
                                                      (init-handle dest))
                                                  (-> c
