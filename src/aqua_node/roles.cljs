@@ -31,8 +31,18 @@
 (defn app-proxy-init [config socket dest]
   (let [circ-id (aqua-client-init-path-for-testing config)] ;; FIXME -> choose (based on...?) or create circuit
     (c/update-data socket [:circuit] circ-id)
+    (println :init (keys (c/get-data socket)))
     (circ/update-data circ-id [:ap-dest] dest)
     (circ/update-data circ-id [:backward-hop] socket)))
+
+(defn app-proxy-forward-udp [config s b]
+  (let [circ-id   (:circuit (c/get-data s))
+        circ-data (circ/get-data circ-id)
+        config    (merge config {:data s})]
+    (println :forward (keys (c/get-data s)))
+    (if (= (-> circ-data :state) :relay)
+      (b/print-x b :udp-recv)
+      (log/info "UDP: not ready for data, dropping on circuit" circ-id))))
 
 (defn app-proxy-forward [config s]
   (let [circ-id   (:circuit (c/get-data s))
@@ -46,7 +56,7 @@
           (when-let [b (.read s)]
             (circ/inc-block)
             (circ/relay-data config circ-id b))))
-      (log/info "not ready for data, dropping on circuit" circ-id))))
+      (log/info "TCP: not ready for data, dropping on circuit" circ-id))))
 
 (defn aqua-server-recv [config s]
   (log/debug "new dtls conn on:" (-> s .-socket .-_destIP) (-> s .-socket .-_destPort)) ;; FIXME: investigate nil .-remote[Addr|Port]
@@ -65,8 +75,11 @@
   (let [is?   #(is? % roles)]
     (log/info "Bootstrapping as" roles)
     (when (some is? [:mix :entry :exit])
-      (conn/new :aqua :server aq config aqua-server-recv nil nil))
+      (conn/new :aqua :server aq config {:data aqua-server-recv}))
     (when ds ;; the following will be covered by conn-to all known nodes --> sooooon
-      (conn/new :aqua  :client ds config aqua-client-recv nil nil))
+      (conn/new :aqua  :client ds config {:data aqua-client-recv}))
     (when (is? :app-proxy)
-      (conn/new :socks :server ap config app-proxy-forward app-proxy-init circ/destroy-from-socket))))
+      (conn/new :socks :server ap config {:data     app-proxy-forward
+                                          :udp-data app-proxy-forward-udp
+                                          :init     app-proxy-init
+                                          :error    circ/destroy-from-socket}))))
