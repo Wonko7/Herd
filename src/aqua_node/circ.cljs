@@ -355,7 +355,13 @@
                                                                                (relay config socket circ-id :data :b-enc buf))
                                                                       :error #(do (log/error "closed:" dest) (destroy config circ-id))})
                                   (conn/new :udp :client nil config {:data  (fn [config soc msg rinfo]
-                                                                              ;; FIXME after adding socks header
+                                                                              (let [data       (js/new (+ 10 (.-length msg)))
+                                                                                    [w1 w2 w4] (b/mk-writers data)]
+                                                                                (w4 0 0)
+                                                                                (w1 1 3)
+                                                                                (.copy (-> rinfo .-address conv/ip4-to-bin) data 4)
+                                                                                (w2 (-> rinfo .-port) 8)
+                                                                                (.copy msg data 10))
                                                                               (relay config socket circ-id :data :b-enc msg))
                                                                      :error #(do (log/error "closed:" dest) (destroy config circ-id))}))]
                        (c/update-data sock [:circuit] circ-id)
