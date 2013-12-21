@@ -352,7 +352,7 @@
                      (update-data circ-id [:roles] (cons :exit (:roles circ)))
                      (let [dest (first (conv/parse-addr r-payload))
                            sock (if (= :tcp (:proto dest))
-                                  (conn/new :tcp :client dest config {:data  (fn [config soc b]
+                                  (conn/new :tcp :client dest config {:data  (fn [config soc b] ;; FIXME -> mk this a fn used in roles?
                                                                                (doall (map (fn [b] (.nextTick js/process #(relay config socket circ-id :data :b-enc b)))
                                                                                            (apply (partial b/cut b) (range 1350 (.-length b) 1350)))))
                                                                       :error #(do (log/error "closed:" dest) (destroy config circ-id))})
