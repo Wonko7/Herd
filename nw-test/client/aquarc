@@ -1,10 +1,12 @@
 {:roles [:app-proxy]
- :aqua-conn {:host "127.0.0.1"
-             :port 6667}
+ :aqua {:host "127.0.0.1"
+        :port 6667}
  :dir-server {:host "127.0.0.1"
 	      :port 6669}
- :app-proxy-conn {:host "127.0.0.1"
-                  :port 6666}
+ :app-proxy {:host "127.0.0.1"
+	     :port 6666}
+ :rtp-proxy {:host "127.0.0.1"
+             :port 11666}
  :auth {:openssl {:cert "auth/public/cert.pem"
                   :key  "auth/secret/key.pem"
                   :passphrase "aoeu"}

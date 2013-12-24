@@ -70,8 +70,7 @@
 (defn is? [role roles] ;; FIXME -> when needed elsewhere move to roles
   (some #(= role %) roles))
 
-(defn bootstrap [{roles :roles ap :app-proxy-conn aq :aqua-conn ds :dir-server :as config}]
-  (set! js/process.maxTickDepth 10)
+(defn bootstrap [{roles :roles ap :app-proxy rtp :rtp-proxy aq :aqua ds :dir-server :as config}]
   (let [is?   #(is? % roles)]
     (log/info "Bootstrapping as" roles)
     (when (some is? [:mix :entry :exit])
