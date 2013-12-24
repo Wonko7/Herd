@@ -3,7 +3,7 @@
             [cljs.nodejs :as node]
             [aqua-node.log :as log]
             [aqua-node.buf :as b]
-            [aqua-node.ntor :as hs]
+            [aqua-node.rtpp :as rtp]
             [aqua-node.circ :as circ]
             [aqua-node.conns :as c]
             [aqua-node.conn-mgr :as conn]))
@@ -74,11 +74,13 @@
   (let [is?   #(is? % roles)]
     (log/info "Bootstrapping as" roles)
     (when (some is? [:mix :entry :exit])
-      (conn/new :aqua :server aq config {:data aqua-server-recv}))
+      (conn/new :aqua  :server aq config {:data aqua-server-recv}))
     (when ds ;; the following will be covered by conn-to all known nodes --> sooooon
       (conn/new :aqua  :client ds config {:data aqua-client-recv}))
     (when (is? :app-proxy)
       (conn/new :socks :server ap config {:data     app-proxy-forward
                                           :udp-data app-proxy-forward-udp
                                           :init     app-proxy-init
-                                          :error    circ/destroy-from-socket}))))
+                                          :error    circ/destroy-from-socket})
+      (when rtp
+        (rtp/create-server rtp config)))))
