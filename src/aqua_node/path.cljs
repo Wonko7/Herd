@@ -20,21 +20,17 @@
     (circ/update-data id [:roles] [:origin])
     (circ/update-data id [:ctrl] ctrl)
     (circ/update-data id [:mk-path-fn] #(go (>! ctrl :next)))
-    (go-loop [cmd (<! ctrl-x), [n & nodes] nodes] 
-             (if n
-               (do (circ/relay-extend config id n)
-                   (log/debug "Circ" id "extended, remaining =" (count nodes)) ;; debug
-                   (recur (<! ctrl-x) nodes))
-               (do (log/debug "useless next on extend path circ" id) ;; will disappear, debug.
-                   (recur (<! ctrl-x) nil)))) 
+    (go-loop [cmd (<! ctrl-x), [n & nodes] nodes]
+             (when n
+               (circ/relay-extend config id n)
+               (log/debug "Circ" id "extended, remaining =" (count nodes)) ;; debug
+               (recur (<! ctrl-x) nodes)))
     (go (let [cmd  (<! ctrl-r)
               circ (circ/get-data id)]
-          (println "using circ" id)
           (circ/relay-begin config id (:ap-dest circ))
           (circ/update-data id [:state] :relay-ack-pending)
           (circ/update-data id [:state] :relay)
-          (>! (-> circ :backward-hop c/get-data :ctrl) :relay) ;; FIXME -> will go in begin-ack
-          ))
+          (>! (-> circ :backward-hop c/get-data :ctrl) :relay))) ;; FIXME -> will go in begin-ack
     id))
 
 (def pool (atom []))

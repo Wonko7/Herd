@@ -102,13 +102,12 @@
         [f b]    (if (is? :origin circ-data)
                    enc
                    (reverse enc))]
-    (update-data id [:path] (concat ls [(merge l {:f-enc f
-                                                  :b-enc b})]))))
+    (update-data id [:path] (concat ls [(merge l {:f-enc f :b-enc b})]))))
 
 
 ;; send cell ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
-(def block-count (atom 0))
+(def block-count (atom 0)) ;; FIXME: this was a temporary test, we really need one block-count per circ. make a channel per circ for this?
 
 (defn inc-block []
   (swap! block-count inc))
@@ -255,7 +254,7 @@
       (let [mux?       (is? :mux circ)
             auth       (if mux? (-> circ :mux :auth) (-> circ :path last :auth))
             len        (.readUInt16BE payload 0)
-            shared-sec (hs/client-finalise auth (.slice payload 2) (-> config :enc :key-len))] ;; FIXME aes 256 seems to want 32 len key. seems short to me.
+            shared-sec (hs/client-finalise auth (.slice payload 2) (-> config :enc :key-len))] ;; FIXME aes 256 seems to want 32 len key. seems short to me. Also, xchacha in newer openssl.
         (if mux?
           (update-data circ-id [:mux :auth :secret] shared-sec) ;; broken but unused on noiv.
           (add-path-secret-to-last config circ-id circ shared-sec))
