@@ -106,27 +106,6 @@
                                                   :b-enc b})]))))
 
 
-;; make requests: path level ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
-
-(defn mk-single-path [config [n & nodes]]
-  "Creates a single path. Assumes a connection to the first node exists."
-  (let [socket (c/find-by-dest (:dest n))
-        id     (create config socket (:auth n))]
-    (update-data id [:roles] [:origin])
-    (update-data id [:remaining-nodes] nodes)
-    (update-data id [:mk-path-fn] (fn [config id]
-                                    (let [circ        (@circuits id)
-                                          [n & nodes] (:remaining-nodes circ)]
-                                      (cond n                           (do (relay-extend config id n)
-                                                                            (println "extended remaining=" (count nodes)) ;; debug
-                                                                            (update-data id [:remaining-nodes] nodes))
-                                            (not= (:state circ) :relay) (when (:ap-dest circ)
-                                                                          (relay-begin config id (:ap-dest circ))
-                                                                          (update-data id [:state] :relay)
-                                                                          (go (>! (-> circ :backward-hop c/get-data :ctrl) :relay)))
-                                            :else                       (log/error "mk-single-path called with nothing to do. Do not do this again.")))))))
-
-
 ;; send cell ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
 (def block-count (atom 0))

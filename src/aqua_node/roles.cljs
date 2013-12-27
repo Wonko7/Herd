@@ -5,28 +5,29 @@
             [aqua-node.buf :as b]
             [aqua-node.rtpp :as rtp]
             [aqua-node.circ :as circ]
+            [aqua-node.path :as path]
             [aqua-node.conns :as c]
             [aqua-node.conn-mgr :as conn]))
 
 
 (defn aqua-client-init-path-for-testing [config]
-  (circ/mk-single-path config [{:auth {:srv-id (js/Buffer. "h00z6mIWXCPWK4Pp1AQh+oHoHs8=" "base64")
-                                       :pub-B  (js/Buffer. "KYi+NX2pCOQmYnscN0K+MB+NO9A6ynKiIp41B5GlkHc=" "base64")}
-                                :dest {:type :ip4 :host "127.0.0.1" :port 6669}}
-                                ;:dest {:type :ip4 :host "139.19.176.82" :port 6669}}
-                               ;{:auth {:srv-id (js/Buffer. "pQh62d3z8LisFWg8qENauDn7dtU=" "base64")
-                               ;        :pub-B  (js/Buffer. "JnJ35yUEiabocQUR6noo9JAB8prhvu7OP4kQlLVS4QI=" "base64")}
-                               ; ;:dest {:type :ip4 :host "127.0.0.1" :port 6667}}]))
-                               ; :dest {:type :ip4 :host "139.19.176.83" :port 6667}}
-                               ;{:auth {:srv-id (js/Buffer. "/kYydVqsBs2ssFGq6270h5cw9lg=" "base64")
-                               ;        :pub-B  (js/Buffer. "MVoWVfmV+DDUQTPU/vrhROnrnIOowFKvx1ZNSf0wjCY=" "base64")}
-                               ; ;:dest {:type :ip4 :host "127.0.0.1" :port 6660}}]))
-                               ; :dest {:type :ip4 :host "139.19.176.83" :port 6660}}
-                               ;{:auth {:srv-id (js/Buffer. "Spfv2p0qoXnW/4HotIOUMSDt2bk=" "base64")
-                               ;        :pub-B  (js/Buffer. "EiRtu6iEoFT9te0QS6uOJWHo7P95/uWbLAhsU+Oxjnc=" "base64")}
-                               ; ;:dest {:type :ip4 :host "127.0.0.1" :port 6661}}]))
-                               ; :dest {:type :ip4 :host "139.19.176.83" :port 6661}}
-                               ]))
+  (path/create-single config [{:auth {:srv-id (js/Buffer. "h00z6mIWXCPWK4Pp1AQh+oHoHs8=" "base64")
+                                      :pub-B  (js/Buffer. "KYi+NX2pCOQmYnscN0K+MB+NO9A6ynKiIp41B5GlkHc=" "base64")}
+                               :dest {:type :ip4 :host "127.0.0.1" :port 6669}}
+                              ;:dest {:type :ip4 :host "139.19.176.82" :port 6669}}
+                              ;{:auth {:srv-id (js/Buffer. "pQh62d3z8LisFWg8qENauDn7dtU=" "base64")
+                              ;        :pub-B  (js/Buffer. "JnJ35yUEiabocQUR6noo9JAB8prhvu7OP4kQlLVS4QI=" "base64")}
+                              ; ;:dest {:type :ip4 :host "127.0.0.1" :port 6667}}]))
+                              ; :dest {:type :ip4 :host "139.19.176.83" :port 6667}}
+                              ;{:auth {:srv-id (js/Buffer. "/kYydVqsBs2ssFGq6270h5cw9lg=" "base64")
+                              ;        :pub-B  (js/Buffer. "MVoWVfmV+DDUQTPU/vrhROnrnIOowFKvx1ZNSf0wjCY=" "base64")}
+                              ; ;:dest {:type :ip4 :host "127.0.0.1" :port 6660}}]))
+                              ; :dest {:type :ip4 :host "139.19.176.83" :port 6660}}
+                              ;{:auth {:srv-id (js/Buffer. "Spfv2p0qoXnW/4HotIOUMSDt2bk=" "base64")
+                              ;        :pub-B  (js/Buffer. "EiRtu6iEoFT9te0QS6uOJWHo7P95/uWbLAhsU+Oxjnc=" "base64")}
+                              ; ;:dest {:type :ip4 :host "127.0.0.1" :port 6661}}]))
+                              ; :dest {:type :ip4 :host "139.19.176.83" :port 6661}}
+                              ]))
 
 (defn app-proxy-init [config socket dest]
   (let [circ-id (aqua-client-init-path-for-testing config)] ;; FIXME -> choose (based on...?) or create circuit
