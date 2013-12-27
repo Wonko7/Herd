@@ -1,11 +1,11 @@
 (ns aqua-node.path
   (:require [cljs.core :as cljs]
             [cljs.nodejs :as node]
-            [cljs.core.async :refer [chan <! >!] :as as]
+            [cljs.core.async :refer [chan <! >! filter<]]
             [aqua-node.log :as log]
             [aqua-node.conns :as c]
             [aqua-node.circ :as circ])
-  (:require-macros [cljs.core.async.macros :as m :refer [go]]))
+  (:require-macros [cljs.core.async.macros :as m :refer [go-loop go]]))
 
 
 ;; make requests: path level ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
@@ -15,22 +15,26 @@
   (let [socket (c/find-by-dest (:dest n))
         id     (circ/create config socket (:auth n))
         ctrl   (chan)
-        ctrl-x (as/filter< #(= :next %) ctrl)
-        ctrl-r (as/filter< #(= :relay-connect %) ctrl)]
+        ctrl-x (filter< #(= :next %) ctrl)
+        ctrl-r (filter< #(= :relay-connect %) ctrl)]
     (circ/update-data id [:roles] [:origin])
     (circ/update-data id [:ctrl] ctrl)
     (circ/update-data id [:mk-path-fn] #(go (>! ctrl :next)))
-    (go-loop [cmd (!< ctrl-x), [n & nodes] nodes] 
+    (go-loop [cmd (<! ctrl-x), [n & nodes] nodes] 
              (if n
                (do (circ/relay-extend config id n)
                    (log/debug "Circ" id "extended, remaining =" (count nodes)) ;; debug
-                   (recur (!< ctrl-x) nodes))
+                   (recur (<! ctrl-x) nodes))
                (do (log/debug "useless next on extend path circ" id) ;; will disappear, debug.
-                   (recur (!< ctrl-x) nil)))) 
-    (go (let [cmd (!< ctrl-r)]
+                   (recur (<! ctrl-x) nil)))) 
+    (go (let [cmd  (<! ctrl-r)
+              circ (circ/get-data id)]
+          (println "using circ" id)
           (circ/relay-begin config id (:ap-dest circ))
           (circ/update-data id [:state] :relay-ack-pending)
-          (>! (-> circ :backward-hop c/get-data :ctrl) :relay)))
+          (circ/update-data id [:state] :relay)
+          (>! (-> circ :backward-hop c/get-data :ctrl) :relay) ;; FIXME -> will go in begin-ack
+          ))
     id))
 
 (def pool (atom []))
