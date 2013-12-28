@@ -51,11 +51,10 @@
                                                                (repeat false))]
                          (cond (= cmd 3) (go (if too-short? ;; UDP
                                                (kill-conn c (str "not enough data. conn type: " type))
-                                               (let [from      {:proto (if (= 1 cmd) :tcp :udp) :type type :host (to-ip) :port (to-port)}
+                                               (let [from      {:proto :udp :type type :host (to-ip) :port (to-port)}
                                                      udp-sock  (.createSocket (node/require "dgram") "udp4") ;; FIXME should not be hardcoded to ip4
-                                                     port      (do (.bind udp-sock 0 host #(go (>! ctrl :done)))
-                                                                   (log/debug "UDP bind:" (<! ctrl))
-                                                                   (-> udp-sock .address .-port))
+                                                     port      (do (.bind udp-sock 0 host #(go (>! ctrl (-> udp-sock .address .-port))))
+                                                                   (<! ctrl))
                                                      reply     (b/new 6)
                                                      dest      {:proto :udp :host "0.0.0.0" :port 0}]
                                                  (doseq [[v i] (map list (.split host ".") (range))]

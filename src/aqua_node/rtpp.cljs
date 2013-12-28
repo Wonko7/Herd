@@ -14,16 +14,21 @@
 (defn process [config socket message rinfo]
   (log/debug "RTP-Proxy: from:" (.-address rinfo) (.-port rinfo) :msg (.toString message "ascii"))
   (let [bcode        (node/require "node-bencode")
-        [cookie cmd] (-> message (.toString "ascii") (str/split #" " 2))
-        cmd          (cljs/js->clj (.decode bcode cmd "ascii"))]
-    (log/debug :cookie cookie :cmd (for [k (keys cmd)]
-                                     (list k (.toString (cmd k)))))
-    (when (= (.toString (cmd "command")) "ping")
-      (let [ra    (.-address rinfo)
-            rp    (.-port rinfo)
-            reply (b/new (str cookie " " (.encode bcode (cljs/clj->js {:result "pong"}))))]
-        (println "replying to ping:" (.toString reply))
-        (.send socket reply 0 (.-length reply) rp ra)))))
+        [cookie msg] (-> message (.toString "ascii") (str/split #" " 2))
+        msg          (-> (.decode bcode msg "ascii") cljs/js->clj)
+        cmd          (.toString (msg "command"))
+        mk-reply     #(do (log/debug "RTP-Proxy" cookie ":" cmd "->" %)
+                          (b/new (str cookie " " (.encode bcode (cljs/clj->js %)))))
+        send         #(.send socket % 0 (.-length %) (.-port rinfo) (.-address rinfo))]
+    (log/debug :cookie cookie :cmd (println (keys msg)))
+    (condp = cmd
+      "ping"  (-> {:result "pong"} mk-reply send)
+      "offer" (let [sdp (.toString (msg "sdp"))
+                    cnt (.match sdp #"m\=")]
+                (println cnt)
+                (-> {:result "ok" :sdp sdp} mk-reply send))
+      "delete" (-> {:result "ok"} mk-reply send)
+      (log/error "RTP-Proxy: unsupported command" cmd))))
 
 (defn create-server [{host :host port :port} config]
   (let [socket (.createSocket (node/require "dgram") "udp4")] ;; FIXME hardcoded to ip4 for now.
