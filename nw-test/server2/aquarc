@@ -1,6 +1,6 @@
 {:roles [:mix :exit :entry :dir-server]
- :aqua-conn {:host "127.0.0.1"
-             :port 6667}
+ :aqua {:host "127.0.0.1"
+        :port 6667}
  :auth {:openssl {:cert "auth/public/cert.pem"
                   :key  "auth/secret/key.pem"
                   :passphrase "abcd"}

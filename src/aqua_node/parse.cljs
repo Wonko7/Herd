@@ -41,5 +41,4 @@
                              (map cons [:ip4 :ip6 :dns])
                              (filter second)
                              first)]
-      (println str prot ip h p)
       [{:proto (if (= "u" prot) :udp :tcp) :type ip :host h :port p} (.slice buf (inc z))])))
