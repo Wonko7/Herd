@@ -33,33 +33,9 @@
 (defn app-proxy-init [config socket dest]
   (let [circ-id (path/get-path)] ;; FIXME -> choose (based on...?) or create circuit
     (c/update-data socket [:circuit] circ-id)
-    (println :init (keys (c/get-data socket)))
     (circ/update-data circ-id [:ap-dest] dest)
     (circ/update-data circ-id [:backward-hop] socket)
     (go (>! (:ctrl (circ/get-data circ-id)) :relay-connect))))
-
-(defn app-proxy-forward-udp [config s b]
-  (let [circ-id   (:circuit (c/get-data s))
-        circ-data (circ/get-data circ-id)
-        config    (merge config {:data s})]
-    (println :forward (keys (c/get-data s)))
-    (if (= (-> circ-data :state) :relay)
-      (circ/relay-data config circ-id b)
-      (log/info "UDP: not ready for data, dropping on circuit" circ-id))))
-
-(defn app-proxy-forward [config s]
-  (let [circ-id   (:circuit (c/get-data s))
-        circ-data (circ/get-data circ-id)
-        config    (merge config {:data s})]
-    (if (= (-> circ-data :state) :relay)
-      (when (circ/done?)
-        (if-let [b (.read s 1350)]
-          (do (circ/inc-block)
-              (circ/relay-data config circ-id b))
-          (when-let [b (.read s)]
-            (circ/inc-block)
-            (circ/relay-data config circ-id b))))
-      (log/info "TCP: not ready for data, dropping on circuit" circ-id))))
 
 (defn aqua-server-recv [config s]
   (log/debug "new dtls conn on:" (-> s .-socket .-_destIP) (-> s .-socket .-_destPort)) ;; FIXME: investigate nil .-remote[Addr|Port]
@@ -82,8 +58,8 @@
       (conn/new :aqua  :client ds config {:data aqua-client-recv}))
     (when (is? :app-proxy)
       (path/init-pool config test-path 10)
-      (conn/new :socks :server ap config {:data     app-proxy-forward
-                                          :udp-data app-proxy-forward-udp
+      (conn/new :socks :server ap config {:data     path/app-proxy-forward
+                                          :udp-data path/app-proxy-forward-udp
                                           :init     app-proxy-init
                                           :error    circ/destroy-from-socket})
       (when rtp
