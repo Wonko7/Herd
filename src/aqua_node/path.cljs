@@ -57,19 +57,19 @@
             (circ/relay-data config circ-id b))))
       (log/info "TCP: not ready for data, dropping on circuit" circ-id))))
 
-(defn attach-local-udp4 [circ-id forward-to]
+(defn attach-local-udp4 [config circ-id forward-to]
   (go (let [ctrl      (chan)
             udp-sock  (.createSocket (node/require "dgram") "udp4") ;; FIXME should not be hardcoded to ip4
-            port      (do (.bind udp-sock 0 {:host forward-to} #(go (>! ctrl (-> udp-sock .address .-port))))
+            port      (do (.bind udp-sock 0 (:host forward-to) #(go (>! ctrl (-> udp-sock .address .-port))))
                           (<! ctrl))
             dest      {:type :ip4 :proto :udp :host "0.0.0.0" :port 0}]
         (-> udp-sock
             (c/add {:ctrl ctrl :type :udp-ap :circuit circ-id :from forward-to :ap-dest forward-to}) ;; FIXME ap-dest mess.
-            (c/add-listeners {:message (partial app-proxy-forward-udp udp-sock)}))
+            (c/add-listeners {:message (partial app-proxy-forward-udp config udp-sock)}))
         (circ/update-data circ-id [:ap-dest] dest)
         (circ/update-data circ-id [:backward-hop] udp-sock)
         (>! (:ctrl (circ/get-data circ-id)) :relay-connect)
-        (assert (= :relay (<! ctrl))) ;; FIXME do we want to wait in this case? for rtp, by the time sdps are exchanged, relay begin will have been sent...
+        ;(assert (= :relay (<! ctrl))) ;; FIXME do we want to wait in this case? for rtp, by the time sdps are exchanged, relay begin will have been sent...
         [udp-sock port])))
 
 

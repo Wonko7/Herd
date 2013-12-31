@@ -16,9 +16,9 @@
                    :pub-B  (js/Buffer. "KYi+NX2pCOQmYnscN0K+MB+NO9A6ynKiIp41B5GlkHc=" "base64")}
                  :dest {:type :ip4 :host "127.0.0.1" :port 6669}}
                 ;:dest {:type :ip4 :host "139.19.176.82" :port 6669}}
-                {:auth {:srv-id (js/Buffer. "pQh62d3z8LisFWg8qENauDn7dtU=" "base64")
-                        :pub-B  (js/Buffer. "JnJ35yUEiabocQUR6noo9JAB8prhvu7OP4kQlLVS4QI=" "base64")}
-                 :dest {:type :ip4 :host "127.0.0.1" :port 6667}}
+                ;{:auth {:srv-id (js/Buffer. "pQh62d3z8LisFWg8qENauDn7dtU=" "base64")
+                ;        :pub-B  (js/Buffer. "JnJ35yUEiabocQUR6noo9JAB8prhvu7OP4kQlLVS4QI=" "base64")}
+                ; :dest {:type :ip4 :host "127.0.0.1" :port 6667}}
                 ; :dest {:type :ip4 :host "139.19.176.83" :port 6667}}
                 ;{:auth {:srv-id (js/Buffer. "/kYydVqsBs2ssFGq6270h5cw9lg=" "base64")
                 ;        :pub-B  (js/Buffer. "MVoWVfmV+DDUQTPU/vrhROnrnIOowFKvx1ZNSf0wjCY=" "base64")}
