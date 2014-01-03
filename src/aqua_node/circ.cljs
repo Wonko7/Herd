@@ -336,7 +336,8 @@
                       (update-data circ-id [:roles] (cons :exit (:roles circ)))
                       (let [dest         (first (conv/parse-addr r-payload))
                             sock-connect (chan)
-                            get-sock     #(go (println {:host (-> % .address .-ip) :port (-> % .address .-ip)})(>! sock-connect {:host (-> % .address .-ip) :port (-> % .address .-ip)}))
+                            get-sock     #(go (println :get-sock {:host (-> % .address .-address) :port (-> % .address .-port)})
+                                              (>! sock-connect {:host (-> % .address .-address) :port (-> % .address .-port)}))
                             sock         (if (= :tcp (:proto dest))
                                            (conn/new :tcp :client dest config {:connect get-sock
                                                                                :data    (fn [config soc b] ;; FIXME -> mk this a fn used in roles?

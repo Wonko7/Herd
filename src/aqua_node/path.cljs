@@ -69,7 +69,7 @@
         (circ/update-data circ-id [:ap-dest] dest)
         (circ/update-data circ-id [:backward-hop] udp-sock)
         (>! (:ctrl (circ/get-data circ-id)) :relay-connect)
-        ;(assert (= :relay (<! ctrl))) ;; FIXME do we want to wait in this case? for rtp, by the time sdps are exchanged, relay begin will have been sent...
+        (assert (= :relay (<! ctrl)))
         [udp-sock port])))
 
 

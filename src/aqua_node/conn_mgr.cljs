@@ -20,7 +20,7 @@
                                                       :end       err})
                              socket))
         new-udp-c   (fn [] (let [socket (.createSocket (node/require "dgram") (if (= :ip6 (:ip conn)) "udp6" "udp4"))]
-                             (.bind socket)
+                             (.bind socket 0)
                              (c/add socket {:type :udp-exit :cs :client :send #(do (println :sending-udp 0 (.-length %) (:port conn) (:host conn))
                                                                                    (.send socket % 0 (.-length %) (:port conn) (:host conn)))})
                              (c/add-listeners socket {:message   (partial data socket)
