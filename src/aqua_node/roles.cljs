@@ -14,7 +14,7 @@
 
 (def test-path [{:auth {:srv-id (js/Buffer. "h00z6mIWXCPWK4Pp1AQh+oHoHs8=" "base64")
                    :pub-B  (js/Buffer. "KYi+NX2pCOQmYnscN0K+MB+NO9A6ynKiIp41B5GlkHc=" "base64")}
-                 :dest {:type :ip4 :host "127.0.0.1" :port 6669}}
+                 :dest {:type :ip4 :host "192.168.0.11" :port 6669}}
                 ;:dest {:type :ip4 :host "139.19.176.82" :port 6669}}
                 ;{:auth {:srv-id (js/Buffer. "pQh62d3z8LisFWg8qENauDn7dtU=" "base64")
                 ;        :pub-B  (js/Buffer. "JnJ35yUEiabocQUR6noo9JAB8prhvu7OP4kQlLVS4QI=" "base64")}

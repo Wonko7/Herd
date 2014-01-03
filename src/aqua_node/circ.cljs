@@ -359,11 +359,11 @@
                         (update-data circ-id [:forward-hop] sock)
                         (go (relay-connected config circ-id (merge dest (<! sock-connect))))))
         p-connected (fn []
-                      (let [proxy-local (first (conv/parse-addr r-payload))]
+                      (let [proxy-dest (first (conv/parse-addr r-payload))]
                         (assert (is? :origin circ) "Connected message makes no sense")
-                        (println "connected! yay" proxy-local)
-                        (update-data circ-id [:proxy-local] proxy-local)
-                        (go (>! (:ctrl circ) :relay-connect))))
+                        (println "connected! yay" proxy-dest)
+                        (update-data circ-id [:proxy-local] proxy-dest)
+                        (go (>! (:ctrl circ) proxy-dest))))
         p-extend    (fn []
                       (let [[r1 r2 r4] (b/mk-readers r-payload)
                             nb-lspec   (r1 0) ;; FIXME we're assuming 1 for now.

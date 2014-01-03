@@ -10,7 +10,7 @@
 
 ;; make requests: path level ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
-(defn create-single [config [n & nodes]]
+(defn create-single [config [n & nodes :as all-nodes]]
   "Creates a single path. Assumes a connection to the first node exists."
   (let [socket (c/find-by-dest (:dest n))
         id     (circ/create config socket (:auth n))
@@ -18,6 +18,7 @@
     (circ/update-data id [:roles] [:origin])
     (circ/update-data id [:ctrl] ctrl)
     (circ/update-data id [:mk-path-fn] #(go (>! ctrl :next)))
+    (circ/update-data id [:path-dest] (-> all-nodes last :dest))
     (go (loop [cmd (<! ctrl), [n & nodes] nodes]
           (when n
             (circ/relay-extend config id n)
@@ -27,7 +28,7 @@
               circ (circ/get-data id)]
           (circ/relay-begin config id (:ap-dest circ))
           (circ/update-data id [:state] :relay-ack-pending)
-          (<! ctrl)
+          (circ/update-data id [:path-dest :port] (:port (<! ctrl)))
           (circ/update-data id [:state] :relay)
           (>! (-> circ :backward-hop c/get-data :ctrl) :relay)))
     id))
@@ -70,7 +71,7 @@
         (circ/update-data circ-id [:backward-hop] udp-sock)
         (>! (:ctrl (circ/get-data circ-id)) :relay-connect)
         (assert (= :relay (<! ctrl)))
-        [udp-sock port])))
+        [udp-sock port (:path-dest (circ/get-data circ-id))])))
 
 
 ;; path pool ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
