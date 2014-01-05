@@ -54,8 +54,8 @@
                              call-id        (msg "call-id")
                              call-data      (@calls (msg "call-id"))
                              circs          (for [[media port] ports
-                                                  :let [med (call-data media)]]
-                                              (do (swap! calls assoc-in [(msg "call-id") media :distant-port] port)
+                                                  :let [med (merge (call-data media) {:distant-port port :distant-ip ip})]]
+                                              (do (swap! calls assoc-in [(msg "call-id") media] med)
                                                   [port (:local-circ-port med)]))
                              sdp            (str/replace sdp ip (-> config :aqua :host))
                              sdp            (reduce #(change-port %1 (first %2) (second %2)) sdp circs)]
