@@ -37,9 +37,26 @@
 ;; path ap glue ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
 (defn app-proxy-forward-udp [config s b]
+  "For packets already encapsulated in socks5 header"
   (let [circ-id   (:circuit (c/get-data s))
         circ-data (circ/get-data circ-id)
         config    (merge config {:data s})]
+    (if (= (-> circ-data :state) :relay)
+      (circ/relay-data config circ-id b)
+      (log/info "UDP: not ready for data, dropping on circuit" circ-id))))
+
+(defn forward-udp [config s b]
+  "For packets needing socks5 header"
+  (let [circ-id    (:circuit (c/get-data s))
+        circ-data  (circ/get-data circ-id)
+        config     (merge config {:data s})
+        data       (b/new (+ 10 (.-length b))) ;; FIXME we are going to have to get rid of this.
+        [w1 w2 w4] (b/mk-writers data)]
+    (w4 0 0)
+    (w1 1 3)
+    (.copy (conv/ip4-to-bin IP-DEST) data 4)
+    (w2 (PORT) 8)
+    (.copy msg data 10)
     (if (= (-> circ-data :state) :relay)
       (circ/relay-data config circ-id b)
       (log/info "UDP: not ready for data, dropping on circuit" circ-id))))
