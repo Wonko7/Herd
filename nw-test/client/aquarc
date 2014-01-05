@@ -1,5 +1,5 @@
 {:roles [:app-proxy]
- :aqua {:host "127.0.0.1"
+ :aqua {:host "192.168.0.11"
         :port 6667}
  :dir-server {:host "192.168.0.11"
 	      :port 6669}
@@ -13,4 +13,4 @@
         :aqua-id {:pub "auth/public/pub.ntor"
 		  :id  "auth/public/id.ntor"
                   :sec "auth/secret/sec.ntor"}}
- :debug true}
+ :debug false}
