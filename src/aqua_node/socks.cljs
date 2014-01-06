@@ -49,7 +49,7 @@
                                                                        aend (when ml? (+ alen 5))]
                                                                    [(or (not ml?) (< len (+ 2 aend))) :dns #(r16 aend) #(.toString data "utf8" 5 aend)])
                                                                (repeat false))]
-                         (cond (= cmd 3) (go (if too-short? ;; UDP
+                         (cond (= cmd 3) (go (if too-short? ;; UDP -> FIXME use path/get-stuff.
                                                (kill-conn c (str "not enough data. conn type: " type))
                                                (let [from      {:proto :udp :type type :host (to-ip) :port (to-port)}
                                                      udp-sock  (.createSocket (node/require "dgram") "udp4") ;; FIXME should not be hardcoded to ip4

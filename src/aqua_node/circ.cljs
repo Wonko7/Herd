@@ -322,19 +322,24 @@
                         (condp = (:type dest-data)
                           :udp-exit  (let [[r1 r2]    (b/mk-readers r-payload)
                                            type       (r1 3)
-                                           [h p data] (cond (= 1) [(conv/ip4-to-str (.slice r-payload 4 8)) (r2 8) (.slice r-payload 10)]
-                                                            (= 4) [(conv/ip6-to-str (.slice r-payload 4 20)) (r2 20) (.slice r-payload 22)]
-                                                            (= 3) (let [len  (.-length r-payload)
-                                                                        ml?  (>= len 5)
-                                                                        alen (when ml? (r1 4))
-                                                                        aend (when ml? (+ alen 5))]
-                                                                    [(.toString r-payload "utf8" 5 aend) (r2 aend) (.slice r-payload (inc aend))]))]
+                                           [h p data] (condp = type
+                                                        1 [(conv/ip4-to-str (.slice r-payload 4 8)) (r2 8) (.slice r-payload 10)]
+                                                        4 [(conv/ip6-to-str (.slice r-payload 4 20)) (r2 20) (.slice r-payload 22)]
+                                                        3 (let [len  (.-length r-payload)
+                                                                ml?  (>= len 5)
+                                                                alen (when ml? (r1 4))
+                                                                aend (when ml? (+ alen 5))]
+                                                            [(.toString r-payload "utf8" 5 aend) (r2 aend) (.slice r-payload (inc aend))])
+                                                        (assert false "bad socks5 header"))]
+                                       (log/info "rtp-exyt relay to " p h)
                                        (.send dest data 0 (.-length data) p h))
-                          :udp-ap    (.send dest r-payload 0 (.-length r-payload) (-> dest-data :from :port) (-> dest-data :from :host))
-                          :rtp-exit  (.send dest r-payload 0 (.-length r-payload) (-> dest-data :from :port) (-> dest-data :from :host))
+                          :udp-ap    (do (println "fucking really?") (.send dest r-payload 0 (.-length r-payload) (-> dest-data :from :port) (-> dest-data :from :host)))
+                          :rtp-exit  (.send dest r-payload 0 (.-length r-payload) (-> dest-data :from :port) (-> dest-data :from :host)) ;; FIXME unused for now, going through udp-exit for now
+                          :rtp-ap    (do (log/info "rtp-ap relay to " (-> circ :local-dest :port) (-> circ :local-dest :host)) (.send dest r-payload 10 (- (.-length r-payload) 10) (-> circ :local-dest :port) (-> circ :local-dest :host))) ;; FIXME quick and diiiirty
                           (.write dest r-payload))))
         p-begin     (fn []
                       (assert (is-not? :origin circ) "relay begin command makes no sense") ;; FIXME this assert is good, but more like these are needed. roles are not inforced.
+                      (log/info "Relay exit for circuit" circ-id)
                       (update-data circ-id [:roles] (cons :exit (:roles circ)))
                       (let [dest         (first (conv/parse-addr r-payload))
                             sock-connect (chan)
