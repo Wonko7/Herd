@@ -56,7 +56,6 @@
         config     (merge config {:data s}) ;; FIXME we are going to have to get rid of this.
         data       (b/new (+ 10 (.-length b)))
         [w1 w2 w4] (b/mk-writers data)]
-    (log/error "forward udp entry to" dest)
     (w4 0 0)
     (w1 1 3)
     (.copy (conv/ip4-to-bin (:host dest)) data 4)
