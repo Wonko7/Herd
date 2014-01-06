@@ -21,14 +21,12 @@
                              socket))
         new-udp-c   (fn [type] (let [socket (.createSocket (node/require "dgram") (if (= :ip6 (:ip conn)) "udp6" "udp4"))]
                                  (.bind socket 0)
-                                 (c/add socket {:type type :cs :client :send #(do (println :sending-udp 0 (.-length %) (:port conn) (:host conn))
-                                                                                       (.send socket % 0 (.-length %) (:port conn) (:host conn)))})
+                                 (c/add socket {:type type :cs :client :send #(.send socket % 0 (.-length %) (:port conn) (:host conn))})
                                  (c/add-listeners socket {:message   (partial data socket)
                                                           :listening #(connect socket)
                                                           :error     err
                                                           :close     err})
                                  socket))]
-    (println type cs conn)
     (cond (is? :socks :server) (socks/create-server conn data udp-data (partial init config) (partial err config))
           (is? :aqua  :server) (dtls/create-server conn config data)
           (is? :aqua  :client) (dtls/connect conn config data)

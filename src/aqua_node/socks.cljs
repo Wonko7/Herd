@@ -74,7 +74,6 @@
                                            (kill-conn c (str "not enough data. conn type: " type))
                                            (let [dest   {:proto :tcp :type type :host (to-ip) :port (to-port)}
                                                  reply  (js/Buffer. (cljs/clj->js [5 0 0 1 0 0 0 0 0 0]))]
-                                             (println :type cmd dest)
                                              (init-handle c dest)
                                              (-> c
                                                  (c/update-data [:socks] {:dest dest, :state :relay})

@@ -338,8 +338,7 @@
                       (update-data circ-id [:roles] (cons :exit (:roles circ)))
                       (let [dest         (first (conv/parse-addr r-payload))
                             sock-connect (chan)
-                            get-sock     #(go (println :get-sock {:host (-> % .address .-address) :port (-> % .address .-port)})
-                                              (>! sock-connect {:host (-> % .address .-address) :port (-> % .address .-port)}))
+                            get-sock     #(go (>! sock-connect {:host (-> % .address .-address) :port (-> % .address .-port)}))
                             cbs          {:connect get-sock
                                           :error   #(do (log/error "closed:" dest)
                                                         (destroy config circ-id))}
@@ -363,7 +362,6 @@
         p-connected (fn []
                       (let [proxy-dest (first (conv/parse-addr r-payload))]
                         (assert (is? :origin circ) "Connected message makes no sense")
-                        (println "connected! yay" proxy-dest)
                         (update-data circ-id [:proxy-local] proxy-dest)
                         (go (>! (:ctrl circ) proxy-dest))))
         p-extend    (fn []

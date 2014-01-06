@@ -30,7 +30,8 @@
           (circ/update-data id [:state] :relay-ack-pending)
           (circ/update-data id [:path-dest :port] (:port (<! ctrl)))
           (circ/update-data id [:state] :relay)
-          (>! (-> circ :backward-hop c/get-data :ctrl) :relay)))
+          (>! (-> circ :backward-hop c/get-data :ctrl) :relay)
+          (log/info "Circuit" id "is ready for relay")))
     id))
 
 
