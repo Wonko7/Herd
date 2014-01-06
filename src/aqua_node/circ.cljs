@@ -333,9 +333,10 @@
                                                         (assert false "bad socks5 header"))]
                                        (log/info "rtp-exyt relay to " p h)
                                        (.send dest data 0 (.-length data) p h))
-                          :udp-ap    (do (println "fucking really?") (.send dest r-payload 0 (.-length r-payload) (-> dest-data :from :port) (-> dest-data :from :host)))
+                          :udp-ap    (.send dest r-payload 0 (.-length r-payload) (-> dest-data :from :port) (-> dest-data :from :host))
                           :rtp-exit  (.send dest r-payload 0 (.-length r-payload) (-> dest-data :from :port) (-> dest-data :from :host)) ;; FIXME unused for now, going through udp-exit for now
-                          :rtp-ap    (do (log/info "rtp-ap relay to " (-> circ :local-dest :port) (-> circ :local-dest :host)) (.send dest r-payload 10 (- (.-length r-payload) 10) (-> circ :local-dest :port) (-> circ :local-dest :host))) ;; FIXME quick and diiiirty
+                          :rtp-ap    (do (log/info "rtp-ap relay to " (-> circ :local-dest :port) (-> circ :local-dest :host))
+                                         (.send dest r-payload 00 (- (.-length r-payload) 00) (-> circ :local-dest :port) (-> circ :local-dest :host))) ;; FIXME quick and diiiirty
                           (.write dest r-payload))))
         p-begin     (fn []
                       (assert (is-not? :origin circ) "relay begin command makes no sense") ;; FIXME this assert is good, but more like these are needed. roles are not inforced.
