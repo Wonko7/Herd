@@ -334,7 +334,7 @@
                                        (.send dest data 0 (.-length data) p h))
                           :udp-ap    (.send dest r-payload 0 (.-length r-payload) (-> dest-data :from :port) (-> dest-data :from :host))
                           :rtp-exit  (.send dest r-payload 0 (.-length r-payload) (-> dest-data :from :port) (-> dest-data :from :host)) ;; FIXME unused for now, going through udp-exit for now
-                          :rtp-ap    (.send dest r-payload 10 (- (.-length r-payload) 10) (-> circ :local-dest :port) (-> circ :local-dest :host)) ;; FIXME quick and diiiirty
+                          :rtp-ap    (.send dest r-payload 0 (.-length r-payload) (-> circ :local-dest :port) (-> circ :local-dest :host)) ;; FIXME quick and diiiirty
                           (.write dest r-payload))))
         p-begin     (fn []
                       (assert (is-not? :origin circ) "relay begin command makes no sense") ;; FIXME this assert is good, but more like these are needed. roles are not inforced.
@@ -351,14 +351,7 @@
                                                                                                        (doall (map (fn [b] (.nextTick js/process #(relay config socket circ-id :data :b-enc b)))
                                                                                                                    (apply (partial b/cut b) (range 1350 (.-length b) 1350)))))}))
                                            :udp (conn/new :udp :client nil config (merge cbs {:data (fn [config soc msg rinfo]
-                                                                                                      (let [data       (b/new (+ 10 (.-length msg)))
-                                                                                                            [w1 w2 w4] (b/mk-writers data)]
-                                                                                                        (w4 0 0)
-                                                                                                        (w1 1 3)
-                                                                                                        (.copy (-> rinfo .-address conv/ip4-to-bin) data 4)
-                                                                                                        (w2 (-> rinfo .-port) 8)
-                                                                                                        (.copy msg data 10)
-                                                                                                        (relay config socket circ-id :data :b-enc data)))}))
+                                                                                                      (relay config socket circ-id :data :b-enc msg))}))
                                            :rtp (conn/new :rtp :client nil config (merge cbs {:data #(relay config %1 circ-id :data :b-enc %2)})))]
                         (c/update-data sock [:circuit] circ-id)
                         (update-data circ-id [:forward-hop] sock)
