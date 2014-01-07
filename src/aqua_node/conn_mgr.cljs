@@ -13,7 +13,7 @@
         data        (partial data config)
         udp-data    (partial udp-data config)
         new-tcp-c   (fn [] (let [socket (.connect (node/require "net") (cljs/clj->js (select-keys conn [:host :port])))]
-                             (c/add socket {:type :tcp-exit :cs :client})
+                             (c/add socket {:ctype :tcp :type :tcp-exit :cs :client})
                              (c/add-listeners socket {:data      (partial data socket)
                                                       :connect   #(connect socket)
                                                       :error     err
@@ -21,7 +21,7 @@
                              socket))
         new-udp-c   (fn [type] (let [socket (.createSocket (node/require "dgram") (if (= :ip6 (:ip conn)) "udp6" "udp4"))]
                                  (.bind socket 0)
-                                 (c/add socket {:type type :cs :client :send #(.send socket % 0 (.-length %) (:port conn) (:host conn))})
+                                 (c/add socket {:ctype :udp :type type :cs :client :send #(.send socket % 0 (.-length %) (:port conn) (:host conn))})
                                  (c/add-listeners socket {:message   (partial data socket)
                                                           :listening #(connect socket)
                                                           :error     err

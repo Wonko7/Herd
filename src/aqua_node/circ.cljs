@@ -166,14 +166,14 @@
 
 (defn- enc-send [config socket circ-id circ-cmd direction msg & [iv]]
   "Add all onion skins before sending the packet."
-  (assert (@circuits circ-id) "cicuit does not exist") ;; FIXME this assert will probably be done elsewhere (process?)
+  ;; (assert (@circuits circ-id) "cicuit does not exist") ;; FIXME this assert will probably be done elsewhere (process?)
   ;; FIXME assert state.
-  (let [circ     (@circuits circ-id)
-        c        (node/require "crypto")
-        encs     (get-path-enc circ direction) ;; FIXME: PATH: mk pluggable
-        iv       (or iv (.randomBytes c. (-> config :enc :iv-len)))
-        msg      (b/copycat2 iv (reduce #(%2 iv %1) msg encs))]
-    (cell-send config socket circ-id circ-cmd msg)))
+  (when-let [circ  (@circuits circ-id)]
+    (let [c        (node/require "crypto")
+          encs     (get-path-enc circ direction) ;; FIXME: PATH: mk pluggable
+          iv       (or iv (.randomBytes c. (-> config :enc :iv-len)))
+          msg      (b/copycat2 iv (reduce #(%2 iv %1) msg encs))]
+      (cell-send config socket circ-id circ-cmd msg))))
 
 (defn- enc-noiv-send [config socket circ-id circ-cmd direction msg]
   "Add all onion skins before sending the packet."
@@ -294,21 +294,21 @@
         (.write socket payload)))))
 
 (defn recv-destroy [config socket circ-id payload]
-  (let [circ                 (@circuits circ-id)
-        [fhop bhop :as hops] (map circ [:forward-hop :backward-hop])
-        dest                 (if (= socket fhop) bhop fhop)
-        d                    #(send-destroy config % circ-id payload)]
-    (when (or (nil? socket) (and (some (partial = socket) hops)))
-      (cond (is? :origin circ) (do (if socket
-                                     (c/destroy bhop)
-                                     (d fhop)))
-            (is? :exit circ)   (do (if socket
-                                     (c/destroy fhop)
-                                     (d bhop)))
-            :else              (do (if socket
-                                     (d dest)
-                                     (map d hops))))
-      (rm circ))))
+  (when-let [circ              (@circuits circ-id)]
+    (let [[fhop bhop :as hops] (map circ [:forward-hop :backward-hop])
+          dest                 (if (= socket fhop) bhop fhop)
+          d                    #(send-destroy config % circ-id payload)]
+      (when (or (nil? socket) (and (some (partial = socket) hops)))
+        (cond (is? :origin circ) (do (c/destroy bhop)
+                                     (when-not socket
+                                       (d fhop)))
+              (is? :exit circ)   (do (c/destroy fhop)
+                                     (when-not socket
+                                       (d bhop)))
+              :else              (do (if socket
+                                       (d dest)
+                                       (map d hops))))
+        (rm circ)))))
 
 (defn process-relay [config socket circ-id relay-data]
   (let [circ        (@circuits circ-id)
@@ -344,7 +344,7 @@
                             sock-connect (chan)
                             get-sock     #(go (>! sock-connect {:host (-> % .address .-address) :port (-> % .address .-port)}))
                             cbs          {:connect get-sock
-                                          :error   #(do (log/error "closed:" dest)
+                                          :error   #(do (log/debug "closed:" dest)
                                                         (destroy config circ-id))}
                             sock         (condp = (:proto dest) ;; FIXME -> this should be set by each transport/tunnel type. -> call backs from socks, rtpp, etc.
                                            :tcp (conn/new :tcp :client dest config (merge cbs {:data (fn [config soc b] ;; FIXME -> mk this a fn used in roles?

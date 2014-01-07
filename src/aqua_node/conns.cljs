@@ -1,6 +1,7 @@
 (ns aqua-node.conns
   (:require [cljs.core :as cljs]
-            [cljs.nodejs :as node]))
+            [cljs.nodejs :as node]
+            [aqua-node.log :as log]))
 
 (def connections (atom {}))
 
@@ -21,9 +22,11 @@
   conn)
 
 (defn destroy [conn]
-  (when (@connections conn)
+  (when-let [c (@connections conn)]
     (rm conn)
-    (.destroy conn)))
+    (if (= :udp (:ctype c))
+      (.close conn)
+      (.destroy conn))))
 
 (defn add-listeners [conn listeners]
   (doseq [k (keys listeners) :let [fns (k listeners) fns (if (seq? fns) fns [fns])]]

@@ -61,7 +61,7 @@
                                                    (.writeUInt8 reply v i))
                                                  (.writeUInt16BE reply port 4)
                                                  (-> udp-sock 
-                                                     (c/add {:from from :ctrl ctrl :type :udp-ap :socks {:control-tcp c :dest dest}})
+                                                     (c/add {:ctype :udp :from from :ctrl ctrl :type :udp-ap :socks {:control-tcp c :dest dest}})
                                                      (c/add-listeners {:message (partial udp-data-handler udp-sock)})
                                                      (init-handle dest))
                                                  (-> c
@@ -104,4 +104,4 @@
     (if host
       (.listen srv port host new-srv)
       (.listen srv port new-srv))
-    (c/add srv {:cs :server :type :socks})))
+    (c/add srv {:ctype :tcp :cs :server :type :socks})))

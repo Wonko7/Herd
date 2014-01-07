@@ -87,7 +87,7 @@
   (let [socket (.createSocket (node/require "dgram") "udp4") ;; FIXME hardcoded to ip4 for now.
         err    #(log/error "RTP-Proxy: server down.")]
     (.bind socket port host #(log/info "RTP-Proxy listening on:" (-> socket .address .-ip) (-> socket .address .-port)))
-    (c/add socket {:type :udp-rtpp :cs :server})
+    (c/add socket {:ctype :udp :type :udp-rtpp :cs :server})
     (c/add-listeners socket {:message  (partial process config socket)
                              :error    err
                              :close    err})

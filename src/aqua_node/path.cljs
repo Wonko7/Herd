@@ -86,7 +86,7 @@
                           (<! ctrl))
             dest      {:type :ip4 :proto :udp :host "0.0.0.0" :port 0}]
         (-> udp-sock
-            (c/add {:ctrl ctrl :type :udp-ap :circuit circ-id :local-dest forward-to}) ;; FIXME circ data is messy... need to seperate and harmonise things.
+            (c/add {:ctype :udp :ctrl ctrl :type :udp-ap :circuit circ-id :local-dest forward-to}) ;; FIXME circ data is messy... need to seperate and harmonise things.
             (c/add-listeners {:message (partial (or forwarder app-proxy-forward-udp) config udp-sock)}))
         (circ/update-data circ-id [:ap-dest] dest)
         (circ/update-data circ-id [:backward-hop] udp-sock)
