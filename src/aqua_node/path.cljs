@@ -100,7 +100,8 @@
 
 (def pool (atom []))
 
-(defn init-pool [config path N]
+(defn init-pool [config loc path N]
+  (log/info "We are in" (:country loc) "/" (:continent loc))
   (doseq [n (range N)]
     (swap! pool conj (create-single config path))))
 

@@ -46,21 +46,20 @@
 (defn aqua-client-recv [config s]
   (c/add-listeners s {:data #(circ/process config s %)}))
 
-;(js/setInterval#(circ/relay config s 42 :data "If at first you don't succeed, you fail.")  1000)
-
-(defn is? [role roles] ;; FIXME -> when needed elsewhere move to roles
+(defn is? [role roles]
   (some #(= role %) roles))
+
 (defn bootstrap [{roles :roles ap :app-proxy rtp :rtp-proxy aq :aqua ds :remote-dir dir :dir :as config}]
-  (let [is?   #(is? % roles)]
+  (let [geo   (chan)
+        is?   #(is? % roles)]
+    (geo/parse config geo)
     (log/info "Bootstrapping as" roles)
     (when (some is? [:mix :entry :exit])
       (conn/new :aqua  :server aq config {:data aqua-server-recv}))
     (when (is? :dir)
       (log/info "i am dir" dir))
-    (when ds ;; the following will be covered by conn-to all known nodes --> sooooon
-      (geo/load-db config))
     (when (is? :app-proxy)
-      (path/init-pool config test-path 10)
+      (go (path/init-pool config (<! geo) test-path 10))
       (conn/new :socks :server ap config {:data     path/app-proxy-forward
                                           :udp-data path/app-proxy-forward-udp
                                           :init     app-proxy-init
