@@ -13,6 +13,9 @@
 (defn rm [id]
   (swap! dir dissoc id))
 
+(defn rm-nw [id]
+  (swap! net-info dissoc id))
+
 (defn recv-client-info [config srv msg]
   (let [[client msg] (parse-addr msg)
         [mix]        (parse-addr msg)
@@ -21,14 +24,20 @@
         to-id        (js/setTimeout #(rm cip) 600000)]
     (when entry
       (js/clearTimeout (:timeout entry)))
-    (swap! dir merge {cip {:mix mix :client client}})))
+    (swap! dir merge {cip {:mix mix :client client :timeout to-id}})))
 
 (defn recv-nw-info [config srv msg]
   (let [nb      (.readUInt32BE msg 0)]
     (loop [i 0, m msg]]
       (when (< i nb)
         (let [[mix msg]        (parse-addr msg)
-              reg              (.readUInt8 msg 0)]
+              reg              (.readUInt8 msg 0)
+              mip              (:host mix)
+              entry            (mip @net-info)
+              to-id            (js/setTimeout #(rm-nw mip) 600000)]]
+          (when entry
+            (js/clearTimeout (:timeout entry)))
+          (swap! net-info merge {mip {:mix mix :geo reg}})
           (recur (inc i) (.slice msg 1)))))))
 
 (def to-cmd
