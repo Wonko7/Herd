@@ -18,14 +18,13 @@
                                    :when (and (not= \# (first l)) 
                                               (>= ip from)
                                               (<= ip to))]
-                               {:from      (js/parseInt from)
-                                :to        (js/parseInt to)
-                                :reg       reg
+                               {:reg       reg
                                 :continent (condp = reg
                                              "apcnic"  :asia-pacific
                                              "arin"    :north-america
                                              "lacnic"  :south-america
                                              "ripencc" :europe
                                              "afrinic" :africa)
-                                :country country})))))
+                                :country   country
+                                :ip        ip})))))
        (catch js/Object e (log/c-error "Error reading Geo loc db" e))))
