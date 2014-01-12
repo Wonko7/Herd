@@ -1,9 +1,9 @@
 {:roles [:app-proxy]
  :aqua {:host "192.168.0.11"
         :port 6667}
- :remote-dir {:host "192.168.0.11"
-	      :port 6669}
- :dir {:geo-db "ip4-geo.txt"}
+ :geo-db "ip4-geo.txt"
+ :remote-dir {:host "54.194.191.213"
+	      :port 6666}
  :app-proxy {:host "127.0.0.1"
 	     :port 6666}
  :rtp-proxy {:host "127.0.0.1"
