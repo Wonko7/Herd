@@ -4,17 +4,18 @@
             [cljs.core.async :refer [chan <! >! filter<]]
             [aqua-node.log :as log]
             [aqua-node.buf :as b]
-            [aqua-node.rtpp :as rtp]
+            [aqua-node.conns :as c]
+            [aqua-node.conn-mgr :as conn]
             [aqua-node.circ :as circ]
             [aqua-node.path :as path]
-            [aqua-node.conns :as c]
-            [aqua-node.conn-mgr :as conn])
+            [aqua-node.rtpp :as rtp])
   (:require-macros [cljs.core.async.macros :as m :refer [go-loop go]]))
 
 
 (def test-path [{:auth {:srv-id (js/Buffer. "h00z6mIWXCPWK4Pp1AQh+oHoHs8=" "base64")
-                   :pub-B  (js/Buffer. "KYi+NX2pCOQmYnscN0K+MB+NO9A6ynKiIp41B5GlkHc=" "base64")}
-                 :dest {:type :ip4 :host "192.168.0.11" :port 6669}}
+                        :pub-B  (js/Buffer. "KYi+NX2pCOQmYnscN0K+MB+NO9A6ynKiIp41B5GlkHc=" "base64")}
+                 :dest {:type :ip4 :host "54.194.191.213" :port 6666}}
+                ;:dest {:type :ip4 :host "192.168.0.11" :port 6669}}
                 ;:dest {:type :ip4 :host "139.19.176.82" :port 6669}}
                 ;{:auth {:srv-id (js/Buffer. "pQh62d3z8LisFWg8qENauDn7dtU=" "base64")
                 ;        :pub-B  (js/Buffer. "JnJ35yUEiabocQUR6noo9JAB8prhvu7OP4kQlLVS4QI=" "base64")}
@@ -48,12 +49,13 @@
 
 (defn is? [role roles] ;; FIXME -> when needed elsewhere move to roles
   (some #(= role %) roles))
-
-(defn bootstrap [{roles :roles ap :app-proxy rtp :rtp-proxy aq :aqua ds :dir-server :as config}]
+(defn bootstrap [{roles :roles ap :app-proxy rtp :rtp-proxy aq :aqua ds :remote-dir dir :dir :as config}]
   (let [is?   #(is? % roles)]
     (log/info "Bootstrapping as" roles)
     (when (some is? [:mix :entry :exit])
       (conn/new :aqua  :server aq config {:data aqua-server-recv}))
+    (when (is? :dir)
+      (log/info "i am dir" dir))
     (when ds ;; the following will be covered by conn-to all known nodes --> sooooon
       (conn/new :aqua  :client ds config {:data aqua-client-recv}))
     (when (is? :app-proxy)
