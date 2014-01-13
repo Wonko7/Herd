@@ -6,6 +6,7 @@
             [aqua-node.buf :as b]
             [aqua-node.conns :as c]
             [aqua-node.conn-mgr :as conn]
+            [aqua-node.dir :as dir]
             [aqua-node.circ :as circ]
             [aqua-node.path :as path]
             [aqua-node.rtpp :as rtp]
@@ -40,11 +41,25 @@
     (go (>! (:ctrl (circ/get-data circ-id)) :relay-connect))))
 
 (defn aqua-server-recv [config s]
-  (log/debug "new dtls conn on:" (-> s .-socket .-_destIP) (-> s .-socket .-_destPort)) ;; FIXME: investigate nil .-remote[Addr|Port]
+  (log/debug "new aqua dtls conn on:" (-> s .-socket .-_destIP) (-> s .-socket .-_destPort)) ;; FIXME: investigate nil .-remote[Addr|Port]
   (c/add-listeners s {:data #(circ/process config s %)}))
 
 (defn aqua-client-recv [config s]
   (c/add-listeners s {:data #(circ/process config s %)}))
+
+(defn aqua-dir-recv [config s]
+  (log/debug "new dir tls conn on:" (-> s .-socket .-_destIP) (-> s .-socket .-_destPort)) ;; FIXME: investigate nil .-remote[Addr|Port]
+  (c/add-listeners s {:connect #(dir/process config s %)}))
+
+(defn register-dir [config dir]
+  (log/info "start registering:")
+  (let [done (chan)
+        c (conn/new :dir :client dir config {:connect #(go (>! connected :done))})]
+    (c/add-listeners c {:data #(dir/process config c %)})
+    (go (<! done)
+        (dir/send-client-info config c mix)
+        (c/rm c)
+        (.close c))))
 
 (defn is? [role roles]
   (some #(= role %) roles))
@@ -55,9 +70,11 @@
     (geo/parse config geo)
     (log/info "Bootstrapping as" roles)
     (when (some is? [:mix :entry :exit])
-      (conn/new :aqua  :server aq config {:data aqua-server-recv}))
-    (when (is? :dir)
-      (log/info "i am dir" dir))
+      ;(conn/new :aqua  :client ds config {:connect aqua-client-recv})
+      (conn/new :aqua :server aq config {:data aqua-server-recv}))
+    (if (is? :dir)
+      (conn/new :dir :server dir config {:data aqua-dir})
+      (js/setInterval 30000 #(register-dir config ds)))
     (when (is? :app-proxy)
       (go (path/init-pool config (<! geo) test-path 10))
       (conn/new :socks :server ap config {:data     path/app-proxy-forward
