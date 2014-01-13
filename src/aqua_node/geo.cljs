@@ -7,6 +7,22 @@
             [aqua-node.parse :as conv])
   (:require-macros [cljs.core.async.macros :as m :refer [go]]))
 
+(defn int-to-reg [reg]
+  (condp = reg
+    0 :apcnic
+    1 :arin
+    2 :lacnic
+    3 :ripencc
+    4 :afrinic))
+
+(defn reg-to-int [reg]
+  (condp = reg
+    :apcnic   0
+    :arin     1
+    :lacnic   2
+    :ripencc  3
+    :afrinic  4))
+
 (defn parse [config done]
   (try (let [fs  (node/require "fs")
              geo (chan)
@@ -18,7 +34,7 @@
                                    :when (and (not= \# (first l)) 
                                               (>= ip from)
                                               (<= ip to))]
-                               {:reg       reg
+                               {:reg       (keyword reg)
                                 :continent (condp = reg
                                              "apcnic"  :asia-pacific
                                              "arin"    :north-america
