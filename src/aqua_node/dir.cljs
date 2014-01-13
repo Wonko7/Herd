@@ -9,7 +9,18 @@
   (:require-macros [cljs.core.async.macros :as m :refer [go]]))
 
 
-(declare to-cmd)
+;; defs & helpers ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+(declare recv-client-info recv-net-info recv-net-request)
+
+(def to-cmd
+  {0   {:name :client-info  :fun recv-client-info}
+   1   {:name :net-info     :fun recv-net-info}
+   2   {:name :net-request  :fun recv-net-request}})
+
+(def from-cmd
+  (apply merge (for [k (keys to-cmd)]
+                 {((to-cmd k) :name) k})))
 
 (def dir (atom {}))
 (def net-info (atom {}))
@@ -28,7 +39,22 @@
   (doseq [k (keys @net-info)
           :let [m    (@net-info k)
                 addr (conv/dest-to-tor-str (:mix m))]]
-    (swap! net-info-buf b/cat (b/new addr) (-> [0 (:geo m)] cljs/clj->js b/new))))
+    (swap! net-info-buf b/cat (b/new addr) (b/new (js/Array. 0 (:geo m))))))
+
+
+;; send things ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+(defn send-client-info [config soc mix]
+  (let [z  (-> [0] cljs/clj->js b/new)
+        m  (b/cat (-> [(to-cmd :client-info)] cljs/clj->js b/new)
+                  (conv/dest-to-tor-str {:type :ip4 :proto :udp :host (:extenal-ip config) :port 0})
+                  z
+                  (conv/dest-to-tor-str mix)
+                  z)]
+    (.write soc m)))
+
+(defn send-net-request [config soc]
+  (->> [(to-cmd :net-request)] cljs/clj->js b/new (.write soc)))
 
 ;; process recv ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
@@ -57,21 +83,10 @@
           (swap! net-info merge {mip {:mix mix :geo reg}})
           (recur (inc i) (.slice msg 1)))))))
 
-(def to-cmd
-  {0   {:name :client-info  :fun recv-client-info}
-   1   {:name :net-info     :fun recv-net-info}
-   2   {:name :net-info     :fun recv-net-info}})
-
-(def from-cmd
-  (apply merge (for [k (keys to-cmd)]
-                 {((to-cmd k) :name) k})))
-
-(defn send [srv loc]
-  (.write srv "oh hi there"))
+(defn recv-net-request [config soc msg]
+  (.write soc @net-info-buf))
 
 (defn process [config srv buf]
-  (js/console.log "test:")
-  (js/console.log (js/Array. 1 2 3))
   (when (> (.-length buf) 4) ;; FIXME put real size when message header is finalised.
     (let [[r1 r2 r4] (b/mk-readers buf)
           cmd        (r1 0)
@@ -79,5 +94,5 @@
           process    (-> cmd to-cmd :fun)]
       (if process
         (try (process config srv msg)
-             (catch js/Object e (log/c-error e (str "Malformed Dir message" (to-cmd cmd)))))
+             (catch js/Object e (log/c-error e (str "Aqua-Dir: Malformed message" (to-cmd cmd)))))
         (log/info "Net-Info: invalid message command")))))

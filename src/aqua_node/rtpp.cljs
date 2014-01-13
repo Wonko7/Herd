@@ -33,7 +33,7 @@
         mk-reply     #(b/new (str cookie " " (.encode bcode (cljs/clj->js %))))
         send         #(.send socket % 0 (.-length %) (.-port rinfo) (.-address rinfo))
         ;; SDP & circ glue:
-        local-ip     (-> config :aqua :host)
+        local-ip     (:extenal-ip config)
         call-id      (.toString (or (msg "call-id") ""))
         parse-sdp    #(let [sdp (.toString (msg "sdp"))]
                         [sdp

@@ -26,7 +26,7 @@
 (defn parse [config done]
   (try (let [fs  (node/require "fs")
              geo (chan)
-             ip   (-> config :aqua :host)
+             ip   (:extenal-ip config)
              ip   (-> "82.239.82.44" conv/ip4-to-bin (.readUInt32BE 0))]
          (.readFile fs (-> config :geo-db) #(go (>! geo %2)))
          (go (>! done (first (for [l (str/split (<! geo) #"\n")
