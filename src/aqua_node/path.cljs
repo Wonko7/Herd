@@ -6,7 +6,9 @@
             [aqua-node.buf :as b]
             [aqua-node.parse :as conv]
             [aqua-node.conns :as c]
-            [aqua-node.circ :as circ])
+            [aqua-node.conn-mgr :as conn]
+            [aqua-node.circ :as circ]
+            [aqua-node.dir :as dir])
   (:require-macros [cljs.core.async.macros :as m :refer [go-loop go]]))
 
 
@@ -100,10 +102,11 @@
 
 (def pool (atom []))
 
-(defn init-pool [config loc path N]
+(defn init-pools [config net-info ds loc N]
   (log/info "We are in" (:country loc) "/" (:continent loc))
-  (doseq [n (range N)]
-    (swap! pool conj (create-single config path))))
+  (let []
+    (doseq [n (range N)]
+      (swap! pool conj (create-single config path)))))
 
 (defn get-path []
   (let [[p & ps] @pool]

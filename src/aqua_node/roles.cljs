@@ -51,35 +51,53 @@
   (log/debug "new dir tls conn on:" (-> s .-socket .-_destIP) (-> s .-socket .-_destPort)) ;; FIXME: investigate nil .-remote[Addr|Port]
   (c/add-listeners s {:connect #(dir/process config s %)}))
 
-(defn register-dir [config dir]
+(defn register-dir [config mix dir]
   (log/info "start registering:")
   (let [done (chan)
-        c (conn/new :dir :client dir config {:connect #(go (>! connected :done))})]
+        c    (conn/new :dir :client dir config {:connect #(go (>! done :connected))})]
     (c/add-listeners c {:data #(dir/process config c %)})
     (go (<! done)
-        (dir/send-client-info config c mix)
+        (dir/send-client-info config c mix done)
+        (<! done)
+        (log/info "successfully registered")
         (c/rm c)
         (.close c))))
+
+(defn get-net-info [config dir]
+  (log/info "requesting net info:")
+  (let [done (chan)
+        c    (conn/new :dir :client dir config {:connect #(go (>! done :connected))})]
+    (c/add-listeners c {:data #(dir/process config c % done)})
+    (go (<! done)
+        (dir/send-net-request config c done)
+        (<! done)
+        (log/info "got net info")
+        (c/rm c)
+        (.close c)
+        (dir/get-net-info))))
+
 
 (defn is? [role roles]
   (some #(= role %) roles))
 
 (defn bootstrap [{roles :roles ap :app-proxy rtp :rtp-proxy aq :aqua ds :remote-dir dir :dir :as config}]
-  (let [geo   (chan)
-        is?   #(is? % roles)]
-    (geo/parse config geo)
+  (let [is?      #(is? % roles)
+        geo      (chan)
+        net-info (chan)
+        mix      (chan)]
     (log/info "Bootstrapping as" roles)
-    (when (some is? [:mix :entry :exit])
-      ;(conn/new :aqua  :client ds config {:connect aqua-client-recv})
-      (conn/new :aqua :server aq config {:data aqua-server-recv}))
-    (if (is? :dir)
-      (conn/new :dir :server dir config {:data aqua-dir})
-      (js/setInterval 30000 #(register-dir config ds)))
+    (go (>! geo (geo/parse config)))
     (when (is? :app-proxy)
-      (go (path/init-pool config (<! geo) test-path 10))
+      (go (>! net-info (get-net-info config ds)))
+      (go (>! mix (path/init-pools config (<! net-info) (<! geo) test-path 10)))
       (conn/new :socks :server ap config {:data     path/app-proxy-forward
                                           :udp-data path/app-proxy-forward-udp
                                           :init     app-proxy-init
                                           :error    circ/destroy-from-socket})
       (when rtp
-        (rtp/create-server rtp config)))))
+        (rtp/create-server rtp config)))
+    (conn/new :aqua :server aq config {:connect aqua-server-recv})
+    (if (is? :dir)
+      (conn/new :dir :server dir config {:connect aqua-dir-recv})
+      (go (let [mix (<! mix)]
+            (js/setInterval 30000 #(register-dir config mix ds)))))))

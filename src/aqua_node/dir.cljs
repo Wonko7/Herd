@@ -26,6 +26,9 @@
 (def net-info (atom {}))
 (def net-info-buf (atom nil))
 
+(defn get-net-info []
+  @net-info)
+
 (defn rm [id]
   (swap! dir dissoc id))
 
@@ -44,21 +47,21 @@
 
 ;; send things ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
-(defn send-client-info [config soc mix]
+(defn send-client-info [config soc mix done-chan]
   (let [z  (-> [0] cljs/clj->js b/new)
         m  (b/cat (-> [(to-cmd :client-info)] cljs/clj->js b/new)
                   (conv/dest-to-tor-str {:type :ip4 :proto :udp :host (:extenal-ip config) :port 0})
                   z
                   (conv/dest-to-tor-str mix)
                   z)]
-    (.write soc m)))
+    (.write soc m #(go (>! done-chan :done)))))
 
-(defn send-net-request [config soc]
-  (->> [(to-cmd :net-request)] cljs/clj->js b/new (.write soc)))
+(defn send-net-request [config soc done]
+  (.write soc (->> [(to-cmd :net-request)] cljs/clj->js b/new) #(go (>! done :done))))
 
 ;; process recv ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
-(defn recv-client-info [config srv msg]
+(defn recv-client-info [config srv msg recv-chan]
   (let [[client msg] (conv/parse-addr msg)
         [mix]        (conv/parse-addr msg)
         cip          (:host client)
@@ -67,9 +70,11 @@
     (when entry
       (js/clearTimeout (:timeout entry)))
     (swap! dir merge {cip {:mix mix :client client :timeout to-id}})
-    (mk-net-buf!)))
+    (mk-net-buf!)
+    (when recv-chan
+      (go (>! recv-chan :got-geo)))))
 
-(defn recv-net-info [config srv msg]
+(defn recv-net-info [config srv msg recv-chan]
   (let [nb      (.readUInt32BE msg 0)]
     (loop [i 0, m msg]
       (when (< i nb)
@@ -81,18 +86,20 @@
           (when entry
             (js/clearTimeout (:timeout entry)))
           (swap! net-info merge {mip {:mix mix :geo reg}})
-          (recur (inc i) (.slice msg 1)))))))
+          (recur (inc i) (.slice msg 1)))))
+    (when recv-chan
+      (go (>! recv-chan :got-geo)))))
 
-(defn recv-net-request [config soc msg]
+(defn recv-net-request [config soc msg recv-chan]
   (.write soc @net-info-buf))
 
-(defn process [config srv buf]
+(defn process [config srv buf & [recv-chan]]
   (when (> (.-length buf) 4) ;; FIXME put real size when message header is finalised.
     (let [[r1 r2 r4] (b/mk-readers buf)
           cmd        (r1 0)
           msg        (.slice buf 1)
           process    (-> cmd to-cmd :fun)]
       (if process
-        (try (process config srv msg)
+        (try (process config srv msg recv-chan)
              (catch js/Object e (log/c-error e (str "Aqua-Dir: Malformed message" (to-cmd cmd)))))
         (log/info "Net-Info: invalid message command")))))
