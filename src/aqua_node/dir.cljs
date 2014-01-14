@@ -18,6 +18,8 @@
    1   {:name :net-info     :fun recv-net-info}
    2   {:name :net-request  :fun recv-net-request}})
 
+(def roles {:mix 0 :app-proxy 1})
+
 (def from-cmd
   (apply merge (for [k (keys to-cmd)]
                  {((to-cmd k) :name) k})))
@@ -47,29 +49,39 @@
 
 ;; send things ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
-(defn send-client-info [config soc mix done-chan]
-  (let [z  (-> [0] cljs/clj->js b/new)
-        m  (b/cat (-> [(to-cmd :client-info)] cljs/clj->js b/new)
-                  (conv/dest-to-tor-str {:type :ip4 :proto :udp :host (:extenal-ip config) :port 0})
-                  z
-                  (conv/dest-to-tor-str mix)
-                  z)]
+(defn send-client-info [config soc geo mix done-chan]
+  (let [zero  (-> [0] cljs/clj->js b/new)
+        role  (if (-> config :roles :app-proxy) 0 1)
+        info  [(-> [(to-cmd :client-info) role (-> geo :reg geo/reg-to-int)] cljs/clj->js b/new)
+               (-> config :auth :aqua-id :id)
+               (-> config :auth :aqua-id :pub)
+               (conv/dest-to-tor-str {:type :ip4 :proto :udp :host (:extenal-ip config) :port 0})
+               zero]
+        info  (if (zero? role)
+                (concat info [(conv/dest-to-tor-str mix) zero])
+                info)
+        m     (apply b/cat info)]
     (.write soc m #(go (>! done-chan :done)))))
 
 (defn send-net-request [config soc done]
   (.write soc (->> [(to-cmd :net-request)] cljs/clj->js b/new) #(go (>! done :done))))
 
+
 ;; process recv ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
 (defn recv-client-info [config srv msg recv-chan]
-  (let [[client msg] (conv/parse-addr msg)
-        [mix]        (conv/parse-addr msg)
+  (let [role         (if (zero? (.readUInt8 msg 0)) :app-proxy :mix)
+        reg          (.readUInt8 msg 1)
+        [client msg] (conv/parse-addr msg)
+        [id pub msg] (b/cut msg (-> config :ntor-values :iv-len) (-> config :ntor-values :key-len))
         cip          (:host client)
         entry        (@dir cip)
         to-id        (js/setTimeout #(rm cip) 600000)]
     (when entry
       (js/clearTimeout (:timeout entry)))
-    (swap! dir merge {cip {:mix mix :client client :timeout to-id}})
+    (swap! dir merge {cip (merge (when (= role :app-proxy)
+                                   {:mix (conv/parse-addr msg)})
+                                 {:client client :timeout to-id :reg reg :role role})})
     (mk-net-buf!)
     (when recv-chan
       (go (>! recv-chan :got-geo)))))
@@ -95,8 +107,7 @@
 
 (defn process [config srv buf & [recv-chan]]
   (when (> (.-length buf) 4) ;; FIXME put real size when message header is finalised.
-    (let [[r1 r2 r4] (b/mk-readers buf)
-          cmd        (r1 0)
+    (let [cmd        (.readUInt8 buf 0)
           msg        (.slice buf 1)
           process    (-> cmd to-cmd :fun)]
       (if process

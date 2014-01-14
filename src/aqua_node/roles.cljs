@@ -51,13 +51,13 @@
   (log/debug "new dir tls conn on:" (-> s .-socket .-_destIP) (-> s .-socket .-_destPort)) ;; FIXME: investigate nil .-remote[Addr|Port]
   (c/add-listeners s {:connect #(dir/process config s %)}))
 
-(defn register-dir [config mix dir]
+(defn register-dir [config geo mix dir]
   (log/info "start registering:")
   (let [done (chan)
         c    (conn/new :dir :client dir config {:connect #(go (>! done :connected))})]
     (c/add-listeners c {:data #(dir/process config c %)})
     (go (<! done)
-        (dir/send-client-info config c mix done)
+        (dir/send-client-info config c geo mix done)
         (<! done)
         (log/info "successfully registered")
         (c/rm c)
@@ -82,7 +82,9 @@
 
 (defn bootstrap [{roles :roles ap :app-proxy rtp :rtp-proxy aq :aqua ds :remote-dir dir :dir :as config}]
   (let [is?      #(is? % roles)
-        geo      (chan)
+        geo1     (chan)
+        geo2     (chan)
+        geo      (broadcast geo1 geo2)
         net-info (chan)
         mix      (chan)]
     (log/info "Bootstrapping as" roles)
@@ -100,4 +102,4 @@
     (if (is? :dir)
       (conn/new :dir :server dir config {:connect aqua-dir-recv})
       (go (let [mix (<! mix)]
-            (js/setInterval 30000 #(register-dir config mix ds)))))))
+            (js/setInterval 30000 #(go (register-dir config (<! geo2) mix ds))))))))
