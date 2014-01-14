@@ -41,18 +41,18 @@
 
 (defn create-rt [config mix]
   "Creates a real time path. Assumes a connection to the first node exists."
-  (let [socket (c/find-by-dest (:dest n))
-        id     (circ/create config socket (:auth n))
+  (let [socket (c/find-by-dest (:dest mix))
+        id     (circ/create config socket (:auth mix))
         ctrl   (chan)
         dest   (chan)]
     (circ/update-data id [:roles] [:origin])
     (circ/update-data id [:ctrl] ctrl)
     (circ/update-data id [:mk-path-fn] #(go (>! ctrl :next)))
-    (circ/update-data id [:path-dest] (-> all-nodes last :dest))
     (go (<! ctrl)
         (circ/relay-extend config id mix)
         (<! ctrl)
         (let [[mix2 ap-dest] (dir/query (<! dest))]
+          (circ/update-data id [:path-dest] (:dest ap-dest)) ;; FIXME is that soon enough?
           (circ/relay-extend config id mix2)
           (<! ctrl)
           (circ/relay-extend config id ap-dest)
@@ -63,7 +63,7 @@
           (circ/update-data id [:path-dest :port] (:port (<! ctrl)))
           (circ/update-data id [:state] :relay)
           (>! (-> circ :backward-hop c/get-data :ctrl) :relay)
-          (log/info "Circuit" id "is ready for relay")))
+          (log/info "RT Circuit" id "is ready for relay")))
     id))
 
 
@@ -138,13 +138,13 @@
     (swap! pool conj (create-rt config path))))
 
 (defn init-pools [config geo-db loc N] ;; this will 
-  (log/info "We are in" (:country loc) "/" (:continent loc))
+  (log/info "Init Circuit pools: we are in" (:country loc) "/" (:continent loc))
   (let [reg (-> loc :reg geo/reg-to-int)
         mix (filter #(= (:reg %) reg) (map second (seq geo-db)))]
     (init-pool [config mix N])
     mix))
 
-(defn get-path []
+(defn get-path [config]
   (let [[p & ps] @pool]
     (reset! pool (vec ps))
     (init-pool config @mix 1)

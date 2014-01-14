@@ -48,7 +48,7 @@
                                (swap! calls assoc-in [call-id :ignore] true)
                                (-> {:result "ok" :sdp sdp} mk-reply send))
                            (let [sdp-ch         (chan)
-                                 circs          (repeatedly path/get-path)
+                                 circs          (repeatedly #(path/get-path config))
                                  assoc-circ     (fn [cid [media old]]
                                                   (go (let [f-dest         {:type :ip4, :proto :udp, :host ip :port old}
                                                             [_ local-port] (<! (path/attach-local-udp4 config cid f-dest path/forward-udp))

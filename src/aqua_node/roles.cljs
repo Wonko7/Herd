@@ -34,7 +34,7 @@
                 ])
 
 (defn app-proxy-init [config socket dest]
-  (let [circ-id (path/get-path)] ;; FIXME -> choose (based on...?) or create circuit
+  (let [circ-id (path/get-path config)] ;; FIXME -> rt for testing, but really this should be single path. only full rtp understands rt path.
     (c/update-data socket [:circuit] circ-id)
     (circ/update-data circ-id [:ap-dest] dest)
     (circ/update-data circ-id [:backward-hop] socket)
@@ -89,7 +89,7 @@
     (go (>! geo (geo/parse config)))
     (when (is? :app-proxy)
       (go (>! net-info (get-net-info config ds)))
-      (go (>! mix (path/init-pools config (<! net-info) (<! geo) test-path 10)))
+      (go (>! mix (path/init-pools config (<! net-info) (<! geo) 10)))
       (conn/new :socks :server ap config {:data     path/app-proxy-forward
                                           :udp-data path/app-proxy-forward-udp
                                           :init     app-proxy-init
