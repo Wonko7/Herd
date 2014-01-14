@@ -8,6 +8,7 @@
             [aqua-node.conns :as c]
             [aqua-node.conn-mgr :as conn]
             [aqua-node.circ :as circ]
+            [aqua-node.geo :as geo]
             [aqua-node.dir :as dir])
   (:require-macros [cljs.core.async.macros :as m :refer [go-loop go]]))
 
@@ -30,6 +31,33 @@
             (recur (<! ctrl) nodes)))
         (let [cmd  (<! ctrl)
               circ (circ/get-data id)]
+          (circ/relay-begin config id (:ap-dest circ))
+          (circ/update-data id [:state] :relay-ack-pending)
+          (circ/update-data id [:path-dest :port] (:port (<! ctrl)))
+          (circ/update-data id [:state] :relay)
+          (>! (-> circ :backward-hop c/get-data :ctrl) :relay)
+          (log/info "Circuit" id "is ready for relay")))
+    id))
+
+(defn create-rt [config mix]
+  "Creates a real time path. Assumes a connection to the first node exists."
+  (let [socket (c/find-by-dest (:dest n))
+        id     (circ/create config socket (:auth n))
+        ctrl   (chan)
+        dest   (chan)]
+    (circ/update-data id [:roles] [:origin])
+    (circ/update-data id [:ctrl] ctrl)
+    (circ/update-data id [:mk-path-fn] #(go (>! ctrl :next)))
+    (circ/update-data id [:path-dest] (-> all-nodes last :dest))
+    (go (<! ctrl)
+        (circ/relay-extend config id mix)
+        (<! ctrl)
+        (let [[mix2 ap-dest] (dir/query (<! dest))]
+          (circ/relay-extend config id mix2)
+          (<! ctrl)
+          (circ/relay-extend config id ap-dest)
+          (<! ctrl))
+        (let [circ (circ/get-data id)]
           (circ/relay-begin config id (:ap-dest circ))
           (circ/update-data id [:state] :relay-ack-pending)
           (circ/update-data id [:path-dest :port] (:port (<! ctrl)))
@@ -101,15 +129,23 @@
 ;; path pool ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
 (def pool (atom []))
+(def path (atom nil))
 
-(defn init-pools [config net-info ds loc N]
+(defn init-pool [config path N] ;; FIXME -> we can now keep the path.
+  (reset! path path)
+  (doseq [n (range N)]
+    ;(swap! pool conj (create-single config path))
+    (swap! pool conj (create-rt config path))))
+
+(defn init-pools [config geo-db loc N] ;; this will 
   (log/info "We are in" (:country loc) "/" (:continent loc))
-  (let []
-    (doseq [n (range N)]
-      (swap! pool conj (create-single config path)))))
+  (let [reg (-> loc :reg geo/reg-to-int)
+        mix (filter #(= (:reg %) reg) (map second (seq geo-db)))]
+    (init-pool [config mix N])
+    mix))
 
 (defn get-path []
   (let [[p & ps] @pool]
     (reset! pool (vec ps))
-    ;(init-pool config path 1) --> where do we get path from?
+    (init-pool config @mix 1)
     p))
