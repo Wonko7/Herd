@@ -24,7 +24,8 @@
   (apply merge (for [k (keys to-cmd)]
                  {((to-cmd k) :name) k})))
 
-(def dir (atom {}))
+(def mix-dir (atom {}))
+(def app-dir (atom {}))
 (def net-info (atom {}))
 (def net-info-buf (atom nil))
 
@@ -32,36 +33,57 @@
   @net-info)
 
 (defn rm [id]
-  (swap! dir dissoc id))
+  (swap! app-dir dissoc id))
 
 (defn rm-net [id]
   (swap! net-info dissoc id))
 
+
+;; encode/decode ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+(defn parse-info [config msg]
+  (let [role         (if (zero? (.readUInt8 msg 0)) :app-proxy :mix)
+        reg          (.readUInt8 msg 1)
+        [client msg] (conv/parse-addr msg)
+        [id pub msg] (b/cut msg (-> config :ntor-values :iv-len) (-> config :ntor-values :key-len))
+        ip           (:host client)
+        [mix msg]    (if (= role :app-proxy)
+                       (conv/parse-addr msg)
+                       [nil msg])]
+    [{:mix mix :ip ip :client client :reg reg :role role :id id :pub pub} msg]))
+
+(defn mk-info-buf [info]
+  (let [zero  (-> [0] cljs/clj->js b/new)
+        role  (if (= :app-proxy (:role info)) 0 1)
+        info  [(-> [role (-> info :reg geo/reg-to-int)] cljs/clj->js b/new)
+               (:id info)
+               (:pub info)
+               (conv/dest-to-tor-str {:type :ip4 :proto :udp :host (:ip info) :port 0})
+               zero]
+        info  (if (zero? role)
+                (concat info [(conv/dest-to-tor-str (:mix info)) zero])
+                info)]
+    (apply b/cat info)))
+
 (defn mk-net-buf! []
   (reset! net-info-buf (b/new 5))
   (.writeUInt8    net-info-buf (to-cmd :net-info) 0)
-  (.writeUInt32BE net-info-buf (count @net-info) 1)
-  (doseq [k (keys @net-info)
-          :let [m    (@net-info k)
-                addr (conv/dest-to-tor-str (:mix m))]]
-    (swap! net-info-buf b/cat (b/new addr) (b/new (js/Array. 0 (:geo m))))))
+  (.writeUInt32BE net-info-buf (count @mix-dir) 1)
+  (doseq [k (keys @mix-dir)]
+    (swap! net-info-buf b/copycat2 (mk-info-buf (k @mix-dir)))))
 
 
 ;; send things ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
 (defn send-client-info [config soc geo mix done-chan]
-  (let [zero  (-> [0] cljs/clj->js b/new)
-        role  (if (-> config :roles :app-proxy) 0 1)
-        info  [(-> [(to-cmd :client-info) role (-> geo :reg geo/reg-to-int)] cljs/clj->js b/new)
-               (-> config :auth :aqua-id :id)
-               (-> config :auth :aqua-id :pub)
-               (conv/dest-to-tor-str {:type :ip4 :proto :udp :host (:extenal-ip config) :port 0})
-               zero]
-        info  (if (zero? role)
-                (concat info [(conv/dest-to-tor-str mix) zero])
-                info)
-        m     (apply b/cat info)]
-    (.write soc m #(go (>! done-chan :done)))))
+  (let [header (-> [(to-cmd :client-info)] cljs/clj->js b/new)
+        info   {:id   (-> config :auth :aqua-id :id)
+                :pub  (-> config :auth :aqua-id :pub)
+                :ip   (-> config :remote-ip)
+                :role (or (->> config :roles (filter #(= :app-proxy)) first) :mix)
+                :mix  (conv/dest-to-tor-str mix)
+                :reg  (-> geo :reg)}]
+    (.write soc (b/copycat2 header (mk-info-buf info)) #(go (>! done-chan :done)))))
 
 (defn send-net-request [config soc done]
   (.write soc (->> [(to-cmd :net-request)] cljs/clj->js b/new) #(go (>! done :done))))
@@ -70,35 +92,26 @@
 ;; process recv ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
 (defn recv-client-info [config srv msg recv-chan]
-  (let [role         (if (zero? (.readUInt8 msg 0)) :app-proxy :mix)
-        reg          (.readUInt8 msg 1)
-        [client msg] (conv/parse-addr msg)
-        [id pub msg] (b/cut msg (-> config :ntor-values :iv-len) (-> config :ntor-values :key-len))
-        cip          (:host client)
-        entry        (@dir cip)
-        to-id        (js/setTimeout #(rm cip) 600000)]
-    (when entry
-      (js/clearTimeout (:timeout entry)))
-    (swap! dir merge {cip (merge (when (= role :app-proxy)
-                                   {:mix (conv/parse-addr msg)})
-                                 {:client client :timeout to-id :reg reg :role role})})
-    (mk-net-buf!)
-    (when recv-chan
-      (go (>! recv-chan :got-geo)))))
+  (let [[info]      (parse-info config msg)
+        ip          (:ip info)
+        role        (:role info)]
+    (if (= role :mix)
+      (do (swap! mix-dir merge {ip info})
+          (mk-net-buf!)))
+      (let [entry   (@app-dir ip)
+            to-id   (js/setTimeout #(rm ip) 600000)]
+        (when entry
+          (js/clearTimeout (:timeout entry)))
+        (swap! app-dir merge {ip (merge {:timeout to-id} info)})))
+  (go (>! recv-chan :got-geo)))
 
 (defn recv-net-info [config srv msg recv-chan]
   (let [nb      (.readUInt32BE msg 0)]
     (loop [i 0, m msg]
       (when (< i nb)
-        (let [[mix msg]        (conv/parse-addr msg)
-              reg              (.readUInt8 msg 0)
-              mip              (:host mix)
-              entry            (mip @net-info)
-              to-id            (js/setTimeout #(rm-net mip) 600000)]
-          (when entry
-            (js/clearTimeout (:timeout entry)))
-          (swap! net-info merge {mip {:mix mix :geo reg}})
-          (recur (inc i) (.slice msg 1)))))
+        (let [[info msg] (parse-info config msg)]
+          (swap! net-info merge {{:ip info} info})
+          (recur (inc i) msg))))
     (when recv-chan
       (go (>! recv-chan :got-geo)))))
 

@@ -33,7 +33,7 @@
         (do (.readFile fs (-> config :geo-db) #(go (>! geo %2)))
             (go (first (for [l (str/split (<! geo) #"\n")
                              :let  [[from to reg _ _ _ country] (str/split (str/replace l \" "") #",") ]
-                             :when (and (not= \# (first l)) 
+                             :when (and (not= \# (first l))
                                         (>= ip from)
                                         (<= ip to))]
                          {:reg       (keyword reg)
