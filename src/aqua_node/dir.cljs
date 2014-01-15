@@ -42,7 +42,7 @@
                        (conv/parse-addr msg)
                        [nil msg])]
     (println :read {:mix mix :ip ip :client client :reg (geo/int-to-reg reg) :role role :id id :pub pub})
-    [{:mix mix :ip ip :client client :reg (geo/int-to-reg reg) :role role :id id :pub pub} msg]))
+    [{:mix mix :ip ip :port (:port client) :reg (geo/int-to-reg reg) :role role :id id :pub pub} msg]))
 
 (defn mk-info-buf [info]
   (println :wrote info)
@@ -102,7 +102,7 @@
 
 (defn recv-net-info [config srv msg recv-chan]
   (let [nb      (.readUInt32BE msg 0)]
-    (loop [i 0, m msg]
+    (loop [i 0, msg (.slice msg 4)]
       (when (< i nb)
         (let [[info msg] (parse-info config msg)]
           (swap! net-info merge {{:ip info} info})
@@ -125,14 +125,11 @@
                  {((to-cmd k) :name) k})))
 
 (defn process [config srv buf & [recv-chan]]
-  (println :rcvd (.-length buf))
   (when (> (.-length buf) 0) ;; FIXME put real size when message header is finalised.
     (let [cmd        (.readUInt8 buf 0)
           msg        (.slice buf 1)
           process    (-> cmd to-cmd :fun)]
-      (println :rcvd (-> cmd to-cmd :name))
-      (println (.toString msg))
-      (process config srv msg recv-chan) ;; FIXME
+      (log/info "Dir: Recieved:" (-> cmd to-cmd :name))
       (if process
         (try (process config srv msg recv-chan)
              (catch js/Object e (log/c-error e (str "Aqua-Dir: Malformed message" (to-cmd cmd)))))
