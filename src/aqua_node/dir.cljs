@@ -51,7 +51,7 @@
         info  [(-> [role (-> info :reg geo/reg-to-int)] cljs/clj->js b/new)
                (:id info)
                (:pub info)
-               (b/new (conv/dest-to-tor-str {:type :ip4 :proto :udp :host (:ip info) :port 0}))
+               (b/new (conv/dest-to-tor-str {:type :ip4 :proto :udp :host (:ip info) :port (:port info)}))
                zero]
         info  (if (zero? role)
                 (concat info [(conv/dest-to-tor-str (:mix info)) zero])
@@ -60,7 +60,7 @@
 
 (defn mk-net-buf! []
   (reset! net-info-buf (b/new 5))
-  (.writeUInt8    @net-info-buf (to-cmd :net-info) 0)
+  (.writeUInt8    @net-info-buf (from-cmd :net-info) 0)
   (.writeUInt32BE @net-info-buf (count @mix-dir) 1)
   (doseq [k (keys @mix-dir)]
     (swap! net-info-buf b/copycat2 (mk-info-buf (@mix-dir k)))))
@@ -69,17 +69,18 @@
 ;; send things ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
 (defn send-client-info [config soc geo mix done-chan]
-  (let [header (-> [(to-cmd :client-info)] cljs/clj->js b/new)
+  (let [header (-> [(from-cmd :client-info)] cljs/clj->js b/new)
         info   {:id   (-> config :auth :aqua-id :id)
                 :pub  (-> config :auth :aqua-id :pub)
                 :ip   (-> config :external-ip)
+                :port (-> config :aqua :port)
                 :role (or (->> config :roles (filter #(= :app-proxy)) first) :mix)
                 :mix  (and mix (conv/dest-to-tor-str mix))
                 :reg  (-> geo :reg)}]
     (.write soc (b/copycat2 header (mk-info-buf info)) #(go (>! done-chan :done)))))
 
 (defn send-net-request [config soc done]
-  (.write soc (->> [(to-cmd :net-request)] cljs/clj->js b/new) #(go (>! done :done))))
+  (.write soc (->> [(from-cmd :net-request) 101] cljs/clj->js b/new) #(go (>! done :done))))
 
 
 ;; process recv ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
@@ -96,7 +97,8 @@
         (when entry
           (js/clearTimeout (:timeout entry)))
         (swap! app-dir merge {ip (merge {:timeout to-id} info)})))
-  (go (>! recv-chan :got-geo)))
+  (when recv-chan
+    (go (>! recv-chan :got-geo))))
 
 (defn recv-net-info [config srv msg recv-chan]
   (let [nb      (.readUInt32BE msg 0)]
@@ -124,7 +126,7 @@
 
 (defn process [config srv buf & [recv-chan]]
   (println :rcvd (.-length buf))
-  (when (> (.-length buf) 4) ;; FIXME put real size when message header is finalised.
+  (when (> (.-length buf) 0) ;; FIXME put real size when message header is finalised.
     (let [cmd        (.readUInt8 buf 0)
           msg        (.slice buf 1)
           process    (-> cmd to-cmd :fun)]
