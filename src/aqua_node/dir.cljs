@@ -41,17 +41,17 @@
         [mix msg]    (if (= role :app-proxy)
                        (conv/parse-addr msg)
                        [nil msg])]
-    ;(println :read {:mix mix :ip ip :client client :reg (geo/int-to-reg reg) :role role :id id :pub pub})
-    [{:mix mix :ip ip :port (:port client) :reg (geo/int-to-reg reg) :role role :id id :pub pub} msg]))
+    ;(println :read {:mix mix :host ip :client client :reg (geo/int-to-reg reg) :role role :id id :pub pub})
+    [{:mix mix :host ip :port (:port client) :reg (geo/int-to-reg reg) :role role :auth {:srv-id id :pub-B pub}} msg]))
 
 (defn mk-info-buf [info]
   ;(println :wrote info)
   (let [zero  (-> [0] cljs/clj->js b/new)
         role  (if (= :app-proxy (:role info)) 0 1)
         info  [(-> [role (-> info :reg geo/reg-to-int)] cljs/clj->js b/new)
-               (:id info)
-               (:pub info)
-               (b/new (conv/dest-to-tor-str {:type :ip4 :proto :udp :host (:ip info) :port (:port info)}))
+               (-> info :auth :srv-id)
+               (-> info :auth :pub-B)
+               (b/new (conv/dest-to-tor-str {:type :ip4 :proto :udp :host (:host info) :port (:port info)}))
                zero]
         info  (if (zero? role)
                 (concat info [(conv/dest-to-tor-str (:mix info)) zero])
@@ -70,9 +70,9 @@
 
 (defn send-client-info [config soc geo mix done-chan]
   (let [header (-> [(from-cmd :client-info)] cljs/clj->js b/new)
-        info   {:id   (-> config :auth :aqua-id :id)
-                :pub  (-> config :auth :aqua-id :pub)
-                :ip   (-> config :external-ip)
+        info   {:auth {:srv-id   (-> config :auth :aqua-id :id)
+                       :pub-B    (-> config :auth :aqua-id :pub)}
+                :host (-> config :external-ip)
                 :port (-> config :aqua :port)
                 :role (or (->> config :roles (filter #(= :app-proxy)) first) :mix)
                 :mix  (and mix (conv/dest-to-tor-str mix))
@@ -87,7 +87,7 @@
 
 (defn recv-client-info [config srv msg recv-chan]
   (let [[info]      (parse-info config msg)
-        ip          (:ip info)
+        ip          (:host info)
         role        (:role info)]
     (if (= role :mix)
       (do (swap! mix-dir merge {ip info})
@@ -105,7 +105,7 @@
     (loop [i 0, msg (.slice msg 4)]
       (when (< i nb)
         (let [[info msg] (parse-info config msg)]
-          (swap! net-info merge {(:ip info) info})
+          (swap! net-info merge {(:host info) info})
           (recur (inc i) msg))))
     (when recv-chan
       (go (>! recv-chan :got-geo)))))

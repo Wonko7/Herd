@@ -1,6 +1,8 @@
 {:roles [:mix]
  :geo-db "ip4-geo.txt"
- :external-ip "82.239.82.44"
+ :external-ip "192.168.0.10"
+ :geo-info {:country "wonderland" :reg :ripencc :continent "antartica"}
+ ;:external-ip "82.239.82.44"
  :remote-dir {:host "54.194.191.213"
 	      :port 6669}
  :aqua {:port 6669}

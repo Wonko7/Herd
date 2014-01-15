@@ -129,11 +129,10 @@
     (if (-> config :mk-packet)
       buf
       ;(.write socket buf))))
-      (js/setImmediate (do
-                         (when (and (:data config) (zero? (dec-block)))
-                           (.emit (:data config) "readable"))
-                         #(when socket
-                            (.write socket buf))))))) ;-> good perf, more drops --> socket can be killed before we send
+      (js/setImmediate (do (when (and (:data config) (zero? (dec-block)))
+                             (.emit (:data config) "readable"))
+                           #(when socket
+                              (.write socket buf))))))) ;-> good perf, more drops --> socket can be killed before we send
 ;(.nextTick js/process #(.write socket buf)))))
 
 

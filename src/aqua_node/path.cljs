@@ -39,10 +39,9 @@
           (log/info "Circuit" id "is ready for relay")))
     id))
 
-(defn create-rt [config mix]
+(defn create-rt [config socket mix]
   "Creates a real time path. Assumes a connection to the first node exists."
-  (let [socket (c/find-by-dest (:dest mix))
-        id     (circ/create config socket (:auth mix))
+  (let [id     (circ/create config socket (:auth mix))
         ctrl   (chan)
         dest   (chan)]
     (circ/update-data id [:roles] [:origin])
@@ -131,23 +130,25 @@
 (def pool (atom []))
 (def chosen-mix (atom nil))
 
-(defn init-pool [config path N] ;; FIXME -> we can now keep the path.
-  (reset! path path)
+(defn init-pool [config soc mix N] ;; FIXME -> we can now keep the path.
+  (reset! chosen-mix mix)
   (doseq [n (range N)]
     ;(swap! pool conj (create-single config path))
-    (swap! pool conj (create-rt config path))))
+    (swap! pool conj (create-rt config soc mix))))
 
 (defn init-pools [config geo-db loc N] ;; this will 
   (log/info "Init Circuit pools: we are in" (:country loc) "/" (:continent loc))
-  (let [reg (-> loc :reg geo/reg-to-int)
-        mix (->> geo-db seq (map second) (filter #(= (:reg %) reg)) shuffle)]
-    (assert mix)
+  (let [reg (-> loc :reg)
+        mix (->> geo-db seq (map second) (filter #(= (:reg %) reg)) shuffle first)
+        soc (conn/new :aqua :client mix config {:connect identity})]
+    (println mix)
+    (c/add-listeners soc {:data #(circ/process config soc %)})
     (reset! chosen-mix mix)
-    (init-pool config mix N)
+    (init-pool config soc mix N)
     mix))
 
 (defn get-path [config]
   (let [[p & ps] @pool]
     (reset! pool (vec ps))
-    (init-pool config @chosen-mix 1)
+    (init-pool config (c/find-by-dest @chosen-mix) @chosen-mix 1)
     p))
