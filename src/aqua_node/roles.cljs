@@ -50,7 +50,7 @@
 
 (defn aqua-dir-recv [config s]
   (log/debug "new dir tls conn from:" (-> s .-remoteAddress) (-> s .-remotePort))
-  (c/add-listeners s {:connect #(dir/process config s %)}))
+  (c/add-listeners s {:data #(dir/process config s %)}))
 
 (defn register-dir [config geo mix dir]
   (log/info "start registering:")
@@ -62,7 +62,7 @@
         (<! done)
         (log/info "successfully registered")
         (c/rm c)
-        (.close c))))
+        (.end c))))
 
 (defn get-net-info [config dir]
   (log/info "requesting net info:")
@@ -74,7 +74,6 @@
         (<! done)
         (c/rm c)
         (.end c)
-        (log/debug (dir/get-net-info))
         (dir/get-net-info))))
 
 
@@ -92,7 +91,7 @@
     (tap mg geo1)
     (tap mg geo2)
     (log/info "Bootstrapping as" roles)
-    (go (>! geo (geo/parse config)))
+    (go (>! geo (<! (geo/parse config))))
     (when (is? :app-proxy)
       (go (>! net-info (get-net-info config ds)))
       (go (>! mix (path/init-pools config (<! net-info) (<! geo) 10)))
@@ -103,7 +102,6 @@
       (when rtp
         (rtp/create-server rtp config)))
     (conn/new :aqua :server aq config {:connect aqua-server-recv})
-    (if (is? :dir)
-      (conn/new :dir :server dir config {:connect aqua-dir-recv})
-      (go (let [mix (<! mix)]
-            (js/setInterval 30000 #(go (register-dir config (<! geo2) mix ds))))))))
+    (cond (is? :dir)       (conn/new :dir :server dir config {:connect aqua-dir-recv})
+          (is? :app-proxy) (go (js/setInterval 30000 #(go (register-dir config (<! geo2) (<! mix) ds))))
+          :else            (go (register-dir config (<! geo2) nil ds)))))

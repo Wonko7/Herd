@@ -1,4 +1,8 @@
-{:roles [:mix :exit :entry :dir-server]
+{:roles [:mix]
+ :geo-db "ip4-geo.txt"
+ :external-ip "82.239.82.44"
+ :remote-dir {:host "54.194.191.213"
+	      :port 6669}
  :aqua {:port 6669}
  :dir-server {:port 6667}
  :auth {:openssl {:cert "auth/public/cert.pem"
