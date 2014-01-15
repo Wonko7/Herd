@@ -24,24 +24,25 @@
     :afrinic  4))
 
 (defn parse [config]
-  (try (let [fs  (node/require "fs")
-             geo (chan)
-             ip   (:extenal-ip config)]
-         (if (:geo-info config)
-           (go (:geo-info config))
-           (do (.readFile fs (-> config :geo-db) #(go (>! geo %2)))
-               (go (first (for [l (str/split (<! geo) #"\n")
-                                :let  [[from to reg _ _ _ country] (str/split (str/replace l \" "") #",")]
-                                :when (and (not= \# (first l)) 
-                                           (>= ip from)
-                                           (<= ip to))]
-                            {:reg       (keyword reg)
-                             :continent (condp = reg
-                                          "apcnic"  :asia-pacific
-                                          "arin"    :north-america
-                                          "lacnic"  :south-america
-                                          "ripencc" :europe
-                                          "afrinic" :africa)
-                             :country   country
-                             :ip        ip}))))))
-       (catch js/Object e (log/c-error "Error reading Geo loc db" e))))
+  (try
+    (let [fs  (node/require "fs")
+          geo (chan)
+          ip  (-> config :external-ip conv/ip4-to-bin (.readUInt32BE 0))]
+      (if (:geo-info config)
+        (go (:geo-info config))
+        (do (.readFile fs (-> config :geo-db) #(go (>! geo %2)))
+            (go (first (for [l (str/split (<! geo) #"\n")
+                             :let  [[from to reg _ _ _ country] (str/split (str/replace l \" "") #",") ]
+                             :when (and (not= \# (first l)) 
+                                        (>= ip from)
+                                        (<= ip to))]
+                         {:reg       (keyword reg)
+                          :continent (condp = reg
+                                       "apcnic"  :asia-pacific
+                                       "arin"    :north-america
+                                       "lacnic"  :south-america
+                                       "ripencc" :europe
+                                       "afrinic" :africa)
+                          :country   country
+                          :ip        ip}))))))
+    (catch js/Object e (log/c-error "Error reading Geo loc db" e))))

@@ -2,8 +2,9 @@
  :aqua {:host "192.168.0.11"
         :port 6667}
  :geo-db "ip4-geo.txt"
+ :external-ip "82.239.82.44"
  :remote-dir {:host "54.194.191.213"
-	      :port 6666}
+	      :port 6669}
  :app-proxy {:host "127.0.0.1"
 	     :port 6666}
  :rtp-proxy {:host "127.0.0.1"

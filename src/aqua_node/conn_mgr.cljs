@@ -3,6 +3,7 @@
             [cljs.nodejs :as node]
             [aqua-node.log :as log]
             [aqua-node.dtls :as dtls]
+            [aqua-node.tls :as tls]
             [aqua-node.socks :as socks]
             [aqua-node.conns :as c]))
 
@@ -26,10 +27,11 @@
                                                           :listening #(connect socket)
                                                           :error     err
                                                           :close     err})
-                                 socket))]
+                                 socket))
+        connect     (partial connect config)]
     (cond (is? :socks :server) (socks/create-server conn data udp-data (partial init config) (partial err config))
-          (is? :aqua :server)  (dtls/create-server conn config data)
-          (is? :aqua :client)  (dtls/connect conn config data)
+          (is? :aqua :server)  (dtls/create-server conn config connect)
+          (is? :aqua :client)  (dtls/connect conn config connect)
           (is? :dir :server)   (tls/create-server conn config connect)
           (is? :dir :client)   (tls/connect conn config connect)
           (is? :tcp :client)   (new-tcp-c)

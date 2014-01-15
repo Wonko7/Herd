@@ -10,6 +10,7 @@
 (defn create-server [{host :host port :port :as dest} config new-conn-handler]
   (let [[tls opts] (mk-tls config dest)
         srv        (.createServer tls opts new-conn-handler)]
+    (log/info "Aqua-Dir listening on:" host port)
     (.listen srv port host)
     (c/add srv {:cs :server :type :aqua})))
 

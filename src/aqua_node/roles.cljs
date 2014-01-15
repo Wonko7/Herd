@@ -1,7 +1,8 @@
 (ns aqua-node.roles
   (:require [cljs.core :as cljs]
             [cljs.nodejs :as node]
-            [cljs.core.async :refer [chan <! >! filter<]]
+            [cljs.core.async :refer [chan <! >! filter< mult tap]]
+            ;[cljs.core.async.lab :refer [broadcast]]
             [aqua-node.log :as log]
             [aqua-node.buf :as b]
             [aqua-node.conns :as c]
@@ -41,14 +42,14 @@
     (go (>! (:ctrl (circ/get-data circ-id)) :relay-connect))))
 
 (defn aqua-server-recv [config s]
-  (log/debug "new aqua dtls conn on:" (-> s .-socket .-_destIP) (-> s .-socket .-_destPort)) ;; FIXME: investigate nil .-remote[Addr|Port]
+  (log/debug "new aqua dtls conn from:" (-> s .-socket .-_destIP) (-> s .-socket .-_destPort)) ;; FIXME: investigate nil .-remote[Addr|Port]
   (c/add-listeners s {:data #(circ/process config s %)}))
 
 (defn aqua-client-recv [config s]
   (c/add-listeners s {:data #(circ/process config s %)}))
 
 (defn aqua-dir-recv [config s]
-  (log/debug "new dir tls conn on:" (-> s .-socket .-_destIP) (-> s .-socket .-_destPort)) ;; FIXME: investigate nil .-remote[Addr|Port]
+  (log/debug "new dir tls conn from:" (-> s .-remoteAddress) (-> s .-remotePort))
   (c/add-listeners s {:connect #(dir/process config s %)}))
 
 (defn register-dir [config geo mix dir]
@@ -71,9 +72,9 @@
     (go (<! done)
         (dir/send-net-request config c done)
         (<! done)
-        (log/info "got net info")
         (c/rm c)
-        (.close c)
+        (.end c)
+        (log/debug (dir/get-net-info))
         (dir/get-net-info))))
 
 
@@ -82,11 +83,14 @@
 
 (defn bootstrap [{roles :roles ap :app-proxy rtp :rtp-proxy aq :aqua ds :remote-dir dir :dir :as config}]
   (let [is?      #(is? % roles)
+        geo      (chan)
+        mg       (mult geo)
         geo1     (chan)
         geo2     (chan)
-        geo      (broadcast geo1 geo2)
         net-info (chan)
         mix      (chan)]
+    (tap mg geo1)
+    (tap mg geo2)
     (log/info "Bootstrapping as" roles)
     (go (>! geo (geo/parse config)))
     (when (is? :app-proxy)

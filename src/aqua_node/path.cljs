@@ -129,7 +129,7 @@
 ;; path pool ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
 (def pool (atom []))
-(def path (atom nil))
+(def chosen-mix (atom nil))
 
 (defn init-pool [config path N] ;; FIXME -> we can now keep the path.
   (reset! path path)
@@ -140,12 +140,14 @@
 (defn init-pools [config geo-db loc N] ;; this will 
   (log/info "Init Circuit pools: we are in" (:country loc) "/" (:continent loc))
   (let [reg (-> loc :reg geo/reg-to-int)
-        mix (filter #(= (:reg %) reg) (map second (seq geo-db)))]
-    (init-pool [config mix N])
+        mix (->> geo-db seq (map second) (filter #(= (:reg %) reg)) shuffle)]
+    (assert mix)
+    (reset! chosen-mix mix)
+    (init-pool config mix N)
     mix))
 
 (defn get-path [config]
   (let [[p & ps] @pool]
     (reset! pool (vec ps))
-    (init-pool config @mix 1)
+    (init-pool config @chosen-mix 1)
     p))
