@@ -72,6 +72,7 @@
     (go (<! done)
         (dir/send-net-request config c done)
         (<! done)
+        (<! done)
         (c/rm c)
         (.end c)
         (dir/get-net-info))))
@@ -86,15 +87,13 @@
         mg       (mult geo)
         geo1     (chan)
         geo2     (chan)
-        net-info (chan)
         mix      (chan)]
     (tap mg geo1)
     (tap mg geo2)
     (log/info "Bootstrapping as" roles)
     (go (>! geo (<! (geo/parse config))))
     (when (is? :app-proxy)
-      (go (>! net-info (get-net-info config ds)))
-      (go (>! mix (path/init-pools config (<! net-info) (<! geo) 10)))
+      (go (>! mix (path/init-pools config (<! (get-net-info config ds)) (<! geo1) 10)))
       (conn/new :socks :server ap config {:data     path/app-proxy-forward
                                           :udp-data path/app-proxy-forward-udp
                                           :init     app-proxy-init
