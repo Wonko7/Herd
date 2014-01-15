@@ -54,7 +54,7 @@
                (b/new (conv/dest-to-tor-str {:type :ip4 :proto :udp :host (:host info) :port (:port info)}))
                zero]
         info  (if (zero? role)
-                (concat info [(conv/dest-to-tor-str (:mix info)) zero])
+                (concat info [(b/new (conv/dest-to-tor-str (:mix info))) zero])
                 info)]
     (apply b/cat info)))
 

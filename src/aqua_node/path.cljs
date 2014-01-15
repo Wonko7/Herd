@@ -141,7 +141,6 @@
   (let [reg (-> loc :reg)
         mix (->> geo-db seq (map second) (filter #(= (:reg %) reg)) shuffle first)
         soc (conn/new :aqua :client mix config {:connect identity})]
-    (println mix)
     (c/add-listeners soc {:data #(circ/process config soc %)})
     (reset! chosen-mix mix)
     (init-pool config soc mix N)

@@ -102,5 +102,8 @@
         (rtp/create-server rtp config)))
     (conn/new :aqua :server aq config {:connect aqua-server-recv})
     (cond (is? :dir)       (conn/new :dir :server dir config {:connect aqua-dir-recv})
-          (is? :app-proxy) (go (js/setInterval #(go (register-dir config (<! geo2) (<! mix) ds)) 30000))
+          (is? :app-proxy) (go (let [geo (<! geo2)
+                                     mix (<! mix)]
+                                 (register-dir config geo mix ds)
+                                 (js/setInterval #(register-dir config geo mix ds) 300000)))
           :else            (go (register-dir config (<! geo2) nil ds)))))
