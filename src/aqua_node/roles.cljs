@@ -14,26 +14,6 @@
   (:require-macros [cljs.core.async.macros :as m :refer [go-loop go]]))
 
 
-(def test-path [{:auth {:srv-id (js/Buffer. "h00z6mIWXCPWK4Pp1AQh+oHoHs8=" "base64")
-                        :pub-B  (js/Buffer. "KYi+NX2pCOQmYnscN0K+MB+NO9A6ynKiIp41B5GlkHc=" "base64")}
-                 :dest {:type :ip4 :host "127.0.0.1" :port 6669}}
-                ;:dest {:type :ip4 :host "54.194.191.213" :port 6666}}
-                ;:dest {:type :ip4 :host "192.168.0.10" :port 6669}}
-                ;:dest {:type :ip4 :host "139.19.176.82" :port 6669}}
-                ;{:auth {:srv-id (js/Buffer. "pQh62d3z8LisFWg8qENauDn7dtU=" "base64")
-                ;        :pub-B  (js/Buffer. "JnJ35yUEiabocQUR6noo9JAB8prhvu7OP4kQlLVS4QI=" "base64")}
-                ; :dest {:type :ip4 :host "127.0.0.1" :port 6667}}
-                ; :dest {:type :ip4 :host "139.19.176.83" :port 6667}}
-                ;{:auth {:srv-id (js/Buffer. "/kYydVqsBs2ssFGq6270h5cw9lg=" "base64")
-                ;        :pub-B  (js/Buffer. "MVoWVfmV+DDUQTPU/vrhROnrnIOowFKvx1ZNSf0wjCY=" "base64")}
-                ; ;:dest {:type :ip4 :host "127.0.0.1" :port 6660}}]))
-                ; :dest {:type :ip4 :host "139.19.176.83" :port 6660}}
-                ;{:auth {:srv-id (js/Buffer. "Spfv2p0qoXnW/4HotIOUMSDt2bk=" "base64")
-                ;        :pub-B  (js/Buffer. "EiRtu6iEoFT9te0QS6uOJWHo7P95/uWbLAhsU+Oxjnc=" "base64")}
-                ; ;:dest {:type :ip4 :host "127.0.0.1" :port 6661}}]))
-                ; :dest {:type :ip4 :host "139.19.176.83" :port 6661}}
-                ])
-
 (defn app-proxy-init [config socket dest]
   (let [circ-id (path/get-path config)] ;; FIXME -> rt for testing, but really this should be single path. only full rtp understands rt path.
     (c/update-data socket [:circuit] circ-id)
@@ -43,9 +23,6 @@
 
 (defn aqua-server-recv [config s]
   (log/debug "new aqua dtls conn from:" (-> s .-socket .-_destIP) (-> s .-socket .-_destPort)) ;; FIXME: investigate nil .-remote[Addr|Port]
-  (c/add-listeners s {:data #(circ/process config s %)}))
-
-(defn aqua-client-recv [config s]
   (c/add-listeners s {:data #(circ/process config s %)}))
 
 (defn aqua-dir-recv [config s]
@@ -59,7 +36,7 @@
     (go (<! done)
         (dir/send-client-info config c geo mix done)
         (<! done)
-        (log/info "successfully registered")
+        (log/info "Dir: sent successfully registered")
         (c/rm c)
         (.end c))))
 

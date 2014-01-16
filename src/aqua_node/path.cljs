@@ -139,15 +139,12 @@
 
 (defn init-pools [config geo-db loc N] ;; this will 
   (log/info "Init Circuit pools: we are in" (:country loc) "/" (:continent loc))
-  (println :geo-db geo-db)
   (let [reg (-> loc :reg)
         mix (->> geo-db seq (map second) (filter #(= (:reg %) reg)) shuffle first)
-        ;mix (select-keys mix [:host :port])
-        soc (conn/new :aqua :client (dissoc mix :auth) config {:connect #(println :connected)})]
-        ;soc (conn/new :aqua :client mix config {:connect #(println :connected)})]
+        soc (conn/new :aqua :client mix config {:connect #(println :connected)})]
     (c/add-listeners soc {:data #(circ/process config soc %)})
     (reset! chosen-mix mix)
-    ;(init-pool config soc mix N)
+    (init-pool config soc mix N)
     mix))
 
 (defn get-path [config]
