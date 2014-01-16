@@ -1,7 +1,7 @@
 (ns aqua-node.path
   (:require [cljs.core :as cljs]
             [cljs.nodejs :as node]
-            [cljs.core.async :refer [chan <! >! filter< map<]]
+            [cljs.core.async :refer [chan <! >!]]
             [aqua-node.log :as log]
             [aqua-node.buf :as b]
             [aqua-node.parse :as conv]
@@ -139,12 +139,15 @@
 
 (defn init-pools [config geo-db loc N] ;; this will 
   (log/info "Init Circuit pools: we are in" (:country loc) "/" (:continent loc))
+  (println :geo-db geo-db)
   (let [reg (-> loc :reg)
         mix (->> geo-db seq (map second) (filter #(= (:reg %) reg)) shuffle first)
-        soc (conn/new :aqua :client mix config {:connect #(println :connected)})]
+        ;mix (select-keys mix [:host :port])
+        soc (conn/new :aqua :client (dissoc mix :auth) config {:connect #(println :connected)})]
+        ;soc (conn/new :aqua :client mix config {:connect #(println :connected)})]
     (c/add-listeners soc {:data #(circ/process config soc %)})
     (reset! chosen-mix mix)
-    (init-pool config soc mix N)
+    ;(init-pool config soc mix N)
     mix))
 
 (defn get-path [config]

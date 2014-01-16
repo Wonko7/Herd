@@ -41,11 +41,9 @@
         [mix msg]    (if (= role :app-proxy)
                        (conv/parse-addr msg)
                        [nil msg])]
-    (println :read {:mix mix :host ip :client client :reg (geo/int-to-reg reg) :role role :id id :pub pub})
     [{:mix mix :host ip :port (:port client) :reg (geo/int-to-reg reg) :role role :auth {:srv-id id :pub-B pub}} msg]))
 
 (defn mk-info-buf [info]
-  (println :wrote info)
   (let [zero  (-> [0] cljs/clj->js b/new)
         role  (if (= :app-proxy (:role info)) 0 1)
         msg   [(-> [role (-> info :reg geo/reg-to-int)] cljs/clj->js b/new)

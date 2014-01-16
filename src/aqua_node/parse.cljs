@@ -33,7 +33,6 @@
                   (map #(when (= 0 (.readUInt8 buf %)) %))
                   (some identity))]
     (assert z "bad buffer: no zero delimiter")
-    (println (.toString buf "ascii" 0 z))
     (let [str           (.toString buf "ascii" 0 z)
           ip4-re        #"^([utr]):((\d+\.){3}\d+):(\d+)$"
           ip6-re        #"^([utr]):\[((\d|[a-fA-F]|:)+)\]:(\d+)$"
@@ -44,4 +43,4 @@
                              (map cons [:ip4 :ip6 :dns])
                              (filter second)
                              first)]
-      [{:proto (condp = prot, "u" :udp, "t" :tcp, "r" :rtp) :type ip :host h :port p} (.slice buf (inc z))])))
+      [{:proto (condp = prot, "u" :udp, "t" :tcp, "r" :rtp) :type ip :host h :port (js/parseInt p)} (.slice buf (inc z))])))
