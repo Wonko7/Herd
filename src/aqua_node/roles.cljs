@@ -36,7 +36,7 @@
     (go (<! done)
         (dir/send-client-info config c geo mix done)
         (<! done)
-        (log/info "Dir: sent successfully registered")
+        (log/info "Dir: successfully sent registered")
         (c/rm c)
         (.end c))))
 

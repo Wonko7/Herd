@@ -33,7 +33,8 @@
         mk-reply     #(b/new (str cookie " " (.encode bcode (cljs/clj->js %))))
         send         #(.send socket % 0 (.-length %) (.-port rinfo) (.-address rinfo))
         ;; SDP & circ glue:
-        local-ip     (:extenal-ip config)
+        external-ip  (:extenal-ip config)
+        local-ip     (:local-ip config)
         call-id      (.toString (or (msg "call-id") ""))
         parse-sdp    #(let [sdp (.toString (msg "sdp"))]
                         [sdp
@@ -41,30 +42,38 @@
                          (map next (re-seq #"(?m)m\=(\w+)\s+(\d+)" sdp))])
         change-port  (fn [sdp old new]
                        (str/replace sdp (re-pattern (str "(?m)(m\\=\\w+\\s+)" old)) #(str %2 new)))
-        offer-sdp    (fn []
-                       (let [[sdp ip ports]     (parse-sdp)]
-                         (if (not= ip local-ip)
-                           (do (log/info "RTP-Proxy: ignoring offer not from local" call-id)
-                               (swap! calls assoc-in [call-id :ignore] true)
-                               (-> {:result "ok" :sdp sdp} mk-reply send))
-                           (let [sdp-ch         (chan)
-                                 circs          (repeatedly #(path/get-path config))
-                                 assoc-circ     (fn [cid [media old]]
-                                                  (go (let [f-dest         {:type :ip4, :proto :udp, :host ip :port old}
-                                                            [_ local-port] (<! (path/attach-local-udp4 config cid f-dest path/forward-udp))
-                                                            dist-port      (-> cid circ/get-data :path-dest :port)]
-                                                        (swap! calls assoc-in [call-id media] {:local-circ-port local-port
-                                                                                               :distant-circ-port dist-port
-                                                                                               :local-port old
-                                                                                               :circuit cid})
-                                                        [old dist-port])))
-                                 replace-sdp    #(go (let [sdp       (<! %1)
-                                                           [old new] (<! %2)]
-                                                       (change-port sdp old new)))
-                                 nsdp           (reduce replace-sdp sdp-ch (map assoc-circ circs ports))]
-                             (log/info "RTP-Proxy: Adding call ID [offer]" call-id)
-                             (go (>! sdp-ch (str/replace sdp ip (-> (first circs) circ/get-data :path-dest :host)))) ;; FIXME: this means get path returns paths having the same dest.
-                             (go (-> {:result "ok" :sdp (<! nsdp)} mk-reply send))))))
+        offer-sdp         (fn []
+                            (let [[sdp ip ports]     (parse-sdp)]
+                              (if (or (= ip external-ip) (= ip local-ip))
+                                (offer-sdp-exiting sdp ip ports)
+                                (offer-sdp-entering sdp ip ports))))
+        offer-sdp-exiting (fn [sdp ip ports]
+                            (let [sdp-ch         (chan)
+                                  circs          (repeatedly #(path/get-path config))
+                                  assoc-circ     (fn [cid [media port]]
+                                                   (let [circ           (circ/get-data cid)]
+                                                     (go (>! (:dest-ctrl circ) {:host ip :port port :proto :udp :type :ip4}))
+                                                     (swap! calls assoc-in [call-id media] {:circuit cid})))]
+                              (doall (map assoc-circ circs ports))
+                              (log/info "RTP-Proxy: Adding call ID [offer]" call-id)
+                              (-> {:result "ok" :sdp sdp} mk-reply send)))
+        offer-sdp-exiting (fn []
+                            (let [[sdp ip ports]     (parse-sdp)]
+                              (when (or (= ip external-ip) (= ip local-ip))
+                                (let [sdp-ch         (chan)
+                                      circs          (repeatedly #(path/get-path config))
+                                      assoc-circ     (fn [cid [media port]]
+                                                       (let [circ           (circ/get-data cid)]
+                                                         (go (>! (:dest-ctrl circ) {:host ip :port port :proto :udp :type :ip4}))
+                                                         (swap! calls assoc-in [call-id media] {:circuit cid})))
+                                      replace-sdp    #(go (let [sdp       (<! %1)
+                                                                [old new] (<! %2)]
+                                                            (change-port sdp old new)))
+                                      nsdp           (reduce replace-sdp sdp-ch (map assoc-circ circs ports))]
+                                  (doall (map assoc-circ ))
+                                  (log/info "RTP-Proxy: Adding call ID [offer]" call-id)
+                                  (go (>! sdp-ch (str/replace sdp ip (-> (first circs) circ/get-data :path-dest :host)))) ;; FIXME: this means get path returns paths having the same dest.
+                                  (go (-> {:result "ok" :sdp (<! nsdp)} mk-reply send))))))
         answer-sdp   (fn []
                        (let [[sdp ip ports]     (parse-sdp)
                              call-data          (@calls call-id)]
@@ -83,13 +92,13 @@
                                  sdp            (reduce #(change-port %1 (first %2) (second %2)) sdp circs)]
                              (log/info "RTP-Proxy: Adding call ID [answer]" call-id "using circuits:" (get-call-circs call-id)) 
                              (-> {:result "ok" :sdp sdp} mk-reply send)))))]
-                       (condp = cmd
-                         "ping"   (-> {:result "pong"} mk-reply send)
-                         "offer"  (offer-sdp)
-                         "delete" (do (destroy config call-id)
-                                      (-> {:result "ok"} mk-reply send))
-                         "answer" (answer-sdp)
-                         (log/error "RTP-Proxy: unsupported command" cmd))))
+    (condp = cmd
+      "ping"   (-> {:result "pong"} mk-reply send)
+      "offer"  (offer-sdp)
+      "delete" (do (destroy config call-id)
+                   (-> {:result "ok"} mk-reply send))
+      "answer" (answer-sdp)
+      (log/error "RTP-Proxy: unsupported command" cmd))))
 
 (defn create-server [{host :host port :port} config]
   (let [socket (.createSocket (node/require "dgram") "udp4") ;; FIXME hardcoded to ip4 for now.

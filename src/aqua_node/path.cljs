@@ -46,16 +46,18 @@
         dest   (chan)]
     (circ/update-data id [:roles] [:origin])
     (circ/update-data id [:ctrl] ctrl)
+    (circ/update-data id [:dest-ctrl] dest)
     (circ/update-data id [:mk-path-fn] #(go (>! ctrl :next)))
     (go (<! ctrl)
-        (let [[mix2 ap-dest] (dir/query (<! dest))]
+        (let [rt-dest        (<! dest)
+              [mix2 ap-dest] (dir/query (:host dest))]
           (circ/update-data id [:path-dest] (:dest ap-dest)) ;; FIXME is that soon enough?
           (circ/relay-extend config id mix2)
           (<! ctrl)
           (circ/relay-extend config id ap-dest)
           (<! ctrl))
         (let [circ (circ/get-data id)]
-          (circ/relay-begin config id (:ap-dest circ))
+          (circ/relay-begin config id rt-dest)
           (circ/update-data id [:state] :relay-ack-pending)
           (circ/update-data id [:path-dest :port] (:port (<! ctrl)))
           (circ/update-data id [:state] :relay)
