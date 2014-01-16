@@ -47,33 +47,30 @@
                               (if (or (= ip external-ip) (= ip local-ip))
                                 (offer-sdp-exiting sdp ip ports)
                                 (offer-sdp-entering sdp ip ports))))
-        offer-sdp-exiting (fn [sdp ip ports]
-                            (let [sdp-ch         (chan)
-                                  circs          (repeatedly #(path/get-path config))
-                                  assoc-circ     (fn [cid [media port]]
-                                                   (let [circ           (circ/get-data cid)]
-                                                     (go (>! (:dest-ctrl circ) {:host ip :port port :proto :udp :type :ip4}))
-                                                     (swap! calls assoc-in [call-id media] {:circuit cid})))]
-                              (doall (map assoc-circ circs ports))
-                              (log/info "RTP-Proxy: Adding call ID [offer]" call-id)
-                              (-> {:result "ok" :sdp sdp} mk-reply send)))
-        offer-sdp-exiting (fn []
-                            (let [[sdp ip ports]     (parse-sdp)]
-                              (when (or (= ip external-ip) (= ip local-ip))
-                                (let [sdp-ch         (chan)
-                                      circs          (repeatedly #(path/get-path config))
-                                      assoc-circ     (fn [cid [media port]]
-                                                       (let [circ           (circ/get-data cid)]
-                                                         (go (>! (:dest-ctrl circ) {:host ip :port port :proto :udp :type :ip4}))
-                                                         (swap! calls assoc-in [call-id media] {:circuit cid})))
-                                      replace-sdp    #(go (let [sdp       (<! %1)
-                                                                [old new] (<! %2)]
-                                                            (change-port sdp old new)))
-                                      nsdp           (reduce replace-sdp sdp-ch (map assoc-circ circs ports))]
-                                  (doall (map assoc-circ ))
-                                  (log/info "RTP-Proxy: Adding call ID [offer]" call-id)
-                                  (go (>! sdp-ch (str/replace sdp ip (-> (first circs) circ/get-data :path-dest :host)))) ;; FIXME: this means get path returns paths having the same dest.
-                                  (go (-> {:result "ok" :sdp (<! nsdp)} mk-reply send))))))
+        offer-exiting  (fn [sdp ip ports]
+                         (log/info "RTP-Proxy: Adding call ID [offer]" call-id)
+                         (-> {:result "ok" :sdp sdp} mk-reply send))
+        offer-entering (fn [sdp distant-ip ports]
+                         (let [sdp-ch         (chan)
+                               circs          (repeatedly #(path/get-path config))
+                               assoc-circ     (fn [cid [media distant-port]]
+                                                (go (let [circ           (circ/get-data cid)]
+                                                      (go (>! (:dest-ctrl circ) {:host ip :port port :proto :udp :type :ip4}))
+                                                      ;; FIXME need to attach local udp...
+                                                      (swap! calls assoc-in [call-id media] {:circuit cid})
+                                                      [distant-port (<! )])))
+                               assoc-circ     (fn [cid [media port]]
+                                                (let [circ           (circ/get-data cid)]
+                                                  (swap! calls assoc-in [call-id media] {:circuit cid})
+                                                  [old new]))
+                               replace-sdp    #(go (let [sdp       (<! %1)
+                                                         [old new] (<! %2)]
+                                                     (change-port sdp old new)))
+                               nsdp           (reduce replace-sdp sdp-ch (map assoc-circ circs ports))]
+                           (doall (map assoc-circ ))
+                           (log/info "RTP-Proxy: Adding call ID [offer]" call-id)
+                           (go (>! sdp-ch (str/replace sdp ip (-> (first circs) circ/get-data :path-dest :host)))) ;; FIXME: this means get path returns paths having the same dest.
+                           (go (-> {:result "ok" :sdp (<! nsdp)} mk-reply send))))
         answer-sdp   (fn []
                        (let [[sdp ip ports]     (parse-sdp)
                              call-data          (@calls call-id)]
