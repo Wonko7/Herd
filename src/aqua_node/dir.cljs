@@ -5,6 +5,8 @@
             [clojure.string :as str]
             [aqua-node.buf :as b]
             [aqua-node.log :as log]
+            [aqua-node.conns :as c]
+            [aqua-node.conn-mgr :as conn]
             [aqua-node.parse :as conv]
             [aqua-node.geo :as geo])
   (:require-macros [cljs.core.async.macros :as m :refer [go]]))
@@ -79,8 +81,12 @@
     (.write soc (b/copycat2 header (mk-info-buf info)) #(go (>! done-chan :done)))))
 
 (defn send-net-request [config soc done]
-  (.write soc (->> [(from-cmd :net-request) 101] cljs/clj->js b/new) #(go (>! done :done))))
+  (.write soc (-> [(from-cmd :net-request) 101] cljs/clj->js b/new) #(go (>! done :done)))) ;; FIXME the done channel isn't necessary, I was tired. get rid of it here when you can.
 
+(defn send-query [config soc ip]
+  (.write soc (b/cat (-> [(from-cmd :query)] cljs/clj->js b/new)
+                     (b/new (conv/dest-to-tor-str {:proto :udp :type :ip4 :host ip :port 0}))
+                     (-> [0] cljs/clj->js b/new))))
 
 ;; process recv ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
@@ -112,10 +118,26 @@
 (defn recv-net-request [config soc msg recv-chan]
   (.write soc @net-info-buf))
 
+(defn recv-query [config soc msg recv-query]
+  (println (-> msg conv/parse-addr first :host (@app-dir)))
+  (println (-> msg conv/parse-addr))
+  (println (.toString msg))
+  (if-let [info (-> msg conv/parse-addr first :host (@app-dir))]
+    (.write soc (b/copycat2 (-> [(from-cmd :query-ans)] cljs/clj->js b/new)
+                            (mk-info-buf info)))
+    (.write soc "no")))
+
+(defn recv-query-ans [config soc msg recv-query]
+  (go (if (= 2 (.-length msg))
+        (>! recv-query :no)
+        (>! recv-query (parse-info config msg)))))
+
 (def to-cmd
   {0   {:name :client-info  :fun recv-client-info}
    1   {:name :net-info     :fun recv-net-info}
-   2   {:name :net-request  :fun recv-net-request}})
+   2   {:name :net-request  :fun recv-net-request}
+   3   {:name :query        :fun recv-query}
+   4   {:name :query-ans    :fun recv-query-ans}})
 
 (def roles {:mix 0 :app-proxy 1})
 
@@ -133,3 +155,19 @@
         (try (process config srv msg recv-chan)
              (catch js/Object e (log/c-error e (str "Aqua-Dir: Malformed message" (to-cmd cmd)))))
         (log/info "Net-Info: invalid message command")))))
+
+
+;; interface ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;; FIXME things like get-net-info & register will move here.
+
+(defn query [{dir :remote-dir :as config} ip]
+  (log/info "querying dir for:" ip)
+  (let [done (chan)
+        c    (conn/new :dir :client dir config {:connect #(go (>! done :connected))})]
+    (c/add-listeners c {:data #(process config c % done)})
+    (go (<! done)
+        (send-query config c ip)
+        (let [[info] (<! done)]
+          (c/rm c)
+          (.end c)
+          info))))
