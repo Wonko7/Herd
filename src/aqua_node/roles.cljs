@@ -2,7 +2,6 @@
   (:require [cljs.core :as cljs]
             [cljs.nodejs :as node]
             [cljs.core.async :refer [chan <! >! filter< mult tap]]
-            ;[cljs.core.async.lab :refer [broadcast]]
             [aqua-node.log :as log]
             [aqua-node.buf :as b]
             [aqua-node.conns :as c]
@@ -17,8 +16,8 @@
 
 (def test-path [{:auth {:srv-id (js/Buffer. "h00z6mIWXCPWK4Pp1AQh+oHoHs8=" "base64")
                         :pub-B  (js/Buffer. "KYi+NX2pCOQmYnscN0K+MB+NO9A6ynKiIp41B5GlkHc=" "base64")}
-                 :dest {:type :ip4 :host "54.194.191.213" :port 6666}}
-                ;:dest {:type :ip4 :host "192.168.0.11" :port 6669}}
+                :dest {:type :ip4 :host "54.194.191.213" :port 6666}}
+                ;:dest {:type :ip4 :host "192.168.0.10" :port 6669}}
                 ;:dest {:type :ip4 :host "139.19.176.82" :port 6669}}
                 ;{:auth {:srv-id (js/Buffer. "pQh62d3z8LisFWg8qENauDn7dtU=" "base64")
                 ;        :pub-B  (js/Buffer. "JnJ35yUEiabocQUR6noo9JAB8prhvu7OP4kQlLVS4QI=" "base64")}
@@ -93,6 +92,7 @@
     (log/info "Bootstrapping as" roles)
     (go (>! geo (<! (geo/parse config))))
     (when (is? :app-proxy)
+      ;(path/create-single config test-path)
       (go (>! mix (path/init-pools config (<! (get-net-info config ds)) (<! geo1) 10)))
       (conn/new :socks :server ap config {:data     path/app-proxy-forward
                                           :udp-data path/app-proxy-forward-udp

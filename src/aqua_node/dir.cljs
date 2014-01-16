@@ -41,22 +41,22 @@
         [mix msg]    (if (= role :app-proxy)
                        (conv/parse-addr msg)
                        [nil msg])]
-    ;(println :read {:mix mix :host ip :client client :reg (geo/int-to-reg reg) :role role :id id :pub pub})
+    (println :read {:mix mix :host ip :client client :reg (geo/int-to-reg reg) :role role :id id :pub pub})
     [{:mix mix :host ip :port (:port client) :reg (geo/int-to-reg reg) :role role :auth {:srv-id id :pub-B pub}} msg]))
 
 (defn mk-info-buf [info]
-  ;(println :wrote info)
+  (println :wrote info)
   (let [zero  (-> [0] cljs/clj->js b/new)
         role  (if (= :app-proxy (:role info)) 0 1)
-        info  [(-> [role (-> info :reg geo/reg-to-int)] cljs/clj->js b/new)
+        msg   [(-> [role (-> info :reg geo/reg-to-int)] cljs/clj->js b/new)
                (-> info :auth :srv-id)
                (-> info :auth :pub-B)
                (b/new (conv/dest-to-tor-str {:type :ip4 :proto :udp :host (:host info) :port (:port info)}))
                zero]
-        info  (if (zero? role)
-                (concat info [(b/new (conv/dest-to-tor-str (:mix info))) zero])
-                info)]
-    (apply b/cat info)))
+        msg   (if (zero? role)
+                (concat msg [(b/new (conv/dest-to-tor-str (merge (:mix info) {:proto :udp :type :ip4}))) zero])
+                msg)]
+    (apply b/cat msg)))
 
 (defn mk-net-buf! []
   (reset! net-info-buf (b/new 5))
@@ -75,8 +75,9 @@
                 :host (-> config :external-ip)
                 :port (-> config :aqua :port)
                 :role (or (->> config :roles (filter #(= :app-proxy)) first) :mix)
-                :mix  (and mix (conv/dest-to-tor-str mix))
+                :mix  mix
                 :reg  (-> geo :reg)}]
+    (parse-info config (mk-info-buf info))
     (.write soc (b/copycat2 header (mk-info-buf info)) #(go (>! done-chan :done)))))
 
 (defn send-net-request [config soc done]

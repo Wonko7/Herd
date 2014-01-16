@@ -47,6 +47,7 @@
     (circ/update-data id [:roles] [:origin])
     (circ/update-data id [:ctrl] ctrl)
     (circ/update-data id [:mk-path-fn] #(go (>! ctrl :next)))
+    (println :sent.create)
     (go (<! ctrl)
         (circ/relay-extend config id mix)
         (<! ctrl)
@@ -140,7 +141,7 @@
   (log/info "Init Circuit pools: we are in" (:country loc) "/" (:continent loc))
   (let [reg (-> loc :reg)
         mix (->> geo-db seq (map second) (filter #(= (:reg %) reg)) shuffle first)
-        soc (conn/new :aqua :client mix config {:connect identity})]
+        soc (conn/new :aqua :client mix config {:connect #(println :connected)})]
     (c/add-listeners soc {:data #(circ/process config soc %)})
     (reset! chosen-mix mix)
     (init-pool config soc mix N)

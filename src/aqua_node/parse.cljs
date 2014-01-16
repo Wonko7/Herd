@@ -33,6 +33,7 @@
                   (map #(when (= 0 (.readUInt8 buf %)) %))
                   (some identity))]
     (assert z "bad buffer: no zero delimiter")
+    (println (.toString buf "ascii" 0 z))
     (let [str           (.toString buf "ascii" 0 z)
           ip4-re        #"^([utr]):((\d+\.){3}\d+):(\d+)$"
           ip6-re        #"^([utr]):\[((\d|[a-fA-F]|:)+)\]:(\d+)$"
