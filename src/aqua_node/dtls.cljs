@@ -15,7 +15,6 @@
 
 (defn connect [dest config conn-handler]
   (let [[dtls opts] (mk-dtls config dest)
-        c           (.connect dtls opts #(println :CONNECTED))]
-    (println :CONNECTING (:host dest) (:port dest))
+        c           (.connect dtls opts)]
     (c/add-listeners c {:secureConnect #(conn-handler c)})
     (c/add c {:cs :client :type :aqua :host (:host dest) :port (:port dest)}))) ;; FIXME doing this because for some reason .-remote[Addr|Port] end up nil.
