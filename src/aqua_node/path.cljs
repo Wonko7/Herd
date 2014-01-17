@@ -50,19 +50,19 @@
     (circ/update-data id [:mk-path-fn] #(go (>! ctrl :next)))
     (go (<! ctrl)
         (let [rt-dest        (<! dest)
-              [mix2 ap-dest] (dir/query (:host dest))]
+              [mix2 ap-dest] (dir/query config (:host dest))]
           (circ/update-data id [:path-dest] (:dest ap-dest)) ;; FIXME is that soon enough?
           (circ/relay-extend config id mix2)
           (<! ctrl)
           (circ/relay-extend config id ap-dest)
-          (<! ctrl))
-        (let [circ (circ/get-data id)]
-          (circ/relay-begin config id rt-dest)
-          (circ/update-data id [:state] :relay-ack-pending)
-          (circ/update-data id [:path-dest :port] (:port (<! ctrl)))
-          (circ/update-data id [:state] :relay)
-          (>! (-> circ :backward-hop c/get-data :ctrl) :relay)
-          (log/info "RT Circuit" id "is ready for relay")))
+          (<! ctrl)
+          (let [circ (circ/get-data id)]
+            (circ/relay-begin config id rt-dest)
+            (circ/update-data id [:state] :relay-ack-pending)
+            (circ/update-data id [:path-dest :port] (:port (<! ctrl)))
+            (circ/update-data id [:state] :relay)
+            (>! (-> circ :backward-hop c/get-data :ctrl) :relay)
+            (log/info "RT Circuit" id "is ready for relay"))))
     id))
 
 
@@ -137,10 +137,11 @@
     (swap! pool conj (create-rt config soc mix))))
 
 (defn init-pools [config geo-db loc N] ;; this will 
-  (log/info "Init Circuit pools: we are in" (:country loc) "/" (:continent loc))
   (let [reg (-> loc :reg)
         mix (->> geo-db seq (map second) (filter #(= (:reg %) reg)) shuffle first)
         soc (conn/new :aqua :client mix config {:connect identity})]
+    (log/info "Init Circuit pools: we are in" (:country loc) "/" (geo/reg-to-continent reg))
+    (log/debug "Chosen mix:" (:host mix) (:port mix))
     (c/add-listeners soc {:data #(circ/process config soc %)})
     (reset! chosen-mix mix)
     (init-pool config soc mix N)

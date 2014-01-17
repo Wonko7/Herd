@@ -65,7 +65,8 @@
     (tap mg geo2)
     (log/info "Bootstrapping as" roles)
     (go (>! geo (<! (geo/parse config))))
-    (go (>! net-info (get-net-info config ds)))
+    (when-not (is? :dir)
+      (go (>! net-info (<! (get-net-info config ds)))))
     (when (is? :app-proxy)
       (go (>! mix (path/init-pools config (<! net-info) (<! geo1) 10)))
       (conn/new :socks :server ap config {:data     path/app-proxy-forward
@@ -81,6 +82,8 @@
                                  (register-dir config geo mix ds)
                                  (js/setInterval #(register-dir config geo mix ds) 300000)))
           :else            (go (register-dir config (<! geo2) nil ds) ;; FIXME get new info regularly, connect to new ones.
-                               (doseq [mix  (-> (<! net-info) seq (map second))
+                               (doseq [[[ip port] mix] (->> (<! net-info) seq)
+                                       :when (or (not= (:host aq) ip)
+                                                 (not= (:port aq) port))
                                        :let [soc (conn/new :aqua :client mix config {:connect identity})]]
                                  (c/add-listeners soc {:data #(circ/process config soc %)}))))))

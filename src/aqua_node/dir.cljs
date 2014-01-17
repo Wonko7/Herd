@@ -18,17 +18,13 @@
 
 (def mix-dir (atom {}))
 (def app-dir (atom {}))
-(def net-info (atom {}))
 (def net-info-buf (atom nil))
 
 (defn get-net-info []
-  @net-info)
+  @mix-dir)
 
 (defn rm [id]
   (swap! app-dir dissoc id))
-
-(defn rm-net [id]
-  (swap! net-info dissoc id))
 
 
 ;; encode/decode ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
@@ -95,7 +91,7 @@
         ip          (:host info)
         role        (:role info)]
     (if (= role :mix)
-      (do (swap! mix-dir merge {ip info})
+      (do (swap! mix-dir merge {[ip (:port info)] info})
           (mk-net-buf!)))
       (let [entry   (@app-dir ip)
             to-id   (js/setTimeout #(rm ip) 600000)]
@@ -110,13 +106,15 @@
     (loop [i 0, msg (.slice msg 4)]
       (when (< i nb)
         (let [[info msg] (parse-info config msg)]
-          (swap! net-info merge {(:host info) info})
+          (swap! mix-dir merge {[(:host info) (:port info)] info})
           (recur (inc i) msg))))
     (when recv-chan
       (go (>! recv-chan :got-geo)))))
 
 (defn recv-net-request [config soc msg recv-chan]
-  (.write soc @net-info-buf))
+  (if @net-info-buf
+    (.write soc @net-info-buf)
+    (.write soc (-> [(from-cmd :net-info) 0 0 0 0] cljs/clj->js b/new))))
 
 (defn recv-query [config soc msg recv-query]
   (println (-> msg conv/parse-addr first :host (@app-dir)))

@@ -23,6 +23,14 @@
     :ripencc  3
     :afrinic  4))
 
+(defn reg-to-continent [reg]
+  (condp = reg
+    :apcnic  "asia-pacific"
+    :arin    "north-america"
+    :lacnic  "south-america"
+    :ripencc "europe"
+    :afrinic "africa"))
+
 (defn parse [config]
   (try
     (let [fs  (node/require "fs")
@@ -37,12 +45,6 @@
                                         (>= ip from)
                                         (<= ip to))]
                          {:reg       (keyword reg)
-                          :continent (condp = reg
-                                       "apcnic"  :asia-pacific
-                                       "arin"    :north-america
-                                       "lacnic"  :south-america
-                                       "ripencc" :europe
-                                       "afrinic" :africa)
                           :country   country
                           :ip        ip}))))))
     (catch js/Object e (log/c-error "Error reading Geo loc db" e))))
