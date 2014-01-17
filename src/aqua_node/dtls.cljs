@@ -11,7 +11,7 @@
   (let [[dtls opts] (mk-dtls config dest)
         srv         (.createServer dtls port opts new-conn-handler)] ;; FIXME: based on tls api, this is not what a nice dtls api should look like.
     (log/info "Aqua listening on:" host port)
-    (c/add srv {:cs :server :type :aqua})))
+    (c/add srv {:cs :server :type :aqua :host host :port port})))
 
 (defn connect [dest config conn-handler]
   (let [[dtls opts] (mk-dtls config dest)

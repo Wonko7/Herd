@@ -1,8 +1,11 @@
 {:roles [:app-proxy]
- :aqua {:host "192.168.0.11"
+ :aqua {:host "192.168.0.10"
         :port 6667}
  :geo-db "ip4-geo.txt"
- :external-ip "82.239.82.44"
+ :geo-info {:reg :ripencc :country "narnia"}
+ ;:external-ip "82.239.82.44"
+ :external-ip "192.168.0.10"
+ :local-ip "192.168.0.10"
  :remote-dir {:host "54.194.191.213"
 	      :port 6669}
  :app-proxy {:host "127.0.0.1"

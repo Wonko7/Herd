@@ -39,7 +39,8 @@
         [mix msg]    (if (= role :app-proxy)
                        (conv/parse-addr msg)
                        [nil msg])]
-    [{:mix mix :host ip :port (:port client) :reg (geo/int-to-reg reg) :role role :auth {:srv-id id :pub-B pub}} msg]))
+    (println [{:mix mix :host ip :port (:port client) :reg (geo/int-to-reg reg) :role role :auth {:srv-id id :pub-B pub}} msg])
+    [(merge client {:mix mix :reg (geo/int-to-reg reg) :role role :auth {:srv-id id :pub-B pub}}) msg]))
 
 (defn mk-info-buf [info]
   (let [zero  (-> [0] cljs/clj->js b/new)
@@ -92,12 +93,13 @@
         role        (:role info)]
     (if (= role :mix)
       (do (swap! mix-dir merge {[ip (:port info)] info})
-          (mk-net-buf!)))
+          (mk-net-buf!))
       (let [entry   (@app-dir ip)
             to-id   (js/setTimeout #(rm ip) 600000)]
         (when entry
           (js/clearTimeout (:timeout entry)))
-        (swap! app-dir merge {ip (merge {:timeout to-id} info)})))
+        (println :app-dir-add! {ip (merge {:timeout to-id} info)})
+        (swap! app-dir merge {ip (merge {:timeout to-id} info)}))))
   (when recv-chan
     (go (>! recv-chan :got-geo))))
 
@@ -117,18 +119,22 @@
     (.write soc (-> [(from-cmd :net-info) 0 0 0 0] cljs/clj->js b/new))))
 
 (defn recv-query [config soc msg recv-query]
-  (println (-> msg conv/parse-addr first :host (@app-dir)))
-  (println (-> msg conv/parse-addr))
-  (println (.toString msg))
-  (if-let [info (-> msg conv/parse-addr first :host (@app-dir))]
-    (.write soc (b/copycat2 (-> [(from-cmd :query-ans)] cljs/clj->js b/new)
-                            (mk-info-buf info)))
-    (.write soc "no")))
+  (let [info (-> msg conv/parse-addr first :host (@app-dir))
+        mix  (@mix-dir [(-> info :mix :host) (-> info :mix :port)])]
+    (println info)
+    (println mix)
+    (if info
+      (.write soc (b/cat (-> [(from-cmd :query-ans)] cljs/clj->js b/new)
+                         (mk-info-buf info)
+                         (mk-info-buf mix)))
+      (.write soc (b/copycat2 (-> [(from-cmd :query-ans)] cljs/clj->js b/new) (b/new "no"))))))
 
 (defn recv-query-ans [config soc msg recv-query]
   (go (if (= 2 (.-length msg))
-        (>! recv-query :no)
-        (>! recv-query (parse-info config msg)))))
+        (>! recv-query [nil nil])
+        (let [[app msg] (parse-info config msg)
+              [mix]     (parse-info config msg)]
+          (>! recv-query [app mix])))))
 
 (def to-cmd
   {0   {:name :client-info  :fun recv-client-info}
@@ -165,7 +171,7 @@
     (c/add-listeners c {:data #(process config c % done)})
     (go (<! done)
         (send-query config c ip)
-        (let [[info] (<! done)]
+        (let [m-and-a (<! done)]
           (c/rm c)
           (.end c)
-          info))))
+          m-and-a))))

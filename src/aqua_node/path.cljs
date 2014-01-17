@@ -49,20 +49,29 @@
     (circ/update-data id [:dest-ctrl] dest)
     (circ/update-data id [:mk-path-fn] #(go (>! ctrl :next)))
     (go (<! ctrl)
+        (println :rt 1)
         (let [rt-dest        (<! dest)
-              [mix2 ap-dest] (dir/query config (:host dest))]
-          (circ/update-data id [:path-dest] (:dest ap-dest)) ;; FIXME is that soon enough?
-          (circ/relay-extend config id mix2)
-          (<! ctrl)
-          (circ/relay-extend config id ap-dest)
-          (<! ctrl)
-          (let [circ (circ/get-data id)]
-            (circ/relay-begin config id rt-dest)
-            (circ/update-data id [:state] :relay-ack-pending)
-            (circ/update-data id [:path-dest :port] (:port (<! ctrl)))
-            (circ/update-data id [:state] :relay)
-            (>! (-> circ :backward-hop c/get-data :ctrl) :relay)
-            (log/info "RT Circuit" id "is ready for relay"))))
+              _ (println :rt 1.5)
+              [mix2 ap-dest] (<! (dir/query config (:host rt-dest)))]
+          (println :rt 2 mix2)
+          (println :rt 2 ap-dest)
+          (if-not mix2
+            (log/error "Could not find dest")
+            (do (circ/update-data id [:path-dest] ap-dest) ;; FIXME is that soon enough?
+                (circ/relay-extend config id (merge mix2 {:dest mix2}))
+                (<! ctrl)
+                (println :rt 3)
+                (circ/relay-extend config id (merge ap-dest {:dest ap-dest}))
+                (<! ctrl)
+                (println :rt 4)
+                (let [circ (circ/get-data id)]
+                  (circ/relay-begin config id rt-dest)
+                  (circ/update-data id [:state] :relay-ack-pending)
+                  (circ/update-data id [:path-dest :port] (:port (<! ctrl)))
+                  (circ/update-data id [:state] :relay)
+                  (>! (-> circ :backward-hop c/get-data :ctrl) :relay)
+                  (println :rt 5)
+                  (log/info "RT Circuit" id "is ready for relay"))))))
     id))
 
 
@@ -120,8 +129,11 @@
         (circ/update-data circ-id [:ap-dest] dest)
         (circ/update-data circ-id [:backward-hop] udp-sock)
         (circ/update-data circ-id [:local-dest] forward-to)
+        (println :attach 1)
         (>! (:ctrl (circ/get-data circ-id)) :relay-connect)
-        (assert (= :relay (<! ctrl)))
+        (println :attach 2)
+        ;(assert (= :relay (<! ctrl)))
+        (println :attach 3)
         [udp-sock port (:path-dest (circ/get-data circ-id))])))
 
 
