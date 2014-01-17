@@ -369,6 +369,7 @@
                                          3 {:type :ip4 :host (conv/ip4-to-str (.slice r-payload 3 7))  :port (r2 7)  :create (.slice r-payload 9)}
                                          4 {:type :ip6 :host (conv/ip6-to-str (.slice r-payload 3 19)) :port (r2 19) :create (.slice r-payload 21)})
                             sock       (c/find-by-dest dest)]
+                        (println "extending to:" dest)
                         (assert sock "could not find destination")
                         (update-data circ-id [:forward-hop] sock)
                         (update-data circ-id [:roles] [:mix]) ;; FIXME just add?
