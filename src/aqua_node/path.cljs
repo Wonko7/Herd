@@ -52,15 +52,21 @@
         (println :rt 1)
         (let [rt-dest        (<! dest)
               _ (println :rt 1.5)
-              [mix2 ap-dest] (<! (dir/query config (:host rt-dest)))]
+              [ap-dest mix2] (<! (dir/query config (:host rt-dest)))]
           (println :rt 2 mix2)
           (println :rt 2 ap-dest)
+    (b/print-x (-> mix2 :auth :srv-id) :pa-i)
+    (b/print-x (-> mix2 :auth :pub-B) :pa-p)
           (if-not mix2
             (log/error "Could not find dest")
             (do (circ/update-data id [:path-dest] ap-dest) ;; FIXME is that soon enough?
                 (circ/relay-extend config id (merge mix2 {:dest mix2}))
                 (<! ctrl)
-                (println :rt 3)
+                (<! ctrl)
+                (<! ctrl)
+                (<! ctrl)
+                (<! ctrl)
+                (println :rt 3 id (count (-> id circ/get-data :path)))
                 (circ/relay-extend config id (merge ap-dest {:dest ap-dest}))
                 (<! ctrl)
                 (println :rt 4)
@@ -162,5 +168,5 @@
 (defn get-path [config]
   (let [[p & ps] @pool]
     (reset! pool (vec ps))
-    (init-pool config (c/find-by-dest @chosen-mix) @chosen-mix 1)
+    ;(init-pool config (c/find-by-dest @chosen-mix) @chosen-mix 1)
     p))

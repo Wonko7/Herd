@@ -37,12 +37,16 @@
 ;; FIXME: assert all lens.
 (defn client-init [{srv-id :srv-id pub-B :pub-B :as auth}]
   (let [[secret-x public-X]        (c/gen-keys)]
+    (b/print-x srv-id :ntor-i)
+    (b/print-x pub-B :ntor-p)
     [(merge auth {:sec-x secret-x :pub-X public-X}) (b/cat srv-id pub-B public-X)]))
 
 (defn server-reply [{pub-B :pub-B sec-b :sec-b id :node-id :as auth} req key-len]
   (assert (= (.-length req) (+ (:node-id-len conf) (:h-len conf) (:h-len conf))) "bad client req ntor length")
   (let [curve                      (node/require "node-curve25519")
         [req-nid req-pub pub-X]    (b/cut req (:node-id-len conf) (+ (:node-id-len conf) (:h-len conf)))]
+    (b/print-x id :ntor-nid)
+    (b/print-x req-nid :ntor-rid)
     (assert (b/b= req-nid id)    "received create request with bad node-id")
     (assert (b/b= req-pub pub-B) "received create request with bad pub key")
     (let [[sec-y pub-Y]            (c/gen-keys)
