@@ -81,7 +81,13 @@
           (is? :app-proxy) (go (let [geo (<! geo2)
                                      mix (<! mix)]
                                  (register-dir config geo mix ds)
-                                 (js/setInterval #(register-dir config geo mix ds) 300000)))
+                                 (js/setInterval #(register-dir config geo mix ds) 300000))
+                               (when false
+                                 (let [c (path/get-path config)
+                                     circ (circ/get-data c)]
+                                 (circ/update-data c [:state-ch] (chan))
+                                 (>! (:dest-ctrl circ) {:host "192.168.0.13" :port 12345 :proto :udp :type :ip4})
+                                 )))
           :else            (go (register-dir config (<! geo2) nil ds) ;; FIXME get new info regularly, connect to new ones.
                                (doseq [[[ip port] mix] (->> (<! net-info) seq)
                                        :when (or (not= (:host aq) ip)
