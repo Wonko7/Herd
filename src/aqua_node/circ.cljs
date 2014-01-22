@@ -126,7 +126,6 @@
     (w32 circ-id 4)
     (w8 (from-cmd cmd) 8)
     (.copy payload buf 9)
-    (let [sd (c/get-data socket)] (println circ-id cmd :sending-to (:host sd) (:port sd)))
     (if (-> config :mk-packet)
       buf
       ;(.write socket buf))))
@@ -317,8 +316,8 @@
                       (let [[fhop bhop :as hops] (map circ [:forward-hop :backward-hop])
                             dest                 (if (= socket fhop) bhop fhop)
                             dest-data            (c/get-data dest)]
-                        ;(assert (some (partial = socket) hops) "relay data came from neither forward or backward hop.")
-                        ;(assert dest "no destination, illegal state")
+                        (assert (some (partial = socket) hops) "relay data came from neither forward or backward hop.")
+                        (assert dest "no destination, illegal state")
                         (condp = (:type dest-data)
                           :udp-exit  (if (:send-udp circ)
                                        ((:send-udp circ) r-payload)
@@ -374,7 +373,6 @@
                                          3 {:type :ip4 :host (conv/ip4-to-str (.slice r-payload 3 7))  :port (r2 7)  :create (.slice r-payload 9)}
                                          4 {:type :ip6 :host (conv/ip6-to-str (.slice r-payload 3 19)) :port (r2 19) :create (.slice r-payload 21)})
                             sock       (c/find-by-dest dest)]
-                        (println "extending to:" (dissoc dest :create))
                         (assert sock "could not find destination")
                         (update-data circ-id [:forward-hop] sock)
                         (update-data circ-id [:roles] [:mix]) ;; FIXME just add?
@@ -484,7 +482,6 @@
         command      (to-cmd (r8 8))
         payload      (.slice data 9)]
     (log/debug "recv cell: id:" circ-id "cmd:" (:name command) "len:" len)
-    (let [sd (c/get-data socket)] (println circ-id (:name command) :recvd-from (:host sd) (:port sd)))
     (cond (> len cell-len) (let [[f r] (b/cut data cell-len)]
                              (reset! wait-buffer nil)
                              (process config socket f)
