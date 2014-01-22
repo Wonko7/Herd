@@ -153,5 +153,5 @@
 (defn get-path [config]
   (let [[p & ps] @pool]
     (reset! pool (vec ps))
-    ;(init-pool config (c/find-by-dest @chosen-mix) @chosen-mix 1)
+    (init-pool config (c/find-by-dest @chosen-mix) @chosen-mix 1)
     p))

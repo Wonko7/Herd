@@ -49,6 +49,7 @@
                              local-ip       (:local-ip config)
                              circs          (repeatedly #(path/get-path config))
                              assoc-circ     (fn [cid [media distant-port]]
+                                              (assert cid "no circuits available. how quaint.")
                                               (let [circ           (circ/get-data cid)
                                                     state          (chan)]
                                                 (circ/update-data cid [:state-ch] state)
