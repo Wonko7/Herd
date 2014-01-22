@@ -26,7 +26,7 @@
      :debug       false
      :ntor-values ntor}))
 
-(defn read-config []
+(defn read-config [overwrite]
   (let [;; read config
         fs          (node/require "fs")
         read        #(reader/read-string %)
@@ -52,7 +52,7 @@
                         (merge {:sec (echo-to (-> cfg :auth :aqua-id :sec) s)}
                                {:pub (echo-to (-> cfg :auth :aqua-id :pub) p)}
                                {:id  (echo-to (-> cfg :auth :aqua-id :id)  (-> (node/require "crypto") (.createHash "sha256") (.update p) .digest (.slice 0 (-> static-conf :ntor-values :node-id-len))))})))] ;; FIXME test node len
-    (swap! config merge static-conf cfg {:auth {:openssl ossl :aqua-id aqua}})))
+    (swap! config merge static-conf cfg {:auth {:openssl ossl :aqua-id aqua}} overwrite)))
 
 (defn get-cfg []
   @config)

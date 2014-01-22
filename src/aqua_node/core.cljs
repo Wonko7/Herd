@@ -7,11 +7,8 @@
 
 
 (defn -main [& args]
-  (let [config (config/read-config)]
-    (roles/bootstrap (if (= "--debug" (first args))
-                       (merge config {:debug true})
-                       config))))
+  (let [config (config/read-config (when (= "--debug" (first args)) {:debug true}))]
+    (roles/bootstrap config)))
 
-(set! *main-cli-fn* #(try
-                       (apply -main %&)
-                       (catch js/Object e (log/c-error "No one expects the Spanish Inquisition." e))))
+(set! *main-cli-fn* #(try (apply -main %&)
+                          (catch js/Object e (log/c-error "No one expects the Spanish Inquisition." e))))
