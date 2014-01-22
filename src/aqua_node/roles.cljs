@@ -85,11 +85,9 @@
                                (when false
                                  (let [c (path/get-path config)
                                      circ (circ/get-data c)]
-                                 (circ/update-data c [:state-ch] (chan))
-                                 (>! (:dest-ctrl circ) {:host "192.168.0.13" :port 12345 :proto :udp :type :ip4})
-                                 )))
+                                 (circ/update-data c [:state-ch] (chan)))))
           :else            (go (register-dir config (<! geo2) nil ds)
-                               (doseq [[[ip port] mix] (->> (<! net-info) seq)
+                               (doseq [[[ip port] mix] (seq (<! net-info))
                                        :when (or (not= (:host aq) ip)
                                                  (not= (:port aq) port))
                                        :let [soc (conn/new :aqua :client mix config {:connect identity})]]
