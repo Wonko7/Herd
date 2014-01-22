@@ -3,10 +3,15 @@
             [cljs.nodejs :as node]
             [aqua-node.log :as log]))
 
+(declare destroy find-by-dest)
+
+
 (def connections (atom {}))
 
 (defn add [conn & [data]]
   (swap! connections merge {conn data})
+  (when (and (:dest data) (= :aqua (:type data)))
+    (destroy (find-by-dest (:dest data))))
   conn)
 
 (defn set-data [conn data]
@@ -24,6 +29,7 @@
 (defn destroy [conn]
   (when-let [c (@connections conn)]
     (rm conn)
+    (doall (map #(%) (:on-destroy c)))
     (if (= :udp (:ctype c))
       (.close conn)
       (.destroy conn))))

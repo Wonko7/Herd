@@ -247,6 +247,7 @@
     (.writeUInt16BE header (.-length created) 0)
     (add-path-secret-to-last config circ-id (@circuits circ-id) shared-sec) ;; FIXME: PATH: mk pluggable
     (update-data circ-id [:backward-hop] socket)
+    (c/update-data socket :on-destroy (cons #(destroy config circ-id) (-> socket c/get-data :on-destroy)))
     (cell-send config socket circ-id :created2 (b/cat header created))))
 
 (defn recv-created2 [config socket circ-id payload]

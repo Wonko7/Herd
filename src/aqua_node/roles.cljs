@@ -88,7 +88,7 @@
                                  (circ/update-data c [:state-ch] (chan))
                                  (>! (:dest-ctrl circ) {:host "192.168.0.13" :port 12345 :proto :udp :type :ip4})
                                  )))
-          :else            (go (register-dir config (<! geo2) nil ds) ;; FIXME get new info regularly, connect to new ones.
+          :else            (go (register-dir config (<! geo2) nil ds)
                                (doseq [[[ip port] mix] (->> (<! net-info) seq)
                                        :when (or (not= (:host aq) ip)
                                                  (not= (:port aq) port))
