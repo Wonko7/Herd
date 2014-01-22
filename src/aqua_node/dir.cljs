@@ -39,7 +39,6 @@
         [mix msg]    (if (= role :app-proxy)
                        (conv/parse-addr msg)
                        [nil msg])]
-    (println :dir-parse (:host client) (:port client) (b/print-x id))
     [(merge client {:mix mix :reg (geo/int-to-reg reg) :role role :auth {:srv-id id :pub-B pub}}) msg]))
 
 (defn mk-info-buf [info]
@@ -53,7 +52,6 @@
         msg   (if (zero? role)
                 (concat msg [(b/new (conv/dest-to-tor-str (merge (:mix info) {:proto :udp :type :ip4}))) zero])
                 msg)]
-    (println :dir-sending (:host info) (:port info) (-> info :auth :srv-id b/print-x))
     (apply b/cat msg)))
 
 (defn mk-net-buf! []
@@ -99,7 +97,6 @@
             to-id   (js/setTimeout #(rm ip) 600000)]
         (when entry
           (js/clearTimeout (:timeout entry)))
-        (println :app-dir-add! {ip (merge {:timeout to-id} info)})
         (swap! app-dir merge {ip (merge {:timeout to-id} info)}))))
   (when recv-chan
     (go (>! recv-chan :got-geo))))

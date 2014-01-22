@@ -30,7 +30,7 @@
         [cookie msg] (-> message (.toString "ascii") (str/split #" " 2))
         msg          (-> (.decode bcode msg "ascii") cljs/js->clj)
         cmd          (.toString (msg "command"))
-        mk-reply     #(do (println %) (b/new (str cookie " " (.encode bcode (cljs/clj->js %)))))
+        mk-reply     #(b/new (str cookie " " (.encode bcode (cljs/clj->js %))))
         send         #(.send socket % 0 (.-length %) (.-port rinfo) (.-address rinfo))
         ;; SDP & circ glue:
         external-ip  (:external-ip config)
@@ -54,13 +54,11 @@
                                                 (circ/update-data cid [:state-ch] state)
                                                 (go (>! (:dest-ctrl circ) {:host distant-ip :port distant-port :proto :udp :type :ip4}))
                                                 (go (let [state          (<! state)
-                                                          [_ local-port] (<! (path/attach-local-udp4 config cid {:host local-ip} path/forward-udp))]
+                                                          [_ local-port] (<! (path/attach-local-udp4 config cid {:host local-ip} path/app-proxy-forward-udp))]
                                                       (swap! calls assoc-in [call-id media] {:circuit cid})
-                                                      (println "udp ready on" local-port)
                                                       [distant-port local-port]))))
                              replace-sdp    #(go (let [sdp       (<! %1)
                                                        [old new] (<! %2)]
-                                                   (println "replacing" old "by" new)
                                                    (change-port sdp old new)))
                              nsdp           (reduce replace-sdp sdp-ch (map assoc-circ circs ports))]
                          (log/info "RTP-Proxy: Adding call ID [offer]" call-id)
@@ -68,7 +66,6 @@
                          (go (-> {:result "ok" :sdp (<! nsdp)} mk-reply send))))
         process-sdp  (fn []
                        (let [[sdp ip ports]     (parse-sdp)]
-                         (println :RTP cmd (if (or (= ip external-ip) (= ip local-ip)) :exiting :entering))
                          (if (or (= ip external-ip) (= ip local-ip))
                            (sdp-exiting sdp ip ports)
                            (when-not (@calls call-id)

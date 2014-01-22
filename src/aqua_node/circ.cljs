@@ -317,21 +317,23 @@
                       (let [[fhop bhop :as hops] (map circ [:forward-hop :backward-hop])
                             dest                 (if (= socket fhop) bhop fhop)
                             dest-data            (c/get-data dest)]
-                        (assert (some (partial = socket) hops) "relay data came from neither forward or backward hop.")
-                        (assert dest "no destination, illegal state")
+                        ;(assert (some (partial = socket) hops) "relay data came from neither forward or backward hop.")
+                        ;(assert dest "no destination, illegal state")
                         (condp = (:type dest-data)
-                          :udp-exit  (let [[r1 r2]    (b/mk-readers r-payload)
-                                           type       (r1 3)
-                                           [h p data] (condp = type
-                                                        1 [(conv/ip4-to-str (.slice r-payload 4 8)) (r2 8) (.slice r-payload 10)]
-                                                        4 [(conv/ip6-to-str (.slice r-payload 4 20)) (r2 20) (.slice r-payload 22)]
-                                                        3 (let [len  (.-length r-payload)
-                                                                ml?  (>= len 5)
-                                                                alen (when ml? (r1 4))
-                                                                aend (when ml? (+ alen 5))]
-                                                            [(.toString r-payload "utf8" 5 aend) (r2 aend) (.slice r-payload (inc aend))])
-                                                        (assert false "bad socks5 header"))]
-                                       (.send dest data 0 (.-length data) p h))
+                          :udp-exit  (if (:send-udp circ)
+                                       ((:send-udp circ) r-payload)
+                                       (let [[r1 r2]    (b/mk-readers r-payload)
+                                             type       (r1 3)
+                                             [h p data] (condp = type
+                                                          1 [(conv/ip4-to-str (.slice r-payload 4 8)) (r2 8) (.slice r-payload 10)]
+                                                          4 [(conv/ip6-to-str (.slice r-payload 4 20)) (r2 20) (.slice r-payload 22)]
+                                                          3 (let [len  (.-length r-payload)
+                                                                  ml?  (>= len 5)
+                                                                  alen (when ml? (r1 4))
+                                                                  aend (when ml? (+ alen 5))]
+                                                              [(.toString r-payload "utf8" 5 aend) (r2 aend) (.slice r-payload (inc aend))])
+                                                          (assert false "bad socks5 header"))]
+                                         (.send dest data 0 (.-length data) p h)))
                           :udp-ap    (.send dest r-payload 0 (.-length r-payload) (-> dest-data :from :port) (-> dest-data :from :host))
                           :rtp-exit  (.send dest r-payload 0 (.-length r-payload) (-> dest-data :from :port) (-> dest-data :from :host)) ;; FIXME unused for now, going through udp-exit for now
                           :rtp-ap    (.send dest r-payload 0 (.-length r-payload) (-> circ :local-dest :port) (-> circ :local-dest :host)) ;; FIXME quick and diiiirty
@@ -353,6 +355,8 @@
                                            :udp (conn/new :udp :client nil config (merge cbs {:data (fn [config soc msg rinfo]
                                                                                                       (relay config socket circ-id :data :b-enc msg))}))
                                            :rtp (conn/new :rtp :client nil config (merge cbs {:data #(relay config %1 circ-id :data :b-enc %2)})))]
+                        (when (= :udp (:proto dest)) ;; FIXME tmp
+                          (update-data circ-id [:send-udp] #(.send sock % 0 (.-length %) (:port dest) (:host dest))))
                         (c/update-data sock [:circuit] circ-id)
                         (update-data circ-id [:forward-hop] sock)
                         (go (relay-connected config circ-id (merge dest (<! sock-connect))))))

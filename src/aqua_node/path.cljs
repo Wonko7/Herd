@@ -49,19 +49,15 @@
     (circ/update-data id [:dest-ctrl] dest)
     (circ/update-data id [:mk-path-fn] #(go (>! ctrl :next)))
     (go (<! ctrl)
-        (println :rt id 1)
         (let [rt-dest        (<! dest)
-              _ (println :rt id 1.5)
               [ap-dest mix2] (<! (dir/query config (:host rt-dest)))]
           (circ/update-data id [:path-dest] rt-dest)
           (if-not mix2
             (>! (-> id circ/get-data :state-ch) :error)
             (do (circ/relay-extend config id (merge mix2 {:dest mix2}))
                 (<! ctrl)
-                (println :rt 3 id (count (-> id circ/get-data :path)))
                 (circ/relay-extend config id (merge ap-dest {:dest ap-dest}))
                 (<! ctrl)
-                (println :rt id 4)
                 (let [circ (circ/get-data id)]
                   (circ/relay-begin config id rt-dest)
                   (circ/update-data id [:state] :relay-ack-pending)
@@ -70,7 +66,6 @@
                   (<! ctrl) ;; relay begin.
                   (>! (-> circ :state-ch) :done)
                   ;(>! (-> circ :backward-hop c/get-data :ctrl) :relay)
-                  (println :rt id 5)
                   (log/info "RT Circuit" id "is ready for relay")
                   )))))
     id))
