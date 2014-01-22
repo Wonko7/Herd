@@ -53,10 +53,8 @@
         (let [rt-dest        (<! dest)
               _ (println :rt id 1.5)
               [ap-dest mix2] (<! (dir/query config (:host rt-dest)))]
-          (println :rt id 2 mix2)
-          (println :rt id 2 ap-dest)
-    (b/print-x (-> mix2 :auth :srv-id) :pa-i)
-    (b/print-x (-> mix2 :auth :pub-B) :pa-p)
+          ;(println :rt id 2 mix2)
+          ;(println :rt id 2 ap-dest)
           (if-not mix2
             (>! (-> id circ/get-data :state-ch) :error)
             (do (circ/update-data id [:path-dest] ap-dest) ;; FIXME is that soon enough?
@@ -133,12 +131,7 @@
         (circ/update-data circ-id [:ap-dest] dest)
         (circ/update-data circ-id [:backward-hop] udp-sock)
         (circ/update-data circ-id [:local-dest] forward-to)
-        (println :attach circ-id 1)
-        ;(>! (:ctrl (circ/get-data circ-id)) :relay-connect)
-        (println :attach circ-id 2)
-        ;(assert (= :relay (<! ctrl)))
-        (println :attach circ-id 3)
-        [udp-sock port (:path-dest (circ/get-data circ-id))])))
+        [udp-sock port])))
 
 
 ;; path pool ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;

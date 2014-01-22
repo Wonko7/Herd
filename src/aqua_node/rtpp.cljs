@@ -51,22 +51,16 @@
                              assoc-circ     (fn [cid [media distant-port]]
                                               (let [circ           (circ/get-data cid)
                                                     state          (chan)]
-                                                (println :sdp cid 1)
                                                 (circ/update-data cid [:state-ch] state)
-                                                (go (>! (:dest-ctrl circ) {:host distant-ip :port distant-port :proto :udp :type :ip4})
-                                                    (println :sdp cid 1.5))
-                                                (go (let [_ (println :sdp cid 1.5555)
-                                                          state          (<! state)
-                                                          _ (println :sdp cid state)
-                                                          [_ local-port] (<! (path/attach-local-udp4 config cid {:host "127.0.0.1"} path/forward-udp))]
-                                                          ;[_ local-port] (<! (path/attach-local-udp4 config cid {:host local-ip} path/forward-udp))]
-                                                      (println :sdp cid 2 state)
+                                                (js/setImmediate #(go (>! (:dest-ctrl circ) {:host distant-ip :port distant-port :proto :udp :type :ip4})))
+                                                (go (let [state          (<! state)
+                                                          [_ local-port] (<! (path/attach-local-udp4 config cid {:host local-ip} path/forward-udp))]
                                                       (swap! calls assoc-in [call-id media] {:circuit cid})
-                                                      (println :sdp cid distant-port "->" local-port)
+                                                      (println "udp ready on" local-port)
                                                       [distant-port local-port]))))
                              replace-sdp    #(go (let [sdp       (<! %1)
                                                        [old new] (<! %2)]
-                                                   (println :sdp 4)
+                                                   (println "replacing" old "by" new)
                                                    (change-port sdp old new)))
                              nsdp           (reduce replace-sdp sdp-ch (map assoc-circ circs ports))]
                          (log/info "RTP-Proxy: Adding call ID [offer]" call-id)
@@ -77,7 +71,8 @@
                          (println :RTP cmd (if (or (= ip external-ip) (= ip local-ip)) :exiting :entering))
                          (if (or (= ip external-ip) (= ip local-ip))
                            (sdp-exiting sdp ip ports)
-                           (sdp-entering sdp ip ports))))]
+                           (when-not (@calls call-id)
+                             (sdp-entering sdp ip ports)))))]
     (condp = cmd
       "ping"   (-> {:result "pong"} mk-reply send)
       "offer"  (process-sdp)
