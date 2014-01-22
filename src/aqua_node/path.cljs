@@ -53,12 +53,10 @@
         (let [rt-dest        (<! dest)
               _ (println :rt id 1.5)
               [ap-dest mix2] (<! (dir/query config (:host rt-dest)))]
-          ;(println :rt id 2 mix2)
-          ;(println :rt id 2 ap-dest)
+          (circ/update-data id [:path-dest] rt-dest)
           (if-not mix2
             (>! (-> id circ/get-data :state-ch) :error)
-            (do (circ/update-data id [:path-dest] ap-dest) ;; FIXME is that soon enough?
-                (circ/relay-extend config id (merge mix2 {:dest mix2}))
+            (do (circ/relay-extend config id (merge mix2 {:dest mix2}))
                 (<! ctrl)
                 (println :rt 3 id (count (-> id circ/get-data :path)))
                 (circ/relay-extend config id (merge ap-dest {:dest ap-dest}))
@@ -67,8 +65,9 @@
                 (let [circ (circ/get-data id)]
                   (circ/relay-begin config id rt-dest)
                   (circ/update-data id [:state] :relay-ack-pending)
-                  (circ/update-data id [:path-dest :port] (:port (<! ctrl)))
+                  ;(circ/update-data id [:path-dest :port] (:port (<! ctrl)))
                   (circ/update-data id [:state] :relay)
+                  (<! ctrl) ;; relay begin.
                   (>! (-> circ :state-ch) :done)
                   ;(>! (-> circ :backward-hop c/get-data :ctrl) :relay)
                   (println :rt id 5)
@@ -92,7 +91,7 @@
   "For packets needing socks5 header"
   (let [circ-id    (:circuit (c/get-data s))
         circ-data  (circ/get-data circ-id)
-        dest       (:dist-dest circ-data)
+        dest       (:path-dest circ-data)
         config     (merge config {:data s}) ;; FIXME we are going to have to get rid of this.
         data       (b/new (+ 10 (.-length b)))
         [w1 w2 w4] (b/mk-writers data)]

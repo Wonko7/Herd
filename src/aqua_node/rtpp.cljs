@@ -52,7 +52,7 @@
                                               (let [circ           (circ/get-data cid)
                                                     state          (chan)]
                                                 (circ/update-data cid [:state-ch] state)
-                                                (js/setImmediate #(go (>! (:dest-ctrl circ) {:host distant-ip :port distant-port :proto :udp :type :ip4})))
+                                                (go (>! (:dest-ctrl circ) {:host distant-ip :port distant-port :proto :udp :type :ip4}))
                                                 (go (let [state          (<! state)
                                                           [_ local-port] (<! (path/attach-local-udp4 config cid {:host local-ip} path/forward-udp))]
                                                       (swap! calls assoc-in [call-id media] {:circuit cid})
