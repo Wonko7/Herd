@@ -24,6 +24,7 @@
   @mix-dir)
 
 (defn rm [id]
+  (log/info "removing client" id)
   (swap! app-dir dissoc id))
 
 
@@ -94,7 +95,7 @@
       (do (swap! mix-dir merge {[ip (:port info)] info})
           (mk-net-buf!))
       (let [entry   (@app-dir ip)
-            to-id   (js/setTimeout #(rm ip) 600000)]
+            to-id   (js/setTimeout #(rm ip) 20000)]
         (when entry
           (js/clearTimeout (:timeout entry)))
         (swap! app-dir merge {ip (merge {:timeout to-id} info)}))))

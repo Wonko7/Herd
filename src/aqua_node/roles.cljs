@@ -37,7 +37,7 @@
     (go (<! done)
         (dir/send-client-info config c geo mix done)
         (<! done)
-        (log/info "Dir: successfully sent registered")
+        ;(log/info "Dir: successfully sent register info")
         (c/rm c)
         (.end c))))
 
@@ -54,6 +54,15 @@
         (.end c)
         (dir/get-net-info))))
 
+(defn hardcoded-rtp-path [config {dest :dest port :listen-port}]
+  (let [cid            (path/get-path config)
+        circ           (circ/get-data cid)
+        state          (chan)]
+    (circ/update-data cid [:state-ch] state)
+    (go (>! (:dest-ctrl circ) (merge dest {:proto :udp :type :ip4})))
+    (go (let [state          (<! state)
+              [_ local-port] (<! (path/attach-local-udp4 config cid {:host (:local-ip config)} path/app-proxy-forward-udp port))]
+          (log/info "Hardcoded RTP: listening on:" local-port "forwarding to:" (:host dest) (:port dest) "using circ:" cid)))))
 
 (defn is? [role roles]
   (some #(= role %) roles))
@@ -80,12 +89,11 @@
     (cond (is? :dir)       (conn/new :dir :server dir config {:connect aqua-dir-recv})
           (is? :app-proxy) (go (let [geo (<! geo2)
                                      mix (<! mix)]
+                                 (log/info "Dir: sending register info")
                                  (register-dir config geo mix ds)
-                                 (js/setInterval #(register-dir config geo mix ds) 300000))
-                               (when false
-                                 (let [c (path/get-path config)
-                                     circ (circ/get-data c)]
-                                 (circ/update-data c [:state-ch] (chan)))))
+                                 (js/setInterval #(register-dir config geo mix ds) 10000)
+                                 (when-let [hc (:hc-rtp config)]
+                                   (js/setTimeout  #(hardcoded-rtp-path config hc) 5000))))
           :else            (go (register-dir config (<! geo2) nil ds)
                                (doseq [[[ip port] mix] (seq (<! net-info))
                                        :when (or (not= (:host aq) ip)
