@@ -9,9 +9,9 @@
 (def connections (atom {}))
 
 (defn add [conn & [data]]
+  (when (and (= :aqua (:type data)) (:host data))
+    (destroy (find-by-dest data)))
   (swap! connections merge {conn data})
-  (when (and (:dest data) (= :aqua (:type data)))
-    (destroy (find-by-dest (:dest data))))
   conn)
 
 (defn set-data [conn data]
