@@ -207,8 +207,13 @@
         local  (b/cat (b/new local) (b/new (cljs/clj->js [0 160 0 0 0])))]
     (relay config socket circ-id :connected :b-enc local)))
 
-(defn relay-data [config circ-id data]
-  (relay config (:forward-hop (@circuits circ-id)) circ-id :data :f-enc data))
+(defn relay-data [config circ-id msg]
+  (let [data (b/new 360)] ;; FIXME hardcoded padding
+    (if (> (.-length msg) 358)
+      (log/error "packet too big, dropped:" circ-id (.-length msg))
+      (do (.writeUInt16BE data (.-length msg) 0)
+          (.copy msg data 2)
+          (relay config (:forward-hop (@circuits circ-id)) circ-id :data :f-enc data)))))
 
 ;; see tor spec 5.1.2.
 (defn relay-extend [config circ-id {nh-auth :auth nh-dest :dest}]
@@ -320,8 +325,10 @@
                         (assert (some (partial = socket) hops) "relay data came from neither forward or backward hop.")
                         (assert dest "no destination, illegal state")
                         (condp = (:type dest-data)
-                          :udp-exit  (if (:send-udp circ)
-                                       ((:send-udp circ) r-payload)
+                          :udp-exit  (if (:send-udp circ) ;; FIXME this is tmp, for rtp only, single path would crash things
+                                       (let [real-sz (.readUInt16BE r-payload 0)
+                                             msg     (.slice r-payload 2 (+ real-sz 2))]
+                                         ((:send-udp circ) msg))
                                        (let [[r1 r2]    (b/mk-readers r-payload)
                                              type       (r1 3)
                                              [h p data] (condp = type
