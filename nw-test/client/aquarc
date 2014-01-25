@@ -7,7 +7,7 @@
  :external-ip "192.168.0.10"
  :local-ip "192.168.0.10"
  :remote-dir {:host "54.194.191.213"
-	      :port 6669}
+	      :port 6666}
  :app-proxy {:host "127.0.0.1"
 	     :port 6666}
  :rtp-proxy {:host "127.0.0.1"

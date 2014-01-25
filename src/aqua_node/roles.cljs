@@ -93,7 +93,7 @@
                                  (register-dir config geo mix ds)
                                  (js/setInterval #(register-dir config geo mix ds) 10000)
                                  (when-let [hc (:hc-rtp config)]
-                                   (js/setTimeout  #(hardcoded-rtp-path config hc) 5000))))
+                                   (hardcoded-rtp-path config hc))))
           :else            (go (register-dir config (<! geo2) nil ds)
                                (doseq [[[ip port] mix] (seq (<! net-info))
                                        :when (or (not= (:host aq) ip)
