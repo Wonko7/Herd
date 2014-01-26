@@ -61,7 +61,7 @@
     (circ/update-data cid [:state-ch] state)
     (go (>! (:dest-ctrl circ) (merge dest {:proto :udp :type :ip4})))
     (go (let [state          (<! state)
-              [_ local-port] (<! (path/attach-local-udp4 config cid {:host (:local-ip config)} path/app-proxy-forward-udp port))]
+              [_ local-port] (<! (path/attach-local-udp4 config cid {:host "127.0.0.1"} path/app-proxy-forward-udp port))]
           (log/info "Hardcoded RTP: listening on:" local-port "forwarding to:" (:host dest) (:port dest) "using circ:" cid)))))
 
 (defn is? [role roles]
