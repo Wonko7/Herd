@@ -126,14 +126,10 @@
     (w32 circ-id 4)
     (w8 (from-cmd cmd) 8)
     (.copy payload buf 9)
-    (if (-> config :mk-packet)
-      buf
-      ;(.write socket buf))))
-      (js/setImmediate (do (when (and (:data config) (zero? (dec-block)))
-                             (.emit (:data config) "readable"))
-                           #(when socket
-                              (.write socket buf))))))) ;-> good perf, more drops --> socket can be killed before we send
-;(.nextTick js/process #(.write socket buf)))))
+    (js/setImmediate (do (when (and (:data config) (zero? (dec-block)))
+                           (.emit (:data config) "readable"))
+                         #(when socket
+                            (.write socket buf)))))) ;-> good perf, more drops --> socket can be killed before we send
 
 
 ;; make requests: circuit level ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
@@ -208,9 +204,20 @@
     (relay config socket circ-id :connected :b-enc local)))
 
 (defn relay-data [config circ-id msg]
+  (loop [m msg]
+    (let [data (b/new 360)]
+      (if (> (.-length m) 358)
+        (do (.writeUInt16BE data 358 0)
+            (.copy m data 2 0 358)
+            (relay config (:forward-hop (@circuits circ-id)) circ-id :data :f-enc data)
+            (recur (.slice m 358)))
+        (do (.writeUInt16BE data (.-length m) 0)
+            (.copy m data 2)
+            (relay config (:forward-hop (@circuits circ-id)) circ-id :data :f-enc data)))))
+
   (let [data (b/new 360)] ;; FIXME hardcoded padding
     (if (> (.-length msg) 358)
-      (log/error "packet too big, dropped:" circ-id (.-length msg))
+
       (do (.writeUInt16BE data (.-length msg) 0)
           (.copy msg data 2)
           (relay config (:forward-hop (@circuits circ-id)) circ-id :data :f-enc data)))))
