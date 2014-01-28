@@ -8,19 +8,24 @@
   (:require-macros [cljs.core.async.macros :as m :refer [go]]))
 
 
+;; FIXME t now always = 1.
+
 (defn queue [c f]
   (let [{p :period t :tokens} (-> c c/get-data :rate)]
-    (when-not (zero? t)
-      (c/update-data c [:rate :tokens] (dec t))
-      (js/setTimeout f p))))
+    (if-not (zero? t)
+      (do (c/update-data c [:rate :tokens] (dec t))
+          (c/update-data c [:rate :f] f))
+      (log/error "Rate limiter; dropped one.")))) ;; FIXME -> add to list if not= t 1.
 
 (defn reset [config c]
-  (let [{t :tokens tot :total} (:rate (c/get-data c))]
-    (doseq [i (range t)]
-      (js/setImmediate #(circ/padding config c))) ;; Immediate is inaccurate. timeout on period * ratio t?
+  (let [{t :tokens tot :total send :f} (:rate (c/get-data c))]
+    (if (zero? t)
+      (send)
+      (js/setImmediate #(circ/padding config c)))
     (c/update-data c [:rate :tokens] tot)))
 
 (defn init [config {t :tokens p :period :as rate} c]
+  (assert (= t 1) "Rate limiter: tokens should be set to 1")
   (log/info "Rate limiter:" t "packets per" p "millisecond period.")
   (c/update-data c [:rate] (merge rate {:tokens t
                                         :total  t}))
