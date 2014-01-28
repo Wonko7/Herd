@@ -79,7 +79,7 @@
         circ-data (circ/get-data circ-id)
         config    (merge config {:data s})]
     (if (= (-> circ-data :state) :relay)
-      (rate/queue s #(circ/relay-data config circ-id b))
+      (rate/queue (:forward-hop circ-data) #(circ/relay-data config circ-id b))
       (log/info "UDP: not ready for data, dropping on circuit" circ-id))))
 
 (defn forward-udp [config s b]
