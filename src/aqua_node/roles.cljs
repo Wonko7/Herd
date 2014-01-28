@@ -25,6 +25,7 @@
 (defn aqua-server-recv [config s]
   (log/debug "new aqua dtls conn from:" (-> s .-socket .-_destIP) (-> s .-socket .-_destPort)) ;; FIXME: investigate nil .-remote[Addr|Port]
   (c/add s {:cs :client :type :aqua :host (-> s .-socket .-_destIP) :port (-> s .-socket .-_destPort)})
+  (rate/init config s)
   (c/add-listeners s {:data #(circ/process config s %)}))
 
 (defn aqua-dir-recv [config s]
@@ -100,4 +101,5 @@
                                        :when (or (not= (:host aq) ip)
                                                  (not= (:port aq) port))
                                        :let [soc (conn/new :aqua :client mix config {:connect identity})]]
-                                 (c/add-listeners soc {:data #(circ/process config soc %)}))))))
+                                 (c/add-listeners soc {:data #(circ/process config soc %)})
+                                 (rate/init config soc))))))

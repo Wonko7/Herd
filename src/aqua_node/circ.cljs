@@ -422,7 +422,7 @@
     (if (and (is-not? :origin circ) (= direction :b-enc)) ;; then message is going back to origin -> add enc & forwad
       (if (and mux? (-> circ :mux :fhop))
         (forward config circ-id (-> circ :mux :fhop) payload)
-        (enc-send config (:backward-hop circ) circ-id :relay :b-enc msg iv))
+        ((-> circ :rate :queue) #(enc-send config (:backward-hop circ) circ-id :relay :b-enc msg iv)))
 
       (let [msg         (reduce #(%2 iv %1) msg (get-path-enc circ direction)) ;; message going towards exit -> rm our enc layer. OR message @ origin, peel of all layers.
             [r1 r2 r4]  (b/mk-readers msg)
@@ -436,7 +436,7 @@
 
         (cond (:recognised relay-data)        (process-relay config socket circ-id relay-data)
               (and mux? (-> circ :mux :bhop)) (forward config circ-id (-> circ :mux :bhop) msg)
-              :else                           (cell-send config (:forward-hop circ) circ-id :relay (b/copycat2 iv msg)))))))
+              :else                           ((-> circ :rate :queue) #(cell-send config (:forward-hop circ) circ-id :relay (b/copycat2 iv msg))))))))
 
 
 ;; cell management (no state logic here) ;;;;;;;;;;;;;;;;;;;;;;;;;

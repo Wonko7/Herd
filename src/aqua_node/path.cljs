@@ -145,7 +145,7 @@
         soc (conn/new :aqua :client mix config {:connect identity})]
     (log/info "Init Circuit pools: we are in" (:country loc) "/" (geo/reg-to-continent reg))
     (log/debug "Chosen mix:" (:host mix) (:port mix))
-    (rate/init config (:rate config) soc)
+    (rate/init config soc)
     (c/add-listeners soc {:data #(circ/process config soc %)})
     (reset! chosen-mix mix)
     (init-pool config soc mix N)
