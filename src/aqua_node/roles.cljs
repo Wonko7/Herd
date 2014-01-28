@@ -9,6 +9,7 @@
             [aqua-node.dir :as dir]
             [aqua-node.circ :as circ]
             [aqua-node.path :as path]
+            [aqua-node.rate :as rate]
             [aqua-node.rtpp :as rtp]
             [aqua-node.geo :as geo])
   (:require-macros [cljs.core.async.macros :as m :refer [go-loop go]]))

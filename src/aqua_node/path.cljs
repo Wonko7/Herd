@@ -8,6 +8,7 @@
             [aqua-node.conns :as c]
             [aqua-node.conn-mgr :as conn]
             [aqua-node.circ :as circ]
+            [aqua-node.rate :as rate]
             [aqua-node.geo :as geo]
             [aqua-node.dir :as dir])
   (:require-macros [cljs.core.async.macros :as m :refer [go-loop go]]))
@@ -78,7 +79,7 @@
         circ-data (circ/get-data circ-id)
         config    (merge config {:data s})]
     (if (= (-> circ-data :state) :relay)
-      (circ/relay-data config circ-id b)
+      (rate/queue s #(circ/relay-data config circ-id b))
       (log/info "UDP: not ready for data, dropping on circuit" circ-id))))
 
 (defn forward-udp [config s b]
@@ -144,6 +145,7 @@
         soc (conn/new :aqua :client mix config {:connect identity})]
     (log/info "Init Circuit pools: we are in" (:country loc) "/" (geo/reg-to-continent reg))
     (log/debug "Chosen mix:" (:host mix) (:port mix))
+    (rate/init config (:rate config) soc)
     (c/add-listeners soc {:data #(circ/process config soc %)})
     (reset! chosen-mix mix)
     (init-pool config soc mix N)

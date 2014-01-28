@@ -213,14 +213,10 @@
             (recur (.slice m 358)))
         (do (.writeUInt16BE data (.-length m) 0)
             (.copy m data 2)
-            (relay config (:forward-hop (@circuits circ-id)) circ-id :data :f-enc data)))))
+            (relay config (:forward-hop (@circuits circ-id)) circ-id :data :f-enc data))))))
 
-  (let [data (b/new 360)] ;; FIXME hardcoded padding
-    (if (> (.-length msg) 358)
-
-      (do (.writeUInt16BE data (.-length msg) 0)
-          (.copy msg data 2)
-          (relay config (:forward-hop (@circuits circ-id)) circ-id :data :f-enc data)))))
+(defn padding [config socket]
+  (cell-send config socket 0 :padding (b/new 369))) ;; FIXME no enc on circ 0.
 
 ;; see tor spec 5.1.2.
 (defn relay-extend [config circ-id {nh-auth :auth nh-dest :dest}]
@@ -394,6 +390,7 @@
                         (cell-send config sock circ-id :create2 (:create dest))))
         p-extended  #(recv-created2 config socket circ-id r-payload)]
     (condp = (:relay-cmd relay-data)
+      0  :drop-padding
       1  (p-begin)
       2  (p-data)
       3  (log/error :relay-end "is an unsupported relay command")
