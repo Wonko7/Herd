@@ -12,11 +12,13 @@
 
 (defn queue [c f]
   (let [{p :period t :tokens fs :fs} (-> c c/get-data :rate)]
-    (when-not (zero? t)
-      (do (c/update-data c [:rate :tokens] (dec t)))) ;; -> not counting these anymore.
-    (if (< (count fs) 10)
-      (c/update-data c [:rate :fs] (concat fs [f]))
-      (log/error "Rate limiter; dropped one.")))) ;; FIXME -> add to list if not= t 1.
+    (if (zero? p)
+      (f) ;; immediate send, no chaffing.
+      (do (when-not (zero? t)
+            (do (c/update-data c [:rate :tokens] (dec t)))) ;; -> not counting these anymore.
+          (if (< (count fs) 10)
+            (c/update-data c [:rate :fs] (concat fs [f]))
+            (log/error "Rate limiter; dropped one.")))))) ;; FIXME -> add to list if not= t 1.
 
 (defn reset [config c]
   (let [{t :tokens tot :total [f & fs] :fs} (:rate (c/get-data c))]
