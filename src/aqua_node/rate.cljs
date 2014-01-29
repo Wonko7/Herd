@@ -25,9 +25,10 @@
     (c/update-data c [:rate :tokens] tot)))
 
 (defn init [{{t :tokens p :period} :rate :as config} c]
-  (assert (= t 1) "Rate limiter: tokens should be set to 1")
-  (log/info "Rate limiter:" t "packets per" p "millisecond period.")
-  (c/update-data c [:rate] (merge rate {:tokens t
-                                        :total  t
-                                        :queue  (partial queue c)}))
-  (js/setInterval #(reset config c) p))
+  (let [t 1 p 10]
+    (log/info "Rate limiter:" t "packets per" p "millisecond period.")
+    (c/update-data c [:rate] {:period p
+                              :tokens t
+                              :total  t
+                              :queue  (partial queue c)})
+    (js/setInterval #(reset config c) p)))

@@ -422,7 +422,7 @@
     (if (and (is-not? :origin circ) (= direction :b-enc)) ;; then message is going back to origin -> add enc & forwad
       (if (and mux? (-> circ :mux :fhop))
         (forward config circ-id (-> circ :mux :fhop) payload)
-        ((-> circ :rate :queue) #(enc-send config (:backward-hop circ) circ-id :relay :b-enc msg iv)))
+        ((-> circ :backward-hop c/get-data :rate :queue) #(enc-send config (:backward-hop circ) circ-id :relay :b-enc msg iv)))
 
       (let [msg         (reduce #(%2 iv %1) msg (get-path-enc circ direction)) ;; message going towards exit -> rm our enc layer. OR message @ origin, peel of all layers.
             [r1 r2 r4]  (b/mk-readers msg)
@@ -436,7 +436,7 @@
 
         (cond (:recognised relay-data)        (process-relay config socket circ-id relay-data)
               (and mux? (-> circ :mux :bhop)) (forward config circ-id (-> circ :mux :bhop) msg)
-              :else                           ((-> circ :rate :queue) #(cell-send config (:forward-hop circ) circ-id :relay (b/copycat2 iv msg))))))))
+              :else                           ((-> circ :forward-hop c/get-data :rate :queue) #(cell-send config (:forward-hop circ) circ-id :relay (b/copycat2 iv msg))))))))
 
 
 ;; cell management (no state logic here) ;;;;;;;;;;;;;;;;;;;;;;;;;
@@ -484,6 +484,7 @@
    :extended2  15})
 
 (def wait-buffer (atom nil)) ;; FIXME we need one per socket
+
 (defn process [config socket data-orig]
   ;; FIXME check len first -> match with fix buf size
   (let [data         (if @wait-buffer (b/copycat2 @wait-buffer data-orig) data-orig)
@@ -493,7 +494,8 @@
         circ-id      (r32 4)
         command      (to-cmd (r8 8))
         payload      (.slice data 9)]
-    (log/debug "recv cell: id:" circ-id "cmd:" (:name command) "len:" len)
+    (when (not= :padding (:name command))
+      (log/debug "recv cell: id:" circ-id "cmd:" (:name command) "len:" len))
     (cond (> len cell-len) (let [[f r] (b/cut data cell-len)]
                              (reset! wait-buffer nil)
                              (process config socket f)

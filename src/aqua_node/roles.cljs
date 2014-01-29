@@ -25,8 +25,8 @@
 (defn aqua-server-recv [config s]
   (log/debug "new aqua dtls conn from:" (-> s .-socket .-_destIP) (-> s .-socket .-_destPort)) ;; FIXME: investigate nil .-remote[Addr|Port]
   (c/add s {:cs :client :type :aqua :host (-> s .-socket .-_destIP) :port (-> s .-socket .-_destPort)})
-  (rate/init config s)
-  (c/add-listeners s {:data #(circ/process config s %)}))
+  (c/add-listeners s {:data #(circ/process config s %)})
+  (js/setTimeout #(rate/init config s) 10)) ;; FIXME *sigh*
 
 (defn aqua-dir-recv [config s]
   (log/debug "new dir tls conn from:" (-> s .-remoteAddress) (-> s .-remotePort))
@@ -100,6 +100,8 @@
                                (doseq [[[ip port] mix] (seq (<! net-info))
                                        :when (or (not= (:host aq) ip)
                                                  (not= (:port aq) port))
-                                       :let [soc (conn/new :aqua :client mix config {:connect identity})]]
+                                       :let [con (chan)
+                                             soc (conn/new :aqua :client mix config {:connect #(go (>! con :done))})]]
                                  (c/add-listeners soc {:data #(circ/process config soc %)})
-                                 (rate/init config soc))))))
+                                 (go (<! con)
+                                     (rate/init config soc)))))))
