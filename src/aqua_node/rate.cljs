@@ -11,24 +11,27 @@
 ;; FIXME t now always = 1.
 
 (defn queue [c f]
-  (let [{p :period t :tokens} (-> c c/get-data :rate)]
-    (if-not (zero? t)
-      (do (c/update-data c [:rate :tokens] (dec t))
-          (c/update-data c [:rate :f] f))
+  (let [{p :period t :tokens fs :fs} (-> c c/get-data :rate)]
+    (when-not (zero? t)
+      (do (c/update-data c [:rate :tokens] (dec t)))) ;; -> not counting these anymore.
+    (if (< (count fs) 10)
+      (c/update-data c [:rate :fs] (concat fs [f]))
       (log/error "Rate limiter; dropped one.")))) ;; FIXME -> add to list if not= t 1.
 
 (defn reset [config c]
-  (let [{t :tokens tot :total send :f} (:rate (c/get-data c))]
-    (if (zero? t)
-      (send)
+  (let [{t :tokens tot :total [f & fs] :fs} (:rate (c/get-data c))]
+    (if f
+      (do (f)
+          (c/update-data c [:rate :fs] fs))
       (js/setImmediate #(circ/padding config c)))
-    (c/update-data c [:rate :tokens] tot)))
+    (c/update-data c [:rate :tokens] tot))) ;; -> also useless.
 
 (defn init [{{t :tokens p :period} :rate :as config} c]
-  (let [t 1 p 10]
+  (let [t 1]
     (log/info "Rate limiter:" t "packets per" p "millisecond period.")
     (c/update-data c [:rate] {:period p
                               :tokens t
                               :total  t
                               :queue  (partial queue c)})
-    (js/setInterval #(reset config c) p)))
+    (when-not (zero? p)
+      (js/setInterval #(reset config c) p))))

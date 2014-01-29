@@ -7,7 +7,8 @@
 
 
 (defn -main [& args]
-  (let [config (config/read-config (when (= "--debug" (first args)) {:debug true}))]
+  (let [config (config/read-config (merge {:rate {:period (-> args first js/parseInt)}}
+                                          (when (= "--debug" (second args)) {:debug true})))]
     (roles/bootstrap config)))
 
 (set! *main-cli-fn* #(try (apply -main %&)
