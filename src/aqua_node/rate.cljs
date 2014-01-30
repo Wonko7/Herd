@@ -25,7 +25,8 @@
     (if f
       (do (f)
           (c/update-data c [:rate :fs] fs))
-      (js/setImmediate #(circ/padding config c)))
+      (when (.-writable c)
+        (js/setImmediate #(circ/padding config c))))
     (c/update-data c [:rate :tokens] tot))) ;; -> also useless.
 
 (defn init [{{t :tokens p :period} :rate :as config} c]

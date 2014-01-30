@@ -26,7 +26,7 @@
   (log/debug "new aqua dtls conn from:" (-> s .-socket .-_destIP) (-> s .-socket .-_destPort)) ;; FIXME: investigate nil .-remote[Addr|Port]
   (c/add s {:cs :client :type :aqua :host (-> s .-socket .-_destIP) :port (-> s .-socket .-_destPort)})
   (c/add-listeners s {:data #(circ/process config s %)})
-  (js/setTimeout #(rate/init config s) 10)) ;; FIXME *sigh*
+  (rate/init config s)) ;; FIXME *sigh*
 
 (defn aqua-dir-recv [config s]
   (log/debug "new dir tls conn from:" (-> s .-remoteAddress) (-> s .-remotePort))
