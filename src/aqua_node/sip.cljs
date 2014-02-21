@@ -2,6 +2,7 @@
   (:require [cljs.core :as cljs]
             [cljs.nodejs :as node]
             [cljs.core.async :refer [chan <! >!]]
+            [clojure.walk :as walk]
             [aqua-node.log :as log]
             [aqua-node.buf :as b]
             [aqua-node.parse :as conv]
@@ -28,9 +29,14 @@
   (let [sip  (node/require "sip")
         echo (fn [rq]
                (println (cljs/js->clj rq))
-               (println (->> rq .-headers .-to .-uri (.parseUri sip) cljs/js->clj))
-               (println (->> rq .-headers .-to .-uri (.parseUri sip) .-user cljs/js->clj))
                (println (cljs/js->clj (.makeResponse sip rq 200 "OK")))
+               (let [nrq  (-> rq cljs/js->clj walk/keywordize-keys)
+                     name (-> nrq :headers :contact first :name)
+                     uri  (str name "@6.6.6.6")
+                     nrq  (assoc-in nrq [:headers :contact] [(-> rq :headers :contact first)]) ;; FIXME for now force one contact only.
+                     nrq  (reduce #(assoc-in %1 %2 uri) nrq [[:uri] [:headers :contact 0 :uri] [:headers :from :uri]]) ;; just testing, this might change. we'll see.
+                     ]
+                 (println :nrq nrq))
                (.send sip (.makeResponse sip rq 200 "OK"))
                )]
     (.start sip (cljs/clj->js {:protocol "UDP"}) echo)
@@ -54,7 +60,7 @@
 ;;                 host 127.0.0.1                                                                      ; remove this. remove via entirely?
 ;;                 port 18750
 ;;                 params {branch z9hG4bK-313432-de5cc56153489d6de96fa6deeabaab8f
-;;                         received 127.0.0.1}}]
+;;                         received 127.0.0.1}}]                                                       ; and this
 ;;           expires 600
 ;;           max-forwards 70
 ;;           content-length 0
