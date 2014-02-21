@@ -11,6 +11,7 @@
             [aqua-node.path :as path]
             [aqua-node.rate :as rate]
             [aqua-node.rtpp :as rtp]
+            [aqua-node.sip :as sip]
             [aqua-node.geo :as geo])
   (:require-macros [cljs.core.async.macros :as m :refer [go-loop go]]))
 
@@ -80,11 +81,12 @@
     (when-not (is? :dir)
       (go (>! net-info (<! (get-net-info config ds)))))
     (when (is? :app-proxy)
-      (go (>! mix (path/init-pools config (<! net-info) (<! geo1) 10)))
+      ;(go (>! mix (path/init-pools config (<! net-info) (<! geo1) 10)))
       (conn/new :socks :server ap config {:data     path/app-proxy-forward
                                           :udp-data path/app-proxy-forward-udp
                                           :init     app-proxy-init
                                           :error    circ/destroy-from-socket})
+      (sip/echo-server config nil) ;; FIXME testing.
       (when rtp
         (rtp/create-server rtp config)))
     (conn/new :aqua :server aq config {:connect aqua-server-recv})
