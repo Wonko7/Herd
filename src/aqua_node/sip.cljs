@@ -26,10 +26,15 @@
 
 (defn echo-server [config things]
   (let [sip  (node/require "sip")
-        echo (fn [thing]
-               (println (cljs/js->clj thing))
+        echo (fn [rq]
+               (println (cljs/js->clj rq))
+               (println (->> rq .-headers .-to .-uri (.parseUri sip) cljs/js->clj))
+               (println (->> rq .-headers .-to .-uri (.parseUri sip) .-user cljs/js->clj))
+               (println (cljs/js->clj (.makeResponse sip rq 200 "OK")))
+               (.send sip (.makeResponse sip rq 200 "OK"))
                )]
-    (println (.start sip (cljs/clj->js {:protocol "UDP"}) echo))))
+    (.start sip (cljs/clj->js {:protocol "UDP"}) echo)
+    (log/info "SIP proxy listening on default UDP SIP port")))
 
 
 ;; replace all uris, tags, ports by hc defaults.
