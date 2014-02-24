@@ -13,32 +13,45 @@
             [aqua-node.dir :as dir])
   (:require-macros [cljs.core.async.macros :as m :refer [go-loop go]]))
 
-;;     var sip = require('sip');
-;;   
-;;     sip.start({}, function(request) {
-;;       var response = sip.makeResponse(request, 302, 'Moved Temporarily');
-;; 
-;;       var uri = sip.parseUri(request.uri);
-;;       uri.host = 'backup.somewhere.net'; 
-;;       response.headers.contact = [{uri: uri}];
-;;     
-;;       sip.send(response);
-;;     });
 
-(defn echo-server [config things]
-  (let [sip  (node/require "sip")
-        echo (fn [rq]
-               (let [nrq  (-> rq cljs/js->clj walk/keywordize-keys)
-                     name (-> nrq :headers :contact first :name)]
-                 (println :nrq nrq)
-                 (condp = (:method nrq)
-                   "REGISTER"  (.send sip (.makeResponse sip rq 200 "OK"))
-                   "SUBSCRIBE" (.send sip (.makeResponse sip rq 200 "OK"))
-                   "PUBLISH"   (.send sip (.makeResponse sip rq 200 "OK"))
-                   "OPTIONS"   (.send sip (.makeResponse sip rq 200 "OK"))
-                   nil)))]
-    (.start sip (cljs/clj->js {:protocol "UDP"}) echo)
+(defn create-server [config geo-db things]
+  (let [sip     (node/require "sip")
+        process (fn [rq]
+                  (let [nrq  (-> rq cljs/js->clj walk/keywordize-keys)
+                        name (-> nrq :headers :contact first :name)]
+                    (println :nrq nrq)
+                    (condp = (:method nrq)
+                      "REGISTER"  (do ;(send reg w/ rdv to sip dir)
+                                      ;(<! get ack)
+                                      (.send sip (.makeResponse sip rq 200 "OK")))
+                      "SUBSCRIBE" (do
+                                    (if (= "presence.winfo" (:event nrq))
+                                      (do (println (:event nrq))
+                                          ;; and register the gringo.
+                                          (.send sip (.makeResponse sip rq 200 "OK")))
+                                      (.send sip (.makeResponse sip rq 501 "Not Implemented"))))
+                      "PUBLISH"   (go (if (= "presence" (:event nrq))
+                                        (let [parse-xml (-> (node/require "xml2js") .-parseString)
+                                              xml       (chan)]
+                                          (parse-xml (:content nrq) #(go (>! xml %2)))
+                                          (println (-> (<! xml) cljs/js->clj walk/keywordize-keys))
+                                          (.send sip (.makeResponse sip rq 200 "OK")))
+                                        (.send sip (.makeResponse sip rq 501 "Not Implemented"))))
+                      "OPTIONS"   (.send sip (.makeResponse sip rq 200 "OK"))
+                      "INVITE"    (do (.send sip (.makeResponse sip rq 100 "TRYING"))
+                                      ;(<! send-invite), create rtp circ to dest, continue;
+                                      (.send sip (.makeResponse sip rq 180 "RINGING")))
+                      nil)))]
+    ;; create path to sip dir. 
+    ;; create rdv. now, or on register?
+    (.start sip (cljs/clj->js {:protocol "UDP"}) process)
     (log/info "SIP proxy listening on default UDP SIP port")))
+
+(def dir (atom {}))
+
+(defn process-dir [config info]
+  ;; given
+  )
 
 
 ;; replace all uris, tags, ports by hc defaults.

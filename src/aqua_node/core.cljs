@@ -11,6 +11,8 @@
                                           (when (= "--debug" (second args)) {:debug true})))]
     (roles/bootstrap config)))
 
-(set! *main-cli-fn* #(try (enable-console-print!)
-                          (apply -main %&)
-                          (catch js/Object e (log/c-error "No one expects the Spanish Inquisition." e))))
+(set! *main-cli-fn* #(do (enable-console-print!)
+                         (apply -main %&)))
+;(set! *main-cli-fn* #(try (enable-console-print!)
+;                          (apply -main %&)
+;                          (catch js/Object e (log/c-error "No one expects the Spanish Inquisition." e))))

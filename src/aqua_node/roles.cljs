@@ -17,7 +17,7 @@
 
 
 (defn app-proxy-init [config socket dest]
-  (let [circ-id (path/get-path config)] ;; FIXME -> rt for testing, but really this should be single path. only full rtp understands rt path.
+  (let [circ-id (path/get-path config :single)] ;; FIXME -> rt for testing, but really this should be single path. only full rtp understands rt path.
     (c/update-data socket [:circuit] circ-id)
     (circ/update-data circ-id [:ap-dest] dest)
     (circ/update-data circ-id [:backward-hop] socket)
@@ -57,8 +57,8 @@
         (.end c)
         (dir/get-net-info))))
 
-(defn hardcoded-rtp-path [config {dest :dest port :listen-port}]
-  (let [cid            (path/get-path config)
+(defn hardcoded-rtp-path [config {dest :dest port :listen-port}] ;; keep this for testing and benchmarks. should move this.
+  (let [cid            (path/get-path config :rt)
         circ           (circ/get-data cid)
         state          (chan)]
     (circ/update-data cid [:state-ch] state)
@@ -81,12 +81,12 @@
     (when-not (is? :dir)
       (go (>! net-info (<! (get-net-info config ds)))))
     (when (is? :app-proxy)
-      ;(go (>! mix (path/init-pools config (<! net-info) (<! geo1) 10)))
+      ;(go (>! mix (path/init-pools config (<! net-info) (<! geo1) 4)))
       (conn/new :socks :server ap config {:data     path/app-proxy-forward
                                           :udp-data path/app-proxy-forward-udp
                                           :init     app-proxy-init
                                           :error    circ/destroy-from-socket})
-      (sip/echo-server config nil) ;; FIXME testing.
+      (sip/create-server config geo-db nil) ;; FIXME testing.
       (when rtp
         (rtp/create-server rtp config)))
     (conn/new :aqua :server aq config {:connect aqua-server-recv})
