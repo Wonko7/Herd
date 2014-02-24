@@ -133,26 +133,27 @@
 (def pool (atom []))
 (def chosen-mix (atom nil))
 
-(defn init-pool [config soc mix N] ;; FIXME -> we can now keep the path.
-  (reset! chosen-mix mix)
-  (doseq [n (range N)]
-    ;(swap! pool conj (create-single config path))
-    (swap! pool conj (create-rt config soc mix))))
+(defn init-pool [config soc type mix N] ;; FIXME -> we can now keep the path.
+  (let [paths (repeatedly N (condp = type
+                              :rt     #(create-single config path)
+                              :single #(create-rt config soc mix)))]
+    (swap! pool update-in [type] #(-> (concat %1 paths) vec))))
 
-(defn init-pools [config geo-db loc N] ;; this will 
+(defn init-pools [config geo-db loc N]
   (let [reg (-> loc :reg)
-        mix (->> geo-db seq (map second) (filter #(= (:reg %) reg)) shuffle first)
+        mix (->> geo-db seq (map second) (filter #(= (:reg %) reg)) shuffle first) ;; choose random mix from our region
         soc (conn/new :aqua :client mix config {:connect identity})]
     (log/info "Init Circuit pools: we are in" (:country loc) "/" (geo/reg-to-continent reg))
     (log/debug "Chosen mix:" (:host mix) (:port mix))
+    (reset! chosen-mix mix)
     (rate/init config soc)
     (c/add-listeners soc {:data #(circ/process config soc %)})
-    (reset! chosen-mix mix)
-    (init-pool config soc mix N)
+    (init-pool config soc :single mix N)
+    (init-pool config soc :rt mix N)
     mix))
 
-(defn get-path [config]
-  (let [[p & ps] @pool]
-    (reset! pool (vec ps))
-    (init-pool config (c/find-by-dest @chosen-mix) @chosen-mix 1)
+(defn get-path [config type]
+  (let [[p & ps] (@pool type)]
+    (reset! pool (merge @pool {type (vec ps)}))
+    (init-pool config (c/find-by-dest @chosen-mix) type @chosen-mix 1)
     p))

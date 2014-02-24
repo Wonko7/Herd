@@ -28,17 +28,15 @@
 (defn echo-server [config things]
   (let [sip  (node/require "sip")
         echo (fn [rq]
-               (println (cljs/js->clj rq))
-               (println (cljs/js->clj (.makeResponse sip rq 200 "OK")))
                (let [nrq  (-> rq cljs/js->clj walk/keywordize-keys)
-                     name (-> nrq :headers :contact first :name)
-                     uri  (str name "@6.6.6.6")
-                     nrq  (assoc-in nrq [:headers :contact] [(-> rq :headers :contact first)]) ;; FIXME for now force one contact only.
-                     nrq  (reduce #(assoc-in %1 %2 uri) nrq [[:uri] [:headers :contact 0 :uri] [:headers :from :uri]]) ;; just testing, this might change. we'll see.
-                     ]
-                 (println :nrq nrq))
-               (.send sip (.makeResponse sip rq 200 "OK"))
-               )]
+                     name (-> nrq :headers :contact first :name)]
+                 (println :nrq nrq)
+                 (condp = (:method nrq)
+                   "REGISTER"  (.send sip (.makeResponse sip rq 200 "OK"))
+                   "SUBSCRIBE" (.send sip (.makeResponse sip rq 200 "OK"))
+                   "PUBLISH"   (.send sip (.makeResponse sip rq 200 "OK"))
+                   "OPTIONS"   (.send sip (.makeResponse sip rq 200 "OK"))
+                   nil)))]
     (.start sip (cljs/clj->js {:protocol "UDP"}) echo)
     (log/info "SIP proxy listening on default UDP SIP port")))
 
