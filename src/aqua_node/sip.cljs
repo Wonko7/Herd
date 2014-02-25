@@ -15,37 +15,38 @@
 
 
 (defn create-server [config geo-db things]
-  (let [sip     (node/require "sip")
-        process (fn [rq]
-                  (let [nrq  (-> rq cljs/js->clj walk/keywordize-keys)
-                        name (-> nrq :headers :contact first :name)]
-                    (println)
-                    (println :nrq nrq)
-                    (condp = (:method nrq)
-                      "REGISTER"  (do ;(send reg w/ rdv to sip dir)
-                                      ;(<! get ack)
-                                      (.send sip (.makeResponse sip rq 200 "OK")))
-                      "SUBSCRIBE" (condp = (-> nrq :headers :event)
-                                    "presence.winfo"  (do (println (:event nrq))
-                                                          ;; and register the gringo.
-                                                          (.send sip (.makeResponse sip rq 200 "OK")))
-                                    "message-summary" (do (println :200 :OK) (.send sip (.makeResponse sip rq 200 "OK")))
-                                    (.send sip (.makeResponse sip rq 501 "Not Implemented")))
-                      "PUBLISH"   (go (if (= "presence" (-> nrq :headers :event))
-                                        (let [parse-xml (-> (node/require "xml2js") .-parseString)
-                                              xml       (chan)]
-                                          (parse-xml (:content nrq) #(go (println %2) (>! xml %2)))
-                                          (println 1)
-                                          (println (-> (<! xml) cljs/js->clj walk/keywordize-keys))
-                                          (println 2)
+  (let [sip         (node/require "sip")
+        sip-circ    (path/get-path config :single)
+        process     (fn [rq]
+                      (let [nrq  (-> rq cljs/js->clj walk/keywordize-keys)
+                            name (-> nrq :headers :contact first :name)]
+                        (println)
+                        (println :nrq nrq)
+                        (condp = (:method nrq)
+                          "REGISTER"  (do ;(send reg w/ rdv to sip dir)
+                                          ;(<! get ack)
                                           (.send sip (.makeResponse sip rq 200 "OK")))
-                                        (do (log/error "SIP: Unsupported PUBLISH event:" (-> nrq :headers :event))
-                                            (.send sip (.makeResponse sip rq 501 "Not Implemented")))))
-                      "OPTIONS"   (.send sip (.makeResponse sip rq 200 "OK"))
-                      "INVITE"    (do (.send sip (.makeResponse sip rq 100 "TRYING"))
-                                      ;(<! send-invite), create rtp circ to dest, continue;
-                                      (.send sip (.makeResponse sip rq 180 "RINGING")))
-                      nil)))]
+                          "SUBSCRIBE" (condp = (-> nrq :headers :event)
+                                        "presence.winfo"  (do (println (:event nrq))
+                                                              ;; and register the gringo.
+                                                              (.send sip (.makeResponse sip rq 200 "OK")))
+                                        "message-summary" (do (println :200 :OK) (.send sip (.makeResponse sip rq 200 "OK")))
+                                        (.send sip (.makeResponse sip rq 501 "Not Implemented")))
+                          "PUBLISH"   (go (if (= "presence" (-> nrq :headers :event))
+                                            (let [parse-xml (-> (node/require "xml2js") .-parseString)
+                                                  xml       (chan)]
+                                              (parse-xml (:content nrq) #(go (println %2) (>! xml %2)))
+                                              (println 1)
+                                              (println (-> (<! xml) cljs/js->clj walk/keywordize-keys))
+                                              (println 2)
+                                              (.send sip (.makeResponse sip rq 200 "OK")))
+                                            (do (log/error "SIP: Unsupported PUBLISH event:" (-> nrq :headers :event))
+                                                (.send sip (.makeResponse sip rq 501 "Not Implemented")))))
+                          "OPTIONS"   (.send sip (.makeResponse sip rq 200 "OK"))
+                          "INVITE"    (do (.send sip (.makeResponse sip rq 100 "TRYING"))
+                                          ;(<! send-invite), create rtp circ to dest, continue;
+                                          (.send sip (.makeResponse sip rq 180 "RINGING")))
+                          nil)))]
     ;; create path to sip dir.
     ;; create rdv. now, or on register?
     (.start sip (cljs/clj->js {:protocol "UDP"}) process)
