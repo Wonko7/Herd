@@ -89,7 +89,11 @@
       (sip/create-server config geo-db nil) ;; FIXME testing.
       (when rtp
         (rtp/create-server rtp config)))
-    (conn/new :aqua :server aq config {:connect aqua-server-recv})
+    (when (is? :mix)
+      (if (is? :sip-dir)
+        (let [sip (sip/dir config nil)]
+          (conn/new :aqua :server aq (merge config {:sip-chan sip}) {:connect aqua-server-recv}))
+        (conn/new :aqua :server aq config {:connect aqua-server-recv})))
     (cond (is? :dir)       (conn/new :dir :server dir config {:connect aqua-dir-recv})
           (is? :app-proxy) (go (let [geo (<! geo2)
                                      mix (<! mix)]

@@ -56,10 +56,14 @@
 
 (def dir (atom {}))
 
-(defn process-dir [config info]
-  (comment
-    (when is-sip-register
-      (swap! dir update entry {key {:name aoeu :timeout (use expire info)}}))))
+(defn dir [config info]
+  (let [sip-chan (chan)]
+  (go-loop [sip (<! sip-chan)]
+       (println sip)
+       (comment
+         (when is-sip-register
+           (swap! dir update entry {key {:name aoeu :timeout (use expire info)}}))))
+    sip-chan))
 
 
 ;; replace all uris, tags, ports by hc defaults.

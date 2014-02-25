@@ -388,7 +388,10 @@
                         (update-data circ-id [:forward-hop] sock)
                         (update-data circ-id [:roles] [:mix]) ;; FIXME just add?
                         (cell-send config sock circ-id :create2 (:create dest))))
-        p-extended  #(recv-created2 config socket circ-id r-payload)]
+        p-extended  #(recv-created2 config socket circ-id r-payload)
+        p-sip       #(if-let [sip-ch (:sip-ch config)]
+                       (go (>! sip-ch {:circ circ :circ-id circ-id :sip-rq r-payload}))
+                       (log/error "SIP-DIR uninitialised, dropping request on circuit:" circ-id))]
     (condp = (:relay-cmd relay-data)
       0  :drop-padding
       1  (p-begin)
@@ -406,6 +409,8 @@
       13 (log/error :relay-begin_dir "is an unsupported relay command")
       14 (p-extend)
       15 (p-extended)
+      ;; aqua specific: sip things.
+      16 (p-sip)
       (log/error "unsupported relay command"))))
 
 ;; see tor spec 6.
