@@ -11,7 +11,7 @@
                         :compiler {:target :nodejs
                                    :hashbang "/usr/bin/env node\nrequire('source-map-support').install();"
                                    :output-to "target/aqua.js"
-                                   :source-map "target/aqua.js.map"
+                                   ;:source-map "target/aqua.js.map"
                                    :optimizations :simple
                                    :static-fns true
                                    :pretty-print true}}]})

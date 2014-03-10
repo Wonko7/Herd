@@ -47,7 +47,7 @@
 (defn get-net-info [config dir]
   (log/info "requesting net info:")
   (let [done (chan)
-        c    (conn/new :dir :client dir config {:connect #(go (>! done :connected))})]
+        c    (conn/new :dir :client dir config {:connect #(go (>! done :connected))})] ;; also, we'd need a one hop aqua circ here.
     (c/add-listeners c {:data #(dir/process config c % done)})
     (go (<! done)
         (dir/send-net-request config c done)
@@ -79,7 +79,7 @@
     (log/info "Bootstrapping as" roles)
     (go (>! geo (<! (geo/parse config))))
     (when-not (is? :dir)
-      (go (>! net-info (<! (get-net-info config ds)))))
+      (go (>! net-info (<! (get-net-info config ds)))))  ;; FIXME -> get-net-info will be called periodically.
     (when (is? :app-proxy)
       ;(go (>! mix (path/init-pools config (<! net-info) (<! geo1) 4)))
       (conn/new :socks :server ap config {:data     path/app-proxy-forward

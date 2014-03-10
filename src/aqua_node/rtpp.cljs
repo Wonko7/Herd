@@ -47,7 +47,7 @@
         sdp-entering (fn [sdp distant-ip ports]
                        (let [sdp-ch         (chan)
                              local-ip       (:local-ip config)
-                             circs          (repeatedly #(path/get-path config))
+                             circs          (repeatedly #(path/get-path config :rt))
                              assoc-circ     (fn [cid [media distant-port]]
                                               (assert cid "no circuits available. how quaint.")
                                               (let [circ           (circ/get-data cid)
