@@ -24,13 +24,14 @@
                    :h-len       32}]
     {:enc         {:iv-len 16 :key-len 32}
      :debug       false
-     :ntor-values ntor}))
+     :ntor-values ntor}
+    {:rate        {:period 10}}))
 
-(defn read-config [overwrite]
+(defn read-config [argv]
   (let [;; read config
         fs          (node/require "fs")
         read        #(reader/read-string %)
-        cfg         (read (.readFileSync fs "aquarc" "utf8"))
+        cfg         (read (.readFileSync fs (or (:config argv) "aquarc") "utf8"))
         ;; file manipulation
         cat         (fn [k auth]
                       (try {k (.readFileSync fs (auth k) "ascii")}
@@ -52,7 +53,10 @@
                         (merge {:sec (echo-to (-> cfg :auth :aqua-id :sec) s)}
                                {:pub (echo-to (-> cfg :auth :aqua-id :pub) p)}
                                {:id  (echo-to (-> cfg :auth :aqua-id :id)  (-> (node/require "crypto") (.createHash "sha256") (.update p) .digest (.slice 0 (-> static-conf :ntor-values :node-id-len))))})))] ;; FIXME test node len
-    (swap! config merge static-conf cfg {:auth {:openssl ossl :aqua-id aqua}} overwrite)))
+    (swap! config merge static-conf cfg {:auth {:openssl ossl :aqua-id aqua}} argv))) ;; FIXME will probably need to remove that, filter values we accept & do sanity checking. For now anything in argv overwrites config file
+                                                                                      ;; FIXME Argv supported options:
+                                                                                      ;;           --debug (also --debug false)
+                                                                                      ;;           --config <file path>. 
 
 (defn get-cfg []
   @config)

@@ -15,7 +15,8 @@
 
 
 (defn create-server [config geo-db things]
-  (let [sip         (node/require "sip")
+  (comment
+    (let [sip         (node/require "sip")
         sip-circ    (path/get-path config :single)
         process     (fn [rq]
                       (let [nrq  (-> rq cljs/js->clj walk/keywordize-keys)
@@ -50,7 +51,7 @@
     ;; create path to sip dir.
     ;; create rdv. now, or on register?
     (.start sip (cljs/clj->js {:protocol "UDP"}) process)
-    (log/info "SIP proxy listening on default UDP SIP port")))
+    (log/info "SIP proxy listening on default UDP SIP port"))))
 
 
 

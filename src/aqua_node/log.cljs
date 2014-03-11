@@ -18,15 +18,15 @@
 
 (defn c-error [err message & [return-value]]
   (error message)
+  (println err)
   (when (dbg?)
-    (println err)
     (println (.-stack err)))
   return-value)
 
 (defn c-info [error message & [return-value]]
   (info message)
+  (println error)
   (when (dbg?)
-    ;(println error)
     (println (.-stack error)))
   return-value)
 
