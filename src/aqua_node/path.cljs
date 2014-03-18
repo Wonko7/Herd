@@ -130,13 +130,13 @@
 
 ;; path pool ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
-(def pool (atom []))
+(def pool (atom {}))
 (def chosen-mix (atom nil))
 
 (defn init-pool [config soc type path-data N] ;; FIXME -> we can now keep the path.
   (let [paths (repeatedly N (condp = type
-                              :rt     #(create-single config (path-data))
-                              :single #(create-rt config soc path-data)))]
+                              :single #(create-single config (path-data))
+                              :rt     #(create-rt config soc path-data)))]
     (swap! pool update-in [type] #(-> (concat %1 paths) vec))))
 
 (defn init-pools [config geo-db loc N]
@@ -150,7 +150,7 @@
     (reset! chosen-mix mix)
     (rate/init config soc)
     (c/add-listeners soc {:data #(circ/process config soc %)})
-    (init-pool config soc :single mix N)
+    ;(init-pool config soc :single mix N)
     (init-pool config soc :rt mk-path N)
     mix))
 

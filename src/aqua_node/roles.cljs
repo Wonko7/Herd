@@ -72,7 +72,7 @@
 
 (defn bootstrap [{roles :roles ap :app-proxy rtp :rtp-proxy aq :aqua ds :remote-dir dir :dir :as config}]
   (let [is?                              #(is? % roles)
-        [geo geo geo1 geo2 mix net-info] (repeatedly chan)
+        [geo geo1 geo2 mix net-info] (repeatedly chan)
         mg                               (mult geo)]
     (tap mg geo1)
     (tap mg geo2)
@@ -81,12 +81,12 @@
     (when-not (is? :dir)
       (go (>! net-info (<! (get-net-info config ds)))))  ;; FIXME -> get-net-info will be called periodically.
     (when (is? :app-proxy)
-      ;(go (>! mix (path/init-pools config (<! net-info) (<! geo1) 4)))
+      (go (>! mix (path/init-pools config (<! net-info) (<! geo1) 4)))
       (conn/new :socks :server ap config {:data     path/app-proxy-forward
                                           :udp-data path/app-proxy-forward-udp
                                           :init     app-proxy-init
                                           :error    circ/destroy-from-socket})
-      (sip/create-server config geo-db nil) ;; FIXME testing.
+      ;(sip/create-server config geo-db nil) ;; FIXME testing.
       (when rtp
         (rtp/create-server rtp config)))
     (when (is? :mix)
