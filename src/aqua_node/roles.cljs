@@ -99,7 +99,7 @@
                                      mix (<! mix)]
                                  (log/info "Dir: sending register info")
                                  (register-dir config geo mix ds)
-                                 (js/setInterval #(register-dir config geo mix ds) 10000)
+                                 (js/setInterval #(register-dir config geo mix ds) 10000) ;; FIXME this should be in config
                                  (when-let [hc (:hc-rtp config)]
                                    (hardcoded-rtp-path config hc))))
           :else            (go (register-dir config (<! geo2) nil ds)

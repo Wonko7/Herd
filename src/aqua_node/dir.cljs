@@ -74,7 +74,6 @@
                 :role (or (->> config :roles (filter #(= :app-proxy)) first) :mix)
                 :mix  mix
                 :reg  (-> geo :reg)}]
-    (parse-info config (mk-info-buf info))
     (.write soc (b/copycat2 header (mk-info-buf info)) #(go (>! done-chan :done)))))
 
 (defn send-net-request [config soc done]

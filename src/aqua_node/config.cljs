@@ -24,8 +24,8 @@
                    :h-len       32}]
     {:enc         {:iv-len 16 :key-len 32}
      :debug       false
-     :ntor-values ntor}
-    {:rate        {:period 10}}))
+     :ntor-values ntor
+     :rate        {:period 10}}))
 
 (defn read-config [argv]
   (let [;; read config

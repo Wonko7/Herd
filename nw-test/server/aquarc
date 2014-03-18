@@ -4,8 +4,8 @@
  :external-ip "192.168.0.10"
  ;:external-ip "82.239.82.44"
  :geo-info {:country "wonderland" :reg :ripencc :continent "antartica"}
- :remote-dir {:host "54.194.191.213"
-	      :port 6669}
+ :remote-dir {:host "192.168.0.11"
+	      :port 6666}
  :aqua {:port 6668
         :host "192.168.0.10"
    }
