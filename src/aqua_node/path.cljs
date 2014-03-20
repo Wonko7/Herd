@@ -144,14 +144,17 @@
         select-mixes #(->> geo-db seq (map second) (filter %) shuffle)
         mix          (first (select-mixes #(= (:reg %) reg)))                 ;; filter for SPs ?
         mk-path      #(->> (select-mixes identity) (take 2) (cons mix))       ;; use same mix as entry point for single & rt.
-        soc          (conn/new :aqua :client mix config {:connect identity})]
+        connected    (chan)
+        soc          (conn/new :aqua :client mix config {:connect #(go (>! connected :done))})]
     (log/info "Init Circuit pools: we are in" (:country loc) "/" (geo/reg-to-continent reg))
     (log/debug "Chosen mix:" (:host mix) (:port mix))
     (reset! chosen-mix mix)
-    (rate/init config soc)
-    (c/add-listeners soc {:data #(circ/process config soc %)})
-    ;(init-pool config soc :single mix N)
-    (init-pool config soc :rt mk-path N)
+    (go (<! connected)
+        (rate/init config soc)
+        (c/add-listeners soc {:data #(circ/process config soc %)})
+        (init-pool config soc :rt mix N)
+        (println "done init pool"))
+    ;(init-pool config soc :single mk-path N)
     mix))
 
 (defn get-path [config type]
