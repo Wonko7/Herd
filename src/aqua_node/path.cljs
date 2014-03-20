@@ -142,8 +142,9 @@
 (defn init-pools [config geo-db loc N]
   (let [reg          (-> loc :reg)
         select-mixes #(->> geo-db seq (map second) (filter %) shuffle)
-        mix          (first (select-mixes #(= (:reg %) reg)))                 ;; filter for SPs ?
-        mk-path      #(->> (select-mixes identity) (take 2) (cons mix))       ;; use same mix as entry point for single & rt.
+        mix          (first (select-mixes #(= (:reg %) reg)))                                             ;; --> will be assigned by dir.
+        mk-path      (fn []
+                       (->> (select-mixes #(not= mix %)) (take 2) (cons mix) (map #(merge % {:dest %})))) ;; use same mix as entry point for single & rt. ; not= mix
         connected    (chan)
         soc          (conn/new :aqua :client mix config {:connect #(go (>! connected :done))})]
     (log/info "Init Circuit pools: we are in" (:country loc) "/" (geo/reg-to-continent reg))
@@ -153,8 +154,8 @@
         (rate/init config soc)
         (c/add-listeners soc {:data #(circ/process config soc %)})
         (init-pool config soc :rt mix N)
+        (init-pool config soc :single mk-path N)
         (println "done init pool"))
-    ;(init-pool config soc :single mk-path N)
     mix))
 
 (defn get-path [config type]
