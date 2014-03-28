@@ -5,6 +5,10 @@
 
 (declare destroy find-by-dest)
 
+;; conns.cljs: used to keep track of open connections/sockets (be it aqua,
+;; socks, local udp, etc).
+;; Add new, update info, remove, etc.
+
 
 (def connections (atom {}))
 
@@ -35,6 +39,8 @@
       (.destroy conn))))
 
 (defn add-listeners [conn listeners]
+  "Add callbacks to socket events.
+  Listeners is a hash map of events & functions: {:connect do-connect, :close do-cleanup}"
   (doseq [k (keys listeners) :let [fns (k listeners) fns (if (seq? fns) fns [fns])]]
     (dorun (map #(.on conn (name k) %) fns)))
   conn)
@@ -45,7 +51,9 @@
 (defn get-data [conn]
   (@connections conn))
 
-(defn find-by-dest [{host :host port :port}] ;; FIXME make a map to link to sockets.
+(defn find-by-dest [{host :host}] ;; FIXME make a map to link to sockets.
+  "Find an open socket for the given host.
+  Might also add a filter to match a type of connections (aqua, dir, etc)."
   (first (keep (fn [[s d]]
                  (when (= host (:host d)) s))
                (seq @connections))))

@@ -7,12 +7,16 @@
             [aqua-node.socks :as socks]
             [aqua-node.conns :as c]))
 
+;; conn_mgr.cljs: high level network inits (dtls/tls/tcp/udp/dir).
+
 
 (defn new [type cs conn {auth :auth :as config} {connect :connect data :data udp-data :udp-data init :init err :error}]
+  "Used to create new connections. Type can be socks, aqua, dir, tcp, udp or rtp."
   (let [conn-info   (merge conn {:type type :cs cs})
         is?         #(and (= %2 cs) (= %1 type))
         data        (partial data config)
         udp-data    (partial udp-data config)
+        ;; create a new tcp connection:
         new-tcp-c   (fn [] (let [socket (.connect (node/require "net") (cljs/clj->js (select-keys conn [:host :port])))]
                              (c/add socket {:ctype :tcp :type :tcp-exit :cs :client})
                              (c/add-listeners socket {:data      (partial data socket)
@@ -20,6 +24,7 @@
                                                       :error     err
                                                       :end       err})
                              socket))
+        ;; create a new udp connection:
         new-udp-c   (fn [type] (let [socket (.createSocket (node/require "dgram") (if (= :ip6 (:ip conn)) "udp6" "udp4"))]
                                  (.bind socket 0)
                                  (c/add socket {:ctype :udp :type type :cs :client :send #(.send socket % 0 (.-length %) (:port conn) (:host conn))})
@@ -29,6 +34,7 @@
                                                           :close     err})
                                  socket))
         connect     (partial connect config)]
+    ;; create the appropriate connection:
     (cond (is? :socks :server) (socks/create-server conn data udp-data (partial init config) (partial err config))
           (is? :aqua :server)  (dtls/create-server conn config connect)
           (is? :aqua :client)  (dtls/connect conn config connect)

@@ -12,15 +12,19 @@
   (:require-macros [cljs.core.async.macros :as m :refer [go]]))
 
 
+;; dir.cljs: directory logic. Has server service & client requests.
+
+
 ;; defs & helpers ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
 (declare to-cmd from-cmd)
 
-(def mix-dir (atom {}))
-(def app-dir (atom {}))
-(def net-info-buf (atom nil))
+(def mix-dir (atom {}))       ;; directory of mixes
+(def app-dir (atom {}))       ;; directory of application proxies
+(def net-info-buf (atom nil)) ;; keep the mix topology in a buffer ready to be sent. This is updated when clients register.
 
 (defn get-net-info []
+  "Return our local mix topology, obtained from a dir."
   @mix-dir)
 
 (defn rm [id]
@@ -31,6 +35,13 @@
 ;; encode/decode ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
 (defn parse-info [config msg]
+  "Parse an entry consisting of:
+  - role, int8 0 = app-proxy, 1 = mix, will add 2 = super peer
+  - geographical region, int8, see geo/int-to-reg
+  - nTor id & public key (sizes are in config/static-conf)
+  - ip/host, port, connection type
+  - if it's an app-proxy, parse the next entry as its rendez vous mix
+  return the appropriate entry and the rest of the payload."
   (let [role         (if (zero? (.readUInt8 msg 0)) :app-proxy :mix)
         reg          (.readUInt8 msg 1)
         id-len       (-> config :ntor-values :node-id-len)
@@ -43,6 +54,7 @@
     [(merge client {:mix mix :reg (geo/int-to-reg reg) :role role :auth {:srv-id id :pub-B pub}}) msg]))
 
 (defn mk-info-buf [info]
+  "Create an entry from info, that parse-info can read."
   (let [zero  (-> [0] cljs/clj->js b/new)
         role  (if (= :app-proxy (:role info)) 0 1)
         msg   [(-> [role (-> info :reg geo/reg-to-int)] cljs/clj->js b/new)
@@ -56,16 +68,19 @@
     (apply b/cat msg)))
 
 (defn mk-net-buf! []
+  "Recreate net-info-buf, which is sent to clients on a net-request."
+  ;; header:
   (reset! net-info-buf (b/new 5))
   (.writeUInt8    @net-info-buf (from-cmd :net-info) 0)
   (.writeUInt32BE @net-info-buf (count @mix-dir) 1)
-  (doseq [k (keys @mix-dir)]
+  (doseq [k (keys @mix-dir)] ;; create an entry for each mix:
     (swap! net-info-buf b/copycat2 (mk-info-buf (@mix-dir k)))))
 
 
 ;; send things ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
 (defn send-client-info [config soc geo mix done-chan]
+  "Send our info to the given directory (soc). This is how we register."
   (let [header (-> [(from-cmd :client-info)] cljs/clj->js b/new)
         info   {:auth {:srv-id   (-> config :auth :aqua-id :id)
                        :pub-B    (-> config :auth :aqua-id :pub)}
@@ -77,9 +92,12 @@
     (.write soc (b/copycat2 header (mk-info-buf info)) #(go (>! done-chan :done)))))
 
 (defn send-net-request [config soc done]
+  "Send a message asking for the aqua mix topology"
   (.write soc (-> [(from-cmd :net-request) 101] cljs/clj->js b/new) #(go (>! done :done)))) ;; FIXME the done channel isn't necessary, I was tired. get rid of it here when you can.
 
 (defn send-query [config soc ip]
+  "Send a query to get the rendez vous point of a client. Right now we query using
+  the client's IP, will change to SIP username."
   (.write soc (b/cat (-> [(from-cmd :query)] cljs/clj->js b/new)
                      (b/new (conv/dest-to-tor-str {:proto :udp :type :ip4 :host ip :port 0}))
                      (-> [0] cljs/clj->js b/new))))
@@ -87,24 +105,32 @@
 ;; process recv ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
 (defn recv-client-info [config srv msg recv-chan]
+  "Process a registration."
   (let [[info]      (parse-info config msg)
         ip          (:host info)
         role        (:role info)]
     (if (= role :mix)
+      ;; FIXME: mixes should also timeout.
       (do (swap! mix-dir merge {[ip (:port info)] info})
           (mk-net-buf!))
+      ;; add app-proxy to app-dir. Update entry if it already exists.
       (let [entry   (@app-dir ip)
             to-id   (js/setTimeout #(rm ip) 20000)]
-        (when entry
+        (when entry ;; if a timer was already set, remove it.
           (js/clearTimeout (:timeout entry)))
         (swap! app-dir merge {ip (merge {:timeout to-id} info)}))))
   (when recv-chan
     (go (>! recv-chan :got-geo))))
 
 (defn recv-net-info [config srv msg recv-chan]
-  (let [nb      (.readUInt32BE msg 0)]
+  "Parse the received aqua mix topology."
+  ;; FIXME: we should reset mix-dir first.
+  (let [nb      (.readUInt32BE msg 0)] ;; nb is the number of entries
+    ;; init i at 0, and cut the header off of msg
     (loop [i 0, msg (.slice msg 4)]
+      ;; do this until we've parsed all entries:
       (when (< i nb)
+        ;; Parse entry and add it to mix-dir.
         (let [[info msg] (parse-info config msg)]
           (swap! mix-dir merge {[(:host info) (:port info)] info})
           (recur (inc i) msg))))
@@ -112,22 +138,32 @@
       (go (>! recv-chan :got-geo)))))
 
 (defn recv-net-request [config soc msg recv-chan]
+  "When we receive a net-request, just send the net-info-buf that
+  contains the mix topology in the required format."
   (if @net-info-buf
     (.write soc @net-info-buf)
     (.write soc (-> [(from-cmd :net-info) 0 0 0 0] cljs/clj->js b/new))))
 
 (defn recv-query [config soc msg recv-query]
+  "Receive a query for a client's rendez vous"
+  ;; parse the client info, find the entry in app-dir.
   (let [info (-> msg conv/parse-addr first :host (@app-dir))
+        ;; find the associated rendez vous from that entry:
         mix  (@mix-dir [(-> info :mix :host) (-> info :mix :port)])]
     (if info
+      ;; reply with the client's info & associated rendez vous.
       (.write soc (b/cat (-> [(from-cmd :query-ans)] cljs/clj->js b/new)
                          (mk-info-buf info)
                          (mk-info-buf mix)))
+      ;; unknown client.
       (.write soc (b/copycat2 (-> [(from-cmd :query-ans)] cljs/clj->js b/new) (b/new "no"))))))
 
 (defn recv-query-ans [config soc msg recv-query]
+  "Receive answer from a sent query (for a client's rendez vous)."
   (go (if (= 2 (.-length msg))
+        ;; unknown client:
         (>! recv-query [nil nil])
+        ;; we got the rendez vous, put it in the given channel.
         (let [[app msg] (parse-info config msg)
               [mix]     (parse-info config msg)]
           (>! recv-query [app mix])))))
@@ -139,13 +175,14 @@
    3   {:name :query        :fun recv-query}
    4   {:name :query-ans    :fun recv-query-ans}})
 
-(def roles {:mix 0 :app-proxy 1})
+(def roles {:mix 0 :app-proxy 1}) ;; FIXME add :super-peer
 
 (def from-cmd
   (apply merge (for [k (keys to-cmd)]
                  {((to-cmd k) :name) k})))
 
 (defn process [config srv buf & [recv-chan]]
+  "Parse the header & give the message to the appropriate function."
   (when (> (.-length buf) 0) ;; FIXME put real size when message header is finalised.
     (let [cmd        (.readUInt8 buf 0)
           msg        (.slice buf 1)
@@ -161,13 +198,15 @@
 ;; FIXME things like get-net-info & register will move here.
 
 (defn query [{dir :remote-dir :as config} ip]
+  "Query for an client's rendez vous from his IP."
   (log/info "querying dir for:" ip)
+  ;; create socket, setup listen, send query, tear down the connection.
   (let [done (chan)
         c    (conn/new :dir :client dir config {:connect #(go (>! done :connected))})]
     (c/add-listeners c {:data #(process config c % done)})
     (go (<! done)
         (send-query config c ip)
-        (let [m-and-a (<! done)]
+        (let [m-and-a (<! done)] ;; we got mix & app-proxy data.
           (c/rm c)
           (.end c)
           m-and-a))))
