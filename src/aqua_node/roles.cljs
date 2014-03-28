@@ -16,24 +16,35 @@
   (:require-macros [cljs.core.async.macros :as m :refer [go-loop go]]))
 
 
+;; roles.cljs sets up the different services the node is expected to have:
+;;   - an app-proxy sets up a socks proxy & an rtp-proxy and inits a pool of
+;;     circuits.
+;;   - a mix only sets up an aqua stack
+;;   - a dir only sets up a dir service.
+
+
 (defn app-proxy-init [config socket dest]
-  (let [circ-id (path/get-path config :single)] ;; FIXME -> rt for testing, but really this should be single path. only full rtp understands rt path.
+  "Attach a socket from socks proxy to a single circuit"
+  (let [circ-id (path/get-path config :single)] ;; FIXME -> rt for testing, but really this should be single path. -> Fixed, but untested for now.
     (c/update-data socket [:circuit] circ-id)
     (circ/update-data circ-id [:ap-dest] dest)
     (circ/update-data circ-id [:backward-hop] socket)
     (go (>! (:ctrl (circ/get-data circ-id)) :relay-connect))))
 
 (defn aqua-server-recv [config s]
+  "Setup socket as an aqua service, send all received data through circ/process."
   (log/debug "new aqua dtls conn from:" (-> s .-socket .-_destIP) (-> s .-socket .-_destPort)) ;; FIXME: investigate nil .-remote[Addr|Port]
   (c/add s {:cs :client :type :aqua :host (-> s .-socket .-_destIP) :port (-> s .-socket .-_destPort)})
   (c/add-listeners s {:data #(circ/process config s %)})
-  (rate/init config s)) ;; FIXME *sigh*
+  (rate/init config s))
 
 (defn aqua-dir-recv [config s]
+  "Setup socket as a dir service, sending all received data through dir/process"
   (log/debug "new dir tls conn from:" (-> s .-remoteAddress) (-> s .-remotePort))
   (c/add-listeners s {:data #(dir/process config s %)}))
 
-(defn register-dir [config geo mix dir]
+(defn register-to-dir [config geo mix dir]
+  "Register to directory"
   (let [done (chan)
         c    (conn/new :dir :client dir config {:connect #(go (>! done :connected))})]
     (c/add-listeners c {:data #(dir/process config c %)})
@@ -45,6 +56,7 @@
         (.end c))))
 
 (defn get-net-info [config dir]
+  "Create a socket to dir, send net request, wait until we get an answer, close, return net info."
   (log/info "requesting net info:")
   (let [done (chan)
         c    (conn/new :dir :client dir config {:connect #(go (>! done :connected))})] ;; also, we'd need a one hop aqua circ here.
@@ -58,6 +70,7 @@
         (dir/get-net-info))))
 
 (defn hardcoded-rtp-path [config {dest :dest port :listen-port}] ;; keep this for testing and benchmarks. should move this.
+  "Was used for facilitating benchmarking."
   (let [cid            (path/get-path config :rt)
         circ           (circ/get-data cid)
         state          (chan)]
@@ -68,19 +81,23 @@
           (log/info "Hardcoded RTP: listening on:" local-port "forwarding to:" (:host dest) (:port dest) "using circ:" cid)))))
 
 (defn is? [role roles]
+  "Tests if a role is part of the given roles"
   (some #(= role %) roles))
 
 (defn bootstrap [{roles :roles ap :app-proxy rtp :rtp-proxy aq :aqua ds :remote-dir dir :dir :as config}]
-  (let [is?                              #(is? % roles)
-        [geo geo1 geo2 mix net-info] (repeatedly chan)
+  (let [is?                              #(is? % roles)     ;; tests roles for our running instance
+        [geo geo1 geo2 mix net-info]     (repeatedly chan)
         mg                               (mult geo)]
     (tap mg geo1)
     (tap mg geo2)
     (log/info "Bootstrapping as" roles)
+    ;; match our ip against database, unless already specified in config:
     (go (>! geo (<! (geo/parse config))))
     (when-not (is? :dir)
+      ;; all non dir roles will request net-info (mix topology) from the given dir in config:
       (go (>! net-info (<! (get-net-info config ds)))))  ;; FIXME -> get-net-info will be called periodically.
     (when (is? :app-proxy)
+      ;; Init an app-proxy's circuit pool, socks5 server & rtp/sip server.
       (go (>! mix (path/init-pools config (<! net-info) (<! geo1) 4)))
       (conn/new :socks :server ap config {:data     path/app-proxy-forward
                                           :udp-data path/app-proxy-forward-udp
@@ -90,19 +107,28 @@
       (when rtp
         (rtp/create-server rtp config)))
     (when (is? :mix)
+      ;; init aqua mix: :sip-dir will move from here, work in progress.
       (if (is? :sip-dir)
         (let [sip (sip/dir config nil)]
           (conn/new :aqua :server aq (merge config {:sip-chan sip}) {:connect aqua-server-recv}))
         (conn/new :aqua :server aq config {:connect aqua-server-recv})))
+
+    ;; After having started necessary init process for each role, finalise:
+    ;;       dir starts a dir server.
     (cond (is? :dir)       (conn/new :dir :server dir config {:connect aqua-dir-recv})
+          ;; app-proxy waits on geo & chosen mix info before registering
           (is? :app-proxy) (go (let [geo (<! geo2)
                                      mix (<! mix)]
                                  (log/info "Dir: sending register info")
-                                 (register-dir config geo mix ds)
-                                 (js/setInterval #(register-dir config geo mix ds) 10000) ;; FIXME this should be in config
+                                 (register-to-dir config geo mix ds)
+                                 ;; send register periodically:
+                                 (js/setInterval #(register-to-dir config geo mix ds) 10000) ;; FIXME this should be in config
+                                 ;; was used for benchmarks, will be dropped:
                                  (when-let [hc (:hc-rtp config)]
                                    (hardcoded-rtp-path config hc))))
-          :else            (go (register-dir config (<! geo2) nil ds)
+          ;; mix: send register, then connect to all mixes from net-info.
+          :else            (go (register-to-dir config (<! geo2) nil ds)
+                               ;; for each mix in node info, extract ip & port and connect.
                                (doseq [[[ip port] mix] (seq (<! net-info))
                                        :when (or (not= (:host aq) ip)
                                                  (not= (:port aq) port))

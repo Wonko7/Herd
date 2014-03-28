@@ -47,6 +47,8 @@
 
 ;; circuit state management ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
+;; Functions to keep track of current circuits: adding, updating, removing.
+
 (def circuits (atom {}))
 
 (defn add [circ-id socket & [state]]
@@ -90,12 +92,17 @@
 ;; path management ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
 (defn get-path-enc [circ-data direction] ;; FIXME unused
+  "Returns all the layers of encryption to be done on a
+  circuit in the given direction."
   (filter identity (map #(-> % direction) (:path circ-data)))) ;; FIXME may need to reverse order with mux
 
 (defn add-path-auth [id circ-data auth]
+  "Add a new authentication for that circuit: handshake not yet completed"
   (update-data id [:path] (concat (:path circ-data) [{:auth auth}])))
 
 (defn add-path-secret-to-last [config id circ-data secret]
+  "After obtaining the shared secret, add it to complete the info
+  added by add-path-auth."
   (let [l        (last (:path circ-data))
         ls       (drop-last (:path circ-data))
         enc      [(partial crypto/create-tmp-enc secret) (partial crypto/create-tmp-dec secret)]
@@ -119,6 +126,7 @@
   (swap! block-count dec))
 
 (defn cell-send [config socket circ-id cmd payload & [len]]
+  "Add cell header before finally sending a packet."
   (let [len          (or len (.-length payload))
         buf          (b/new (+ 9 len)) ;; add len to cells -> fixme
         [w8 w16 w32] (b/mk-writers buf)]
@@ -135,13 +143,16 @@
 ;; make requests: circuit level ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
 (defn mk-create [config srv-auth circ-id]
-    (let [[auth create] (hs/client-init srv-auth)
-               header   (b/new 4)]
-           (.writeUInt16BE header 2 0)
-           (.writeUInt16BE header (.-length create) 2)
-           [auth (b/cat header create)]))
+  "Make the create2 payload with the initialisation of the nTor handshake."
+  (let [[auth create] (hs/client-init srv-auth)
+        header   (b/new 4)]
+    (.writeUInt16BE header 2 0)
+    (.writeUInt16BE header (.-length create) 2)
+    [auth (b/cat header create)]))
 
 (defn create [config socket srv-auth]
+  "Send a create2 packet, sent from the last circuit in a path (can be app-proxy)
+  to extend a circuit."
   (let [circ-id        (gen-id) ;; FIXME may remove this. seems to make more sense to be path logic.
         [auth create]  (mk-create config srv-auth circ-id)]
     (add circ-id socket nil)
@@ -151,6 +162,7 @@
     circ-id))
 
 (defn create-mux [config socket circ-id srv-auth]
+  "Part of the multipath prototype"
   (let [[auth create]  (mk-create config srv-auth circ-id)
         dest           (conv/dest-to-tor-str (:dest srv-auth))
         create         (b/cat (b/new dest) (b/new (cljs/clj->js [0])) create)]
@@ -180,6 +192,7 @@
     (cell-send config socket circ-id circ-cmd msg)))
 
 (defn- relay [config socket circ-id relay-cmd direction msg]
+  "Helper to add relay header to a relay message."
   (let [data         (b/new (+ (.-length msg) 11))
         [w8 w16 w32] (b/mk-writers data)]
     (w8 (from-relay-cmd relay-cmd) 0)
@@ -192,34 +205,42 @@
 
 ;; see tor spec 6.2. 160 = ip6 ok & prefered.
 (defn relay-begin [config circ-id dest]
+  "Send a request to begin relaying data: last mix in the circuit will become
+  an exit mix & will open a socket to given dest."
   (let [socket (:forward-hop (@circuits circ-id))
         dest   (conv/dest-to-tor-str dest)
         dest   (b/cat (b/new dest) (b/new (cljs/clj->js [0 160 0 0 0])))]
     (relay config socket circ-id :begin :f-enc dest)))
 
 (defn relay-connected [config circ-id local]
+  "Send an acknowledgement to a relay begin: when exit socket is ready."
   (let [socket (:backward-hop (@circuits circ-id))
         local  (conv/dest-to-tor-str local)
         local  (b/cat (b/new local) (b/new (cljs/clj->js [0 160 0 0 0])))]
     (relay config socket circ-id :connected :b-enc local)))
 
 (defn relay-data [config circ-id msg]
+  "Send data to be relayed: cut it up to fit in multiple 360 bytes packets."
   (loop [m msg]
     (let [data (b/new 360)]
       (if (> (.-length m) 358)
+        ;; if current message is too long, take the first chunk, send it, loop on the remainder.
         (do (.writeUInt16BE data 358 0)
             (.copy m data 2 0 358)
             (relay config (:forward-hop (@circuits circ-id)) circ-id :data :f-enc data)
             (recur (.slice m 358)))
+        ;; last (or only) packet to be sent.
         (do (.writeUInt16BE data (.-length m) 0)
             (.copy m data 2)
             (relay config (:forward-hop (@circuits circ-id)) circ-id :data :f-enc data))))))
 
 (defn padding [config socket]
+  "Send padding message. Will be dropped."
   (cell-send config socket 0 :padding (b/new 369))) ;; FIXME no enc on circ 0.
 
 ;; see tor spec 5.1.2.
 (defn relay-extend [config circ-id {nh-auth :auth nh-dest :dest}]
+  "Send a relay extend message to given next hop."
   (let [data          (@circuits circ-id)
         socket        (:forward-hop data)
         [auth create] (mk-create config nh-auth circ-id) ;; FIXME use the same id or create a new one?
@@ -231,6 +252,7 @@
     (relay config socket circ-id :extend2 :f-enc (b/cat nspec create))))
 
 (defn forward [config circ-id dest-str cell]
+  "Part of the multipath prototype"
   (let [socket  (c/find-by-dest {})
         iv      (.randomBytes c. 16)
         key     (-> (@circuits circ-id) :mux :auth :secret)
@@ -239,12 +261,14 @@
     (cell-send config socket 0 :forward payload)))
 
 (defn send-destroy [config dest circ-id reason]
+  "Send a destroy packet to tear down a circuit."
   (cell-send config dest circ-id :destroy reason))
 
 
 ;; process recv ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
-(defn recv-create2 [config socket circ-id payload] ;; FIXME this will be a sub function of the actual recv create2
+(defn recv-create2 [config socket circ-id payload]
+  "Parse message, perform handshake server reply."
   (add circ-id socket {:roles [:mix]})
   (let [{pub-B :pub node-id :id sec-b :sec} (-> config :auth :aqua-id) ;; FIXME: renaming the keys is stupid.
         hs-type                             (.readUInt16BE payload 0)
@@ -264,7 +288,9 @@
   (let [circ       (@circuits circ-id)]
     (assert circ "cicuit does not exist") ;; FIXME this assert will probably be done elsewhere (process?)
     (if (is? :mix circ)
+      ;; we are a mix, so relay created2 as an extended2 message:
       (relay config (:backward-hop circ) circ-id :extended2 :b-enc payload)
+      ;; we are the origin, add shared secret with add-path-secret-to-last
       (let [mux?       (is? :mux circ)
             auth       (if mux? (-> circ :mux :auth) (-> circ :path last :auth))
             len        (.readUInt16BE payload 0)
@@ -276,6 +302,7 @@
           ((:mk-path-fn circ) config circ-id))))))
 
 (defn recv-create-mux [config socket circ-id payload] ;; FIXME this will be a sub function of the actual recv create2
+  "Part of the multipath prototype"
   (add circ-id socket {:roles [:mix]})
   (let [{pub-B :pub node-id :id sec-b :sec} (-> config :auth :aqua-id) ;; FIXME: renaming the keys is stupid.
         [dest payload]                      (conv/parse-addr payload)
@@ -290,6 +317,7 @@
     (cell-send config socket circ-id :created2 (b/cat header created))))
 
 (defn recv-forward [config socket circ-id payload]
+  "Part of the multipath prototype"
   (let [circ       (@circuits circ-id)
         [dest pl]  (conv/parse-addr payload)]
     (if (and (= (:port dest) (.-localPort socket)) (= (:host dest) (.-localAddress socket)))
@@ -302,6 +330,7 @@
         (.write socket payload)))))
 
 (defn recv-destroy [config socket circ-id payload]
+  "Destroys the given circuit, forwards the message if needed."
   (when-let [circ              (@circuits circ-id)]
     (let [[fhop bhop :as hops] (map circ [:forward-hop :backward-hop])
           dest                 (if (= socket fhop) bhop fhop)
@@ -319,8 +348,11 @@
         (rm circ)))))
 
 (defn process-relay [config socket circ-id relay-data]
+  "Process an incoming relay message: parse header, and dispatch to appropriate relay processing function."
   (let [circ        (@circuits circ-id)
         r-payload   (:payload relay-data)
+
+        ;; process data packet: forward payload as rtp, udp to destination socket.
         p-data      (fn []
                       (let [[fhop bhop :as hops] (map circ [:forward-hop :backward-hop])
                             dest                 (if (= socket fhop) bhop fhop)
@@ -348,6 +380,8 @@
                           :rtp-exit  (.send dest r-payload 0 (.-length r-payload) (-> dest-data :from :port) (-> dest-data :from :host)) ;; FIXME unused for now, going through udp-exit for now
                           :rtp-ap    (.send dest r-payload 0 (.-length r-payload) (-> circ :local-dest :port) (-> circ :local-dest :host)) ;; FIXME quick and diiiirty
                           (.write dest r-payload))))
+
+        ;; we are being asked to begin relaying data -> we are the exit mix.
         p-begin     (fn []
                       (assert (is-not? :origin circ) "relay begin command makes no sense") ;; FIXME this assert is good, but more like these are needed. roles are not inforced.
                       (log/info "Relay exit for circuit" circ-id)
@@ -370,11 +404,15 @@
                         (c/update-data sock [:circuit] circ-id)
                         (update-data circ-id [:forward-hop] sock)
                         (go (relay-connected config circ-id (merge dest (<! sock-connect))))))
+
+        ;; we are an app-proxy, and our relay begin has been acknowledged: we may start relaying data, notify on control channel.
         p-connected (fn []
                       (let [proxy-dest (first (conv/parse-addr r-payload))]
                         (assert (is? :origin circ) "Connected message makes no sense")
                         (update-data circ-id [:proxy-local] proxy-dest)
                         (go (>! (:ctrl circ) proxy-dest))))
+
+        ;; we are being asked to extend the circuit: send create2 to the next hop.
         p-extend    (fn []
                       (let [[r1 r2 r4] (b/mk-readers r-payload)
                             nb-lspec   (r1 0) ;; FIXME we're assuming 1 for now.
@@ -388,10 +426,16 @@
                         (update-data circ-id [:forward-hop] sock)
                         (update-data circ-id [:roles] [:mix]) ;; FIXME just add?
                         (cell-send config sock circ-id :create2 (:create dest))))
+
+        ;; our relay extend has been acknowledged. Process as a created2 message.
         p-extended  #(recv-created2 config socket circ-id r-payload)
+
+        ;; draft of sip integration, likely to change.
         p-sip       #(if-let [sip-ch (:sip-ch config)]
                        (go (>! sip-ch {:circ circ :circ-id circ-id :sip-rq r-payload}))
                        (log/error "SIP-DIR uninitialised, dropping request on circuit:" circ-id))]
+
+    ;; dispatch the relay command to appropriate function.
     (condp = (:relay-cmd relay-data)
       0  :drop-padding
       1  (p-begin)
@@ -424,12 +468,14 @@
         direction   (if (= (:forward-hop circ) socket) :b-enc :f-enc)
         [iv msg]    (b/cut payload (-> config :enc :iv-len))]
 
-    (if (and (is-not? :origin circ) (= direction :b-enc)) ;; then message is going back to origin -> add enc & forwad
+    (if (and (is-not? :origin circ) (= direction :b-enc))
+      ;; then message is going back to origin -> add enc & forwad
       (if (and mux? (-> circ :mux :fhop))
         (forward config circ-id (-> circ :mux :fhop) payload)
         ((-> circ :backward-hop c/get-data :rate :queue) #(enc-send config (:backward-hop circ) circ-id :relay :b-enc msg iv)))
 
-      (let [msg         (reduce #(%2 iv %1) msg (get-path-enc circ direction)) ;; message going towards exit -> rm our enc layer. OR message @ origin, peel of all layers.
+      ;; message going towards exit -> rm our enc layer. OR message @ origin, peel of all layers.
+      (let [msg         (reduce #(%2 iv %1) msg (get-path-enc circ direction))
             [r1 r2 r4]  (b/mk-readers msg)
             recognised? (and (= 101 (r2 3) (r4 5) (r2 9)) (zero? (r2 1))) ;; FIXME -> add digest
             relay-data  {:relay-cmd  (r1 0)
@@ -491,23 +537,27 @@
 (def wait-buffer (atom nil)) ;; FIXME we need one per socket
 
 (defn process [config socket data-orig]
+  "Takes received data from a socket, checks if there is enough data,
+  parses the header and calls the appropriate function to process it."
   ;; FIXME check len first -> match with fix buf size
   (let [data         (if @wait-buffer (b/copycat2 @wait-buffer data-orig) data-orig)
         [r8 r16 r32] (b/mk-readers data)
-        len          (.-length data)
-        cell-len     (r32 0)
-        circ-id      (r32 4)
-        command      (to-cmd (r8 8))
+        len          (.-length data)   ;; actual length
+        cell-len     (r32 0)           ;; length the packet should have
+        circ-id      (r32 4)           ;; circuit id
+        command      (to-cmd (r8 8))   ;; what kind of packet command (relay, extend, etc)
         payload      (.slice data 9)]
-    (when (not= :padding (:name command))
+    (when (not= :padding (:name command)) ;; only print debug if the message isn't padding
       (log/debug "recv cell: id:" circ-id "cmd:" (:name command) "len:" len))
-    (cond (> len cell-len) (let [[f r] (b/cut data cell-len)]
+    (cond (> len cell-len) (let [[f r] (b/cut data cell-len)] ;; more than one cell in our data, cut it up accordingly:
                              (reset! wait-buffer nil)
                              (process config socket f)
                              (process config socket r))
+          ;; not enough data, put it on wait buffer.
           (< len cell-len) (cond (@circuits circ-id)                     (reset! wait-buffer data)
                                  (@circuits (.readUInt32BE data-orig 4)) (reset! wait-buffer data-orig)
                                  :else                                   (reset! wait-buffer nil))
+          ;; we're done, find the associated function for processing that command:
           :else            (do (reset! wait-buffer nil)
                                (when (:fun command)
                                  (try
