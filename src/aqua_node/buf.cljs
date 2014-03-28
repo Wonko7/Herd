@@ -6,6 +6,9 @@
 ;; node js/buffer helpers ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
 (defn new [data]
+  "Create new buffer from data.
+  Will take the content of data if it's a string/buffer/array.
+  If data is an int, will create a buffer of that size."
   (js/Buffer. data))
 
 (defn cat [& bs]
@@ -13,6 +16,8 @@
   (js/Buffer.concat (cljs/clj->js bs)))
 
 (defn copycat [& bs]
+  "For performance: for a small number of buffers, this can be quicker than cat.
+  Same functionality."
   (let [len  (reduce #(+ %1 (.-length %2)) 0 bs)
         data (js/Buffer. len)]
     (loop [[b & bs] bs i 0]
@@ -22,6 +27,7 @@
         data))))
 
 (defn copycat2 [a b]
+  "For performance: fastest way to cat 2 buffers."
   (let [len  (+ (.-length a) (.-length b))
         data (js/Buffer. len)]
     (.copy a data)
@@ -29,11 +35,11 @@
     data))
 
 (defn b= [a b]
-  "buffer content equality"
+  "Test buffer content equality."
   (= (.toString b) (.toString a)))
 
 (defn cut [b & xs]
-  "divide the buffer: (cut b 55 88 99) will return a seq of slices from 0 to 55, 55 to 88, 88 to end of buf"
+  "Divide the buffer: (cut b 55 88 99) will return a seq of slices from 0 to 55, 55 to 88, 88 to end of buf"
   (map #(.slice b %1 %2) (cons 0 xs) (concat xs [(.-length b)])))
 
 
