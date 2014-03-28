@@ -29,7 +29,7 @@
     (loop [out (b/new 0), prev (b/new 0), i 1]
       (if (>= (.-length out) n)
         (.slice out 0 n)
-        (let [h   (hmac prk (b/cat prev info (b/new (cljs/clj->js. [i])))) ;; FIXME, test wtf happens when i > 255...
+        (let [h   (hmac prk (b/cat prev info (b/new (cljs/clj->js. [i])))) ;; FIXME, test what happens when i > 255...
               out (b/cat out h)]
           (recur out h (inc i)))))))
 

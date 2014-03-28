@@ -4,7 +4,7 @@
             [aqua-node.buf :as b]))
 
 
-;; FIXME should use this everywhere. put hashes and stuff here.
+;; Crypto helpers.
 
 (defn fin [c]
   "work around reserved final keyword"

@@ -5,6 +5,7 @@
             [aqua-node.log :as log]))
 
 (defn ip4-to-bin [ip]
+  "Return a 32b buffer containing binary representation of given string ip."
   (let [re   #"^(\d+)\.(\d+)\.(\d+)\.(\d+)$" ]
     (-> (.match ip re) next cljs/clj->js b/new)))
 
@@ -12,23 +13,30 @@
   (assert nil "FIXME"))
 
 (defn port-to-bin [port]
+  "Return a 16b buffer containing binary representation of given int port."
   (let [p (b/new 2)]
     (.writeUInt16BE p port 0)
     p))
 
 (defn ip4-to-str [buf4]
+  "Return a string representation of given binary ip4."
   (->> (range 0 4) (map #(.readUInt8 buf4 %)) (interpose ".") (apply str)))
 
 (defn ip6-to-str [buf16]
+  "Return a string representation of given binary ip6."
   (->> (.toString buf16 "hex") (partition 4) (interpose [\:]) (apply concat) (apply str)))
 
 (defn dest-to-tor-str [{proto :proto host :host port :port type :type}]
+  "Used in TOR to specify destination. Modified to accept udp & tcp.
+  Returns the string: '[u|t]:host:port'"
   (let [host   (if (= type :ip6) (str "[" host "]") host)]
     (str (if (= :udp proto) "u" "t") ":" host ":" port)))
 
 ;; compared to tor, we add a type: which can be:
 ;; tcp-exit, udp-exit, rtp-exit: t, u or r. will change if needed, tmp.
 (defn parse-addr [buf]
+  "Parse the string created by dest-to-tor-str. Must be null terminated.
+  Return the destination information and the rest of the buffer."
   (let [z    (->> (range (.-length buf))
                   (map #(when (= 0 (.readUInt8 buf %)) %))
                   (some identity))]
