@@ -24,10 +24,11 @@
                    :g-len       32
                    :h-len       32}]
     ;; key lengths, ntor, and rate period in milliseconds.
-    {:enc         {:iv-len 16 :key-len 32}
-     :debug       false
-     :ntor-values ntor
-     :rate        {:period 10}}))
+    {:enc               {:iv-len 16 :key-len 32}
+     :debug             false
+     :ntor-values       ntor
+     :rate              {:period 10}
+     :register-interval 10000}))
 
 (defn read-config [argv]
   "Parse config file aquarc in current directory, or from argv's --config <path>."

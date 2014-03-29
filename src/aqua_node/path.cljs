@@ -184,8 +184,7 @@
         (rate/init config soc)
         (c/add-listeners soc {:data #(circ/process config soc %)})
         (init-pool config soc :rt mix N)
-        (init-pool config soc :single mk-path N)
-        (println "done init pool"))
+        (init-pool config soc :single mk-path N))
     mix))
 
 ;; Return a circuit of the chosen type rt/single

@@ -44,16 +44,20 @@
   (c/add-listeners s {:data #(dir/process config s %)}))
 
 (defn register-to-dir [config geo mix dir]
-  "Register to directory"
-  (let [done (chan)
-        c    (conn/new :dir :client dir config {:connect #(go (>! done :connected))})]
-    (c/add-listeners c {:data #(dir/process config c %)})
-    (go (<! done)
-        (dir/send-client-info config c geo mix done)
-        (<! done)
-        ;(log/info "Dir: successfully sent register info")
-        (c/rm c)
-        (.end c))))
+  "Call send-register-to-dir periodically."
+  (let [send-register-to-dir (fn []
+                               "Send register to directory"
+                               (let [done (chan)
+                                     c    (conn/new :dir :client dir config {:connect #(go (>! done :connected))})]
+                                 (c/add-listeners c {:data #(dir/process config c %)})
+                                 (go (<! done)
+                                     (dir/send-client-info config c geo mix done)
+                                     (<! done)
+                                     (log/debug "successfully sent register info")
+                                     (c/rm c)
+                                     (.end c))))]
+    (send-register-to-dir)
+    (js/setInterval #(send-register-to-dir) (:register-interval config))))
 
 (defn get-net-info [config dir]
   "Create a socket to dir, send net request, wait until we get an answer, close, return net info."
@@ -84,56 +88,33 @@
   "Tests if a role is part of the given roles"
   (some #(= role %) roles))
 
-(defn bootstrap [{roles :roles ap :app-proxy rtp :rtp-proxy aq :aqua ds :remote-dir dir :dir :as config}]
-  (let [is?                              #(is? % roles)     ;; tests roles for our running instance
-        [geo geo1 geo2 mix net-info]     (repeatedly chan)
-        mg                               (mult geo)]
-    (tap mg geo1)
-    (tap mg geo2)
-    (log/info "Bootstrapping as" roles)
-    ;; match our ip against database, unless already specified in config:
-    (go (>! geo (<! (geo/parse config))))
-    (when-not (is? :dir)
-      ;; all non dir roles will request net-info (mix topology) from the given dir in config:
-      (go (>! net-info (<! (get-net-info config ds)))))  ;; FIXME -> get-net-info will be called periodically.
-    (when (is? :app-proxy)
-      ;; Init an app-proxy's circuit pool, socks5 server & rtp/sip server.
-      (go (>! mix (path/init-pools config (<! net-info) (<! geo1) 4)))
-      (conn/new :socks :server ap config {:data     path/app-proxy-forward
-                                          :udp-data path/app-proxy-forward-udp
-                                          :init     app-proxy-init
-                                          :error    circ/destroy-from-socket})
-      ;(sip/create-server config geo-db nil) ;; FIXME testing.
-      (when rtp
-        (rtp/create-server rtp config)))
-    (when (is? :mix)
-      ;; init aqua mix: :sip-dir will move from here, work in progress.
-      (if (is? :sip-dir)
-        (let [sip (sip/dir config nil)]
-          (conn/new :aqua :server aq (merge config {:sip-chan sip}) {:connect aqua-server-recv}))
-        (conn/new :aqua :server aq config {:connect aqua-server-recv})))
-
-    ;; After having started necessary init process for each role, finalise:
-    ;;       dir starts a dir server.
-    (cond (is? :dir)       (conn/new :dir :server dir config {:connect aqua-dir-recv})
-          ;; app-proxy waits on geo & chosen mix info before registering
-          (is? :app-proxy) (go (let [geo (<! geo2)
-                                     mix (<! mix)]
+(defn bootstrap [{roles :roles ap :app-proxy aq :aqua ds :remote-dir dir :dir :as config}]
+  "Setup the services needed by the given role."
+  (go (let [is?         #(is? % roles)                        ;; tests roles for our running instance
+            geo         (go (<! (geo/parse config)))          ;; match our ip against database, unless already specified in config:
+            net-info    (go (when-not (is? :dir)              ;; request net-info if we're not a dir. FIXME -> get-net-info will be called periodically.
+                              (<! (get-net-info config ds))))]
+        (log/info "Bootstrapping as" roles)
+        (cond (is? :app-proxy) (let [geo      (<! geo)
+                                     net-info (<! net-info)
+                                     mix      (path/init-pools config net-info geo 4)]
+                                 (conn/new :socks :server ap config {:data     path/app-proxy-forward
+                                                                     :udp-data path/app-proxy-forward-udp
+                                                                     :init     app-proxy-init
+                                                                     :error    circ/destroy-from-socket})
+                                 ;(sip/create-server config net-info nil) ;; FIXME testing.
                                  (log/info "Dir: sending register info")
-                                 (register-to-dir config geo mix ds)
-                                 ;; send register periodically:
-                                 (js/setInterval #(register-to-dir config geo mix ds) 10000) ;; FIXME this should be in config
-                                 ;; was used for benchmarks, will be dropped:
-                                 (when-let [hc (:hc-rtp config)]
-                                   (hardcoded-rtp-path config hc))))
-          ;; mix: send register, then connect to all mixes from net-info.
-          :else            (go (register-to-dir config (<! geo2) nil ds)
-                               ;; for each mix in node info, extract ip & port and connect.
-                               (doseq [[[ip port] mix] (seq (<! net-info))
-                                       :when (or (not= (:host aq) ip)
-                                                 (not= (:port aq) port))
-                                       :let [con (chan)
-                                             soc (conn/new :aqua :client mix config {:connect #(go (>! con :done))})]]
-                                 (c/add-listeners soc {:data #(circ/process config soc %)})
-                                 (go (<! con)
-                                     (rate/init config soc)))))))
+                                 (register-to-dir config geo mix ds))
+              (is? :mix)       (do (conn/new :aqua :server aq config {:connect aqua-server-recv})
+                                   (register-to-dir config (<! geo) nil ds)
+                                   ;; for each mix in node info, extract ip & port and connect.
+                                   (doseq [[[ip port] mix] (seq (<! net-info))
+                                           :when (or (not= (:host aq) ip)
+                                                     (not= (:port aq) port))
+                                           :let [con (chan)
+                                                 soc (conn/new :aqua :client mix config {:connect #(go (>! con :done))})]]
+                                     (c/add-listeners soc {:data #(circ/process config soc %)})
+                                     (go (<! con)
+                                         (rate/init config soc))))
+              (is? :dir)       (conn/new :dir :server dir config {:connect aqua-dir-recv})
+              :else            (log/error "No supported roles in config:" roles)))))
