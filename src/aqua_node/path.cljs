@@ -56,7 +56,7 @@
           (circ/update-data id [:path-dest :port] (:port (<! ctrl)))
           (circ/update-data id [:state] :relay)
           (>! (-> circ :backward-hop c/get-data :ctrl) :relay)
-          (log/info "Circuit" id "is ready for relay")))
+          (log/info "Single Circuit" id "is ready for relay")))
     id))
 
 ;; create a realtime path for RTP. This version connects to the callee's ap.
@@ -71,6 +71,7 @@
     (circ/update-data id [:dest-ctrl] dest)
     (circ/update-data id [:mk-path-fn] #(go (>! ctrl :next)))
     (go (<! ctrl)
+        (log/debug "RT Circuit" id "waiting for destination")
         ;; query our dir for the host's mix (will be rdv)
         (let [rt-dest        (<! dest)
               [ap-dest mix2] (<! (dir/query config (:host rt-dest)))]
@@ -158,11 +159,13 @@
 (def pool (atom {}))
 (def chosen-mix (atom nil))
 
-(defn init-pool [config soc type path-data N] ;; FIXME -> we can now keep the path.
-  (let [paths (repeatedly N (condp = type
-                              :single #(create-single config (path-data))
-                              :rt     #(create-rt config soc path-data)))]
-    (swap! pool update-in [type] #(-> (concat %1 paths) vec))))
+(defn init-pool [config soc type path-data]
+  (let [new-path (condp = type
+                   :single #(create-single config (path-data))
+                   :rt     #(create-rt config soc path-data))]
+    (go-loop [] ;; as soon as one of our buffered circs is claimed, this loop recurs once to replace it:
+      (>! (@pool type) (new-path))
+      (recur))))
 
 ;; initialise a pool of N of each type of circuits (rt and single for now)
 ;; geo-db is the list of mixes with their geo info.
@@ -179,17 +182,17 @@
     (log/info "Init Circuit pools: we are in" (:country loc) "/" (geo/reg-to-continent reg))
     (log/debug "Chosen mix:" (:host mix) (:port mix))
     (reset! chosen-mix mix)
+    ;; init channel pools:
+    (reset! pool {:rt (chan N) :single (chan N)})
     ;; wait until connected to the chosen mix before sending requests
     (go (<! connected)
         (rate/init config soc)
         (c/add-listeners soc {:data #(circ/process config soc %)})
-        (init-pool config soc :rt mix N)
-        (init-pool config soc :single mk-path N))
+        (init-pool config soc :rt mix)
+        (init-pool config soc :single mk-path))
     mix))
 
-;; Return a circuit of the chosen type rt/single
-(defn get-path [config type]
-  (let [[p & ps] (@pool type)]
-    (reset! pool (merge @pool {type (vec ps)}))
-    (init-pool config (c/find-by-dest @chosen-mix) type @chosen-mix 1)
-    p))
+;; Return a channel to the chosen type rt/single of path.
+;; As soon as a circuit is used, a new one will be put in the channel, see init-pool.
+(defn get-path [type]
+  (@pool type))

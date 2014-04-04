@@ -102,7 +102,7 @@
                                                                      :udp-data path/app-proxy-forward-udp
                                                                      :init     app-proxy-init
                                                                      :error    circ/destroy-from-socket})
-                                 ;(sip/create-server config net-info nil) ;; FIXME testing.
+                                 (sip/create-server config net-info nil) ;; FIXME testing.
                                  (log/info "Dir: sending register info")
                                  (register-to-dir config geo mix ds))
               (is? :mix)       (do (conn/new :aqua :server aq config {:connect aqua-server-recv})

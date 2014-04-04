@@ -15,18 +15,22 @@
 
 
 (defn create-server [config geo-db things]
-  (comment
-    (let [sip         (node/require "sip")
-        sip-circ    (path/get-path config :single)
+  (let [sip         (node/require "sip")
+        rdv         (path/get-path :single)
         process     (fn [rq]
                       (let [nrq  (-> rq cljs/js->clj walk/keywordize-keys)
                             name (-> nrq :headers :contact first :name)]
                         (println)
                         (println :nrq nrq)
                         (condp = (:method nrq)
-                          "REGISTER"  (do ;(send reg w/ rdv to sip dir)
-                                          ;(<! get ack)
-                                          (.send sip (.makeResponse sip rq 200 "OK")))
+                          "REGISTER"  (let [contact  (-> nrq :headers :contact first)
+                                            name     (or (-> contact :name)
+                                                         (->> contact :uri (re-find #"sip:(.*)@") second))]
+                                        ;(send reg w/ rdv to sip dir)
+                                        ;(<! get ack)
+                                        (println (-> nrq :headers :via first))
+                                        (println :name name)
+                                        (.send sip (.makeResponse sip rq 200 "OK")))
                           "SUBSCRIBE" (condp = (-> nrq :headers :event)
                                         "presence.winfo"  (do (println (:event nrq))
                                                               ;; and register the gringo.
@@ -48,10 +52,11 @@
                                           ;(<! send-invite), create rtp circ to dest, continue;
                                           (.send sip (.makeResponse sip rq 180 "RINGING")))
                           nil)))]
+    (go (println :rdv! (<! rdv)))
     ;; create path to sip dir.
     ;; create rdv. now, or on register?
     (.start sip (cljs/clj->js {:protocol "UDP"}) process)
-    (log/info "SIP proxy listening on default UDP SIP port"))))
+    (log/info "SIP proxy listening on default UDP SIP port")))
 
 
 
