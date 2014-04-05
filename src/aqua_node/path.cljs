@@ -109,7 +109,7 @@
       (log/info "UDP: not ready for data, dropping on circuit" circ-id))))
 
 (defn forward-udp [config s b]
-  "For packets needing socks5 header"
+  "For packets needing socks5 header."
   (let [circ-id    (:circuit (c/get-data s))
         circ-data  (circ/get-data circ-id)
         dest       (:path-dest circ-data)
@@ -126,6 +126,7 @@
       (log/info "UDP: not ready for data, dropping on circuit" circ-id))))
 
 (defn app-proxy-forward [config s]
+  "Used for forwarding local TCP data."
   (let [circ-id   (:circuit (c/get-data s))
         circ-data (circ/get-data circ-id)
         config    (merge config {:data s})]
@@ -140,13 +141,14 @@
       (log/info "TCP: not ready for data, dropping on circuit" circ-id))))
 
 (defn attach-local-udp4 [config circ-id forward-to forwarder & [bind-port]] ;; FIXME: forward-to changed meaning, it is now only used for what ip we're binding to.
+  "Unused right now, except by hardcoded rtp benchmarks."
   (go (let [ctrl      (chan)
             udp-sock  (.createSocket (node/require "dgram") "udp4") ;; FIXME should not be hardcoded to ip4
             port      (do (.bind udp-sock (or bind-port 0) (:host forward-to) #(go (>! ctrl (-> udp-sock .address .-port))))
                           (<! ctrl))
             dest      {:type :ip4 :proto :udp :host "0.0.0.0" :port 0}]
         (-> udp-sock
-            (c/add {:ctype :udp :ctrl ctrl :type :udp-ap :circuit circ-id :local-dest forward-to}) ;; FIXME circ data is messy... need to seperate and harmonise things.
+            (c/add {:ctype :udp :ctrl ctrl :type :udp-ap :circuit circ-id :local-dest forward-to}) ;; FIXME circ data is messy... need to separate and harmonise things.
             (c/add-listeners {:message (partial forwarder config udp-sock)}))
         (circ/update-data circ-id [:ap-dest] dest)
         (circ/update-data circ-id [:backward-hop] udp-sock)
@@ -160,6 +162,8 @@
 (def chosen-mix (atom nil))
 
 (defn init-pool [config soc type path-data]
+  "Initialises a channel, filling it with as many circuits as it will take.
+  Replaces them as they are consumed."
   (let [new-path (condp = type
                    :single #(create-single config (path-data))
                    :rt     #(create-rt config soc path-data))]
@@ -167,11 +171,11 @@
       (>! (@pool type) (new-path))
       (recur))))
 
-;; initialise a pool of N of each type of circuits (rt and single for now)
-;; geo-db is the list of mixes with their geo info.
-(defn init-pools [config geo-db loc N]
+(defn init-pools [config net-info loc N]
+  "Initialise a pool of N of each type of circuits (rt and single for now)
+  net-info is the list of mixes with their geo info."
   (let [reg          (-> loc :reg)
-        select-mixes #(->> geo-db seq (map second) (filter %) shuffle)
+        select-mixes #(->> net-info seq (map second) (filter %) shuffle)
         ;; entry mix, for :rt --> will be assigned by dir.
         mix          (first (select-mixes #(= (:reg %) reg)))
         ;; make path for :single, three hops, the first being mix chosen for :rt.
@@ -192,7 +196,7 @@
         (init-pool config soc :single mk-path))
     mix))
 
-;; Return a channel to the chosen type rt/single of path.
-;; As soon as a circuit is used, a new one will be put in the channel, see init-pool.
 (defn get-path [type]
+  "Return a channel to the chosen type rt/single of path.
+  As soon as a circuit is used, a new one will be put in the channel, see init-pool."
   (@pool type))

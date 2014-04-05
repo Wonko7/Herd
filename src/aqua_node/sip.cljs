@@ -14,9 +14,9 @@
   (:require-macros [cljs.core.async.macros :as m :refer [go-loop go]]))
 
 
-(defn create-server [config geo-db things]
+(defn create-server [config net-info things]
   (let [sip         (node/require "sip")
-        rdv         (path/get-path :single)
+        rdv         (path/get-path :single) ;; FIXME we should specify what zone we want our rdv in.
         process     (fn [rq]
                       (let [nrq  (-> rq cljs/js->clj walk/keywordize-keys)
                             name (-> nrq :headers :contact first :name)]
