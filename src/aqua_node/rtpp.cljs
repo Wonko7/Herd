@@ -47,7 +47,7 @@
         sdp-entering (fn [sdp distant-ip ports]
                        (let [sdp-ch         (chan)
                              local-ip       (:local-ip config)
-                             circs          (repeatedly #(path/get-path config :rt))
+                             circs          (repeatedly #(path/get-path :rt)) ;; won't work because we changed get-path, not fixing because this code will be remodeled in sip.cljs
                              assoc-circ     (fn [cid [media distant-port]]
                                               (assert cid "no circuits available. how quaint.")
                                               (let [circ           (circ/get-data cid)

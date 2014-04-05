@@ -25,11 +25,11 @@
 
 (defn app-proxy-init [config socket dest]
   "Attach a socket from socks proxy to a single circuit"
-  (let [circ-id (path/get-path config :single)] ;; FIXME -> rt for testing, but really this should be single path. -> Fixed, but untested for now.
-    (c/update-data socket [:circuit] circ-id)
-    (circ/update-data circ-id [:ap-dest] dest)
-    (circ/update-data circ-id [:backward-hop] socket)
-    (go (>! (:ctrl (circ/get-data circ-id)) :relay-connect))))
+  (go (let [circ-id (<! (path/get-path config :single))] ;; FIXME -> rt for testing, but really this should be single path. -> Fixed, but untested for now.
+        (c/update-data socket [:circuit] circ-id)
+        (circ/update-data circ-id [:ap-dest] dest)
+        (circ/update-data circ-id [:backward-hop] socket)
+        (>! (:ctrl (circ/get-data circ-id)) :relay-connect))))
 
 (defn aqua-server-recv [config s]
   "Setup socket as an aqua service, send all received data through circ/process."
@@ -75,14 +75,14 @@
 
 (defn hardcoded-rtp-path [config {dest :dest port :listen-port}] ;; keep this for testing and benchmarks. should move this.
   "Was used for facilitating benchmarking."
-  (let [cid            (path/get-path config :rt)
-        circ           (circ/get-data cid)
-        state          (chan)]
-    (circ/update-data cid [:state-ch] state)
-    (go (>! (:dest-ctrl circ) (merge dest {:proto :udp :type :ip4})))
-    (go (let [state          (<! state)
-              [_ local-port] (<! (path/attach-local-udp4 config cid {:host "127.0.0.1"} path/app-proxy-forward-udp port))]
-          (log/info "Hardcoded RTP: listening on:" local-port "forwarding to:" (:host dest) (:port dest) "using circ:" cid)))))
+  (go (let [cid            (<! (path/get-path :rt))
+            circ           (circ/get-data cid)
+            state          (chan)]
+        (circ/update-data cid [:state-ch] state)
+        (go (>! (:dest-ctrl circ) (merge dest {:proto :udp :type :ip4})))
+        (go (let [state          (<! state)
+                  [_ local-port] (<! (path/attach-local-udp4 config cid {:host "127.0.0.1"} path/app-proxy-forward-udp port))]
+              (log/info "Hardcoded RTP: listening on:" local-port "forwarding to:" (:host dest) (:port dest) "using circ:" cid))))))
 
 (defn is? [role roles]
   "Tests if a role is part of the given roles"
