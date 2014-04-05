@@ -47,9 +47,29 @@
 
 ;; circuit state management ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
-;; Functions to keep track of current circuits: adding, updating, removing.
-
 (def circuits (atom {}))
+
+;; Functions to keep track of current circuits: adding, updating, removing.
+;;
+;; Circuit data description:
+;;
+;;
+;; {:conn          The socket the circuit is attached to.
+;;  :forward-hop   The next hop forward in the circuit. Another mix, or the
+;;                 destination if we are the endpoint.
+;;  :backward-hop  The previous hop in the circuit. Another mix, or a local
+;;                 socket if we are the origin of the circuit.
+;;  :path          The list of secrets we handshaked with nodes which we need
+;;                 to use to encrypt data before sending it.
+;;  :roles         Our role in the circuit. can be origin, mix, exit.
+;;  :ctrl          A control channel used by path. used to know when
+;;                 transaction are finished (send extend, receive extended:
+;;                 notify on :ctrl)
+;;  :dest-ctrl     A control channel for :rt circuits, used to give the final
+;;                 hop. subject to change.
+;;  :mk-path-fn    A function to be called after a transaction. In pratice, it
+;;                 usually just updates the :ctrl channel, see path.
+;;  :path-dest     The destination of the path.}
 
 (defn add [circ-id socket & [state]]
   ;; FIXME remove socket from there. this shall become :forward-hop.
