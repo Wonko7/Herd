@@ -52,8 +52,7 @@
                                               ;(<! send-invite), create rtp circ to dest, continue;
                                               (.send sip (.makeResponse sip rq 180 "RINGING")))
                               nil)))]
-       ; (circ/relay-rdv config rdv)
-        (println :rdv! rdv)
+        (-> rdv circ/get-data :dest-ctrl (>! :rdv))
         ;; create path to sip dir.
         ;; create rdv. now, or on register?
         (.start sip (cljs/clj->js {:protocol "UDP"}) process)

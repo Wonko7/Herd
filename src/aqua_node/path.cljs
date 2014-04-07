@@ -36,9 +36,11 @@
   ;; Find the first mix's socket & send a create.
   (let [socket (c/find-by-dest (:dest n))
         id     (circ/create config socket (:auth n))
-        ctrl   (chan)]
+        ctrl   (chan)
+        dest   (chan)]
     (circ/update-data id [:roles] [:origin])
     (circ/update-data id [:ctrl] ctrl)
+    (circ/update-data id [:dest-ctrl] dest)
     (circ/update-data id [:mk-path-fn] #(go (>! ctrl :next)))
     (circ/update-data id [:path-dest] (-> all-nodes last :dest))
     ;; for each remaining mix (nodes here), send a relay-extend, wait until
@@ -48,15 +50,19 @@
             (circ/relay-extend config id n)
             (log/debug "Circ" id "extended, remaining =" (count nodes))
             (recur (<! ctrl) nodes)))
-        ;; the circuit is built, notify input socket that we are ready to relay data
-        (let [cmd  (<! ctrl)
+        ;; the circuit is built, waiting on dest-ctrl for a destination before sending relay begin.
+        (let [cmd  (<! dest)
               circ (circ/get-data id)]
-          (circ/relay-begin config id (:ap-dest circ))
-          (circ/update-data id [:state] :relay-ack-pending)
-          (circ/update-data id [:path-dest :port] (:port (<! ctrl)))
-          (circ/update-data id [:state] :relay)
-          (>! (-> circ :backward-hop c/get-data :ctrl) :relay)
-          (log/info "Single Circuit" id "is ready for relay")))
+          (condp = cmd
+            :begin (do (circ/relay-begin config id (:ap-dest circ))
+                       (circ/update-data id [:state] :relay-ack-pending)
+                       (circ/update-data id [:path-dest :port] (:port (<! ctrl)))
+                       (circ/update-data id [:state] :relay)
+                       (>! (-> circ :backward-hop c/get-data :ctrl) :relay)
+                       (log/info "Single Circuit" id "is ready for relay"))
+            :rdv   (do (circ/relay-rdv config id)
+                       (log/info "Single Circuit" id "is our RDV"))
+            :else  (log/error "Did not understand command" cmd "on circ" id))))
     id))
 
 ;; create a realtime path for RTP. This version connects to the callee's ap.
