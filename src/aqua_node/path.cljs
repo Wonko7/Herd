@@ -37,10 +37,12 @@
   (let [socket (c/find-by-dest (:dest n))
         id     (circ/create config socket (:auth n))
         ctrl   (chan)
-        dest   (chan)]
+        dest   (chan)
+        notify (chan)]
     (circ/update-data id [:roles] [:origin])
     (circ/update-data id [:ctrl] ctrl)
     (circ/update-data id [:dest-ctrl] dest)
+    (circ/update-data id [:notify] notify)
     (circ/update-data id [:mk-path-fn] #(go (>! ctrl :next)))
     (circ/update-data id [:path-dest] (-> all-nodes last :dest))
     ;; for each remaining mix (nodes here), send a relay-extend, wait until
@@ -74,9 +76,9 @@
                            (circ/relay-extend config id dest)
                            (<! ctrl)
                            ;; notify:
-                           ;; FIXME
                            (circ/update-data id [:state] :relay)
                            (log/info "RDV" id "is ready for relay")
+                           (go (>! notify :extended))
                            (recur (<! dest)))))
             :else  (log/error "Did not understand command" cmd "on circ" id))))
     id))

@@ -14,9 +14,11 @@
   (:require-macros [cljs.core.async.macros :as m :refer [go-loop go]]))
 
 
-(defn create-server [config net-info things]
+(defn create-server [{sip-dir :sip-dir :as config} net-info things]
   (go (let [sip         (node/require "sip")
-            rdv         (<! (path/get-path :single)) ;; FIXME we should specify what zone we want our rdv in.
+            rdv-id      (<! (path/get-path :single)) ;; FIXME we should specify what zone we want our rdv in.
+            rdv-ctrl    (-> rdv-id circ/get-data :dest-ctrl)
+            rdv-notify  (-> rdv-id circ/get-data :notify)
             process     (fn [rq]
                           (let [nrq  (-> rq cljs/js->clj walk/keywordize-keys)
                                 name (-> nrq :headers :contact first :name)]
@@ -25,9 +27,11 @@
                             (condp = (:method nrq)
                               "REGISTER"  (let [contact  (-> nrq :headers :contact first)
                                                 name     (or (-> contact :name)
-                                                             (->> contact :uri (re-find #"sip:(.*)@") second))]
-                                            ;(send reg w/ rdv to sip dir)
-                                            ;(<! get ack)
+                                                             (->> contact :uri (re-find #"sip:(.*)@") second))
+                                                rdv-data (circ/get-data rdv-id)]
+                                            (>! rdv-ctrl sip-dir)
+                                            (<! rdv-notify)
+                                            (dir/sip-register rdv-id name)
                                             (println (-> nrq :headers :via first))
                                             (println :name name)
                                             (.send sip (.makeResponse sip rq 200 "OK")))
@@ -52,7 +56,7 @@
                                               ;(<! send-invite), create rtp circ to dest, continue;
                                               (.send sip (.makeResponse sip rq 180 "RINGING")))
                               nil)))]
-        (-> rdv circ/get-data :dest-ctrl (>! :rdv))
+        (>! rdv-ctrl :rdv)
         ;; create path to sip dir.
         ;; create rdv. now, or on register?
         (.start sip (cljs/clj->js {:protocol "UDP"}) process)
