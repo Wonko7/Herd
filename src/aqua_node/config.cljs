@@ -20,7 +20,7 @@
                    :protoid     (b/new protoid)
                    :server      (b/new "Server")
                    :node-id-len 20
-                   :key-id-len  32
+                   :key-len     32
                    :g-len       32
                    :h-len       32}]
     ;; key lengths, ntor, and rate period in milliseconds.
@@ -59,10 +59,15 @@
         ;; if aqua certs are null, create some (first run).
         aqua        (if (:sec aqua)
                       aqua
-                      (let [[s p] (c/gen-keys)] ;; generate aqua certs.
+                      (let [[s p] (c/gen-keys static-conf)] ;; generate aqua certs.
                         (merge {:sec (echo-to (-> cfg :auth :aqua-id :sec) s)}
                                {:pub (echo-to (-> cfg :auth :aqua-id :pub) p)}
                                {:id  (echo-to (-> cfg :auth :aqua-id :id)  (-> (node/require "crypto") (.createHash "sha256") (.update p) .digest (.slice 0 (-> static-conf :ntor-values :node-id-len))))})))] ;; FIXME test node len
+    ;; Sanity checks
+    (assert (= (-> aqua :sec .-length) (-> static-conf :ntor-values :key-len))    "Bad secret key length, check aqua certificates.")
+    (assert (= (-> aqua :pub .-length) (-> static-conf :ntor-values :key-len))    "Bad public key length, check aqua certificates.")
+    (assert (= (-> aqua :id .-length) (-> static-conf :ntor-values :node-id-len)) "Bad ID length, check aqua certificates.")
+    ;; merge static-conf, config file & argv
     (swap! config merge static-conf cfg {:auth {:openssl ossl :aqua-id aqua}} argv))) ;; FIXME will probably need to remove that, filter argv values we accept & do sanity checking. For now anything in argv overwrites config file.
                                                                                       ;; FIXME Argv supported options:
                                                                                       ;;           --debug (also --debug false)

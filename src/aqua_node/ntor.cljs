@@ -35,17 +35,17 @@
 
 
 ;; FIXME: assert all lens.
-(defn client-init [{srv-id :srv-id pub-B :pub-B :as auth}]
-  (let [[secret-x public-X]        (c/gen-keys)]
+(defn client-init [config {srv-id :srv-id pub-B :pub-B :as auth}]
+  (let [[secret-x public-X]        (c/gen-keys config)] ;; FIXME we might change this.
     [(merge auth {:sec-x secret-x :pub-X public-X}) (b/cat srv-id pub-B public-X)]))
 
-(defn server-reply [{pub-B :pub-B sec-b :sec-b id :node-id :as auth} req key-len]
+(defn server-reply [config {pub-B :pub-B sec-b :sec-b id :node-id :as auth} req key-len]
   (assert (= (.-length req) (+ (:node-id-len conf) (:h-len conf) (:h-len conf))) "bad client req ntor length")
   (let [curve                      (node/require "node-curve25519")
         [req-nid req-pub pub-X]    (b/cut req (:node-id-len conf) (+ (:node-id-len conf) (:h-len conf)))]
     (assert (b/b= req-nid id)    "received create request with bad node-id")
     (assert (b/b= req-pub pub-B) "received create request with bad pub key")
-    (let [[sec-y pub-Y]            (c/gen-keys)
+    (let [[sec-y pub-Y]            (c/gen-keys config)
           x-y                      (.deriveSharedSecret curve sec-y pub-X)
           x-b                      (.deriveSharedSecret curve sec-b pub-X)
           secret-input             (b/cat x-y x-b id pub-B pub-X pub-Y (:protoid conf))

@@ -15,48 +15,49 @@
 
 
 (defn create-server [config net-info things]
-  (let [sip         (node/require "sip")
-        rdv         (path/get-path :single) ;; FIXME we should specify what zone we want our rdv in.
-        process     (fn [rq]
-                      (let [nrq  (-> rq cljs/js->clj walk/keywordize-keys)
-                            name (-> nrq :headers :contact first :name)]
-                        (println)
-                        (println :nrq nrq)
-                        (condp = (:method nrq)
-                          "REGISTER"  (let [contact  (-> nrq :headers :contact first)
-                                            name     (or (-> contact :name)
-                                                         (->> contact :uri (re-find #"sip:(.*)@") second))]
-                                        ;(send reg w/ rdv to sip dir)
-                                        ;(<! get ack)
-                                        (println (-> nrq :headers :via first))
-                                        (println :name name)
-                                        (.send sip (.makeResponse sip rq 200 "OK")))
-                          "SUBSCRIBE" (condp = (-> nrq :headers :event)
-                                        "presence.winfo"  (do (println (:event nrq))
-                                                              ;; and register the gringo.
-                                                              (.send sip (.makeResponse sip rq 200 "OK")))
-                                        "message-summary" (do (println :200 :OK) (.send sip (.makeResponse sip rq 200 "OK")))
-                                        (.send sip (.makeResponse sip rq 501 "Not Implemented")))
-                          "PUBLISH"   (go (if (= "presence" (-> nrq :headers :event))
-                                            (let [parse-xml (-> (node/require "xml2js") .-parseString)
-                                                  xml       (chan)]
-                                              (parse-xml (:content nrq) #(go (println %2) (>! xml %2)))
-                                              (println 1)
-                                              (println (-> (<! xml) cljs/js->clj walk/keywordize-keys))
-                                              (println 2)
-                                              (.send sip (.makeResponse sip rq 200 "OK")))
-                                            (do (log/error "SIP: Unsupported PUBLISH event:" (-> nrq :headers :event))
-                                                (.send sip (.makeResponse sip rq 501 "Not Implemented")))))
-                          "OPTIONS"   (.send sip (.makeResponse sip rq 200 "OK"))
-                          "INVITE"    (do (.send sip (.makeResponse sip rq 100 "TRYING"))
-                                          ;(<! send-invite), create rtp circ to dest, continue;
-                                          (.send sip (.makeResponse sip rq 180 "RINGING")))
-                          nil)))]
-    (go (println :rdv! (<! rdv)))
-    ;; create path to sip dir.
-    ;; create rdv. now, or on register?
-    (.start sip (cljs/clj->js {:protocol "UDP"}) process)
-    (log/info "SIP proxy listening on default UDP SIP port")))
+  (go (let [sip         (node/require "sip")
+            rdv         (<! (path/get-path :single)) ;; FIXME we should specify what zone we want our rdv in.
+            process     (fn [rq]
+                          (let [nrq  (-> rq cljs/js->clj walk/keywordize-keys)
+                                name (-> nrq :headers :contact first :name)]
+                            (println)
+                            (println :nrq nrq)
+                            (condp = (:method nrq)
+                              "REGISTER"  (let [contact  (-> nrq :headers :contact first)
+                                                name     (or (-> contact :name)
+                                                             (->> contact :uri (re-find #"sip:(.*)@") second))]
+                                            ;(send reg w/ rdv to sip dir)
+                                            ;(<! get ack)
+                                            (println (-> nrq :headers :via first))
+                                            (println :name name)
+                                            (.send sip (.makeResponse sip rq 200 "OK")))
+                              "SUBSCRIBE" (condp = (-> nrq :headers :event)
+                                            "presence.winfo"  (do (println (:event nrq))
+                                                                  ;; and register the gringo.
+                                                                  (.send sip (.makeResponse sip rq 200 "OK")))
+                                            "message-summary" (do (println :200 :OK) (.send sip (.makeResponse sip rq 200 "OK")))
+                                            (.send sip (.makeResponse sip rq 501 "Not Implemented")))
+                              "PUBLISH"   (go (if (= "presence" (-> nrq :headers :event))
+                                                (let [parse-xml (-> (node/require "xml2js") .-parseString)
+                                                      xml       (chan)]
+                                                  (parse-xml (:content nrq) #(go (println %2) (>! xml %2)))
+                                                  (println 1)
+                                                  (println (-> (<! xml) cljs/js->clj walk/keywordize-keys))
+                                                  (println 2)
+                                                  (.send sip (.makeResponse sip rq 200 "OK")))
+                                                (do (log/error "SIP: Unsupported PUBLISH event:" (-> nrq :headers :event))
+                                                    (.send sip (.makeResponse sip rq 501 "Not Implemented")))))
+                              "OPTIONS"   (.send sip (.makeResponse sip rq 200 "OK"))
+                              "INVITE"    (do (.send sip (.makeResponse sip rq 100 "TRYING"))
+                                              ;(<! send-invite), create rtp circ to dest, continue;
+                                              (.send sip (.makeResponse sip rq 180 "RINGING")))
+                              nil)))]
+       ; (circ/relay-rdv config rdv)
+        (println :rdv! rdv)
+        ;; create path to sip dir.
+        ;; create rdv. now, or on register?
+        (.start sip (cljs/clj->js {:protocol "UDP"}) process)
+        (log/info "SIP proxy listening on default UDP SIP port"))))
 
 
 

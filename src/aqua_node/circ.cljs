@@ -164,7 +164,7 @@
 
 (defn mk-create [config srv-auth circ-id]
   "Make the create2 payload with the initialisation of the nTor handshake."
-  (let [[auth create] (hs/client-init srv-auth)
+  (let [[auth create] (hs/client-init config srv-auth)
         header   (b/new 4)]
     (.writeUInt16BE header 2 0)
     (.writeUInt16BE header (.-length create) 2)
@@ -254,6 +254,9 @@
             (.copy m data 2)
             (relay config (:forward-hop (@circuits circ-id)) circ-id :data :f-enc data))))))
 
+(defn relay-rdv [config circ-id]
+  (relay config (:forward-hop (@circuits circ-id)) circ-id :rdv :f-enc (b/new 0)))
+
 (defn padding [config socket]
   "Send padding message. Will be dropped."
   (cell-send config socket 0 :padding (b/new 369))) ;; FIXME no enc on circ 0.
@@ -293,7 +296,7 @@
   (let [{pub-B :pub node-id :id sec-b :sec} (-> config :auth :aqua-id) ;; FIXME: renaming the keys is stupid.
         hs-type                             (.readUInt16BE payload 0)
         len                                 (.readUInt16BE payload 2)
-        [shared-sec created]                (hs/server-reply {:pub-B pub-B :node-id node-id :sec-b sec-b} (.slice payload 4) (-> config :enc :key-len))
+        [shared-sec created]                (hs/server-reply config {:pub-B pub-B :node-id node-id :sec-b sec-b} (.slice payload 4) (-> config :enc :key-len))
         header                              (b/new 2)]
     (assert (= hs-type 2) "unsupported handshake type")
     (.writeUInt16BE header (.-length created) 0)
@@ -328,7 +331,7 @@
         [dest payload]                      (conv/parse-addr payload)
         hs-type                             (.readUInt16BE payload 0)
         len                                 (.readUInt16BE payload 2)
-        [shared-sec created]                (hs/server-reply {:pub-B pub-B :node-id node-id :sec-b sec-b} (.slice payload 4) 32)
+        [shared-sec created]                (hs/server-reply config {:pub-B pub-B :node-id node-id :sec-b sec-b} (.slice payload 4) 32)
         header                              (b/new 2)]
     (assert (= hs-type 2) "unsupported handshake type")
     (.writeUInt16BE header (.-length created) 0)
@@ -371,6 +374,7 @@
   "Process an incoming relay message: parse header, and dispatch to appropriate relay processing function."
   (let [circ        (@circuits circ-id)
         r-payload   (:payload relay-data)
+        add-role    #(->> circ :roles (cons %) distinct)
 
         ;; process data packet: forward payload as rtp, udp to destination socket.
         p-data      (fn []
@@ -441,14 +445,22 @@
                             dest       (condp = ls-type
                                          3 {:type :ip4 :host (conv/ip4-to-str (.slice r-payload 3 7))  :port (r2 7)  :create (.slice r-payload 9)}
                                          4 {:type :ip6 :host (conv/ip6-to-str (.slice r-payload 3 19)) :port (r2 19) :create (.slice r-payload 21)})
-                            sock       (c/find-by-dest dest)]
+                            sock       (c/find-by-dest dest)
+                            fhop       (:forward-hop circ)]
                         (assert sock "could not find destination")
+                        (when (and (is? :rdv circ) fhop)
+                          (send-destroy config fhop circ-id "because reasons"))
                         (update-data circ-id [:forward-hop] sock)
-                        (update-data circ-id [:roles] [:mix]) ;; FIXME just add?
+                        (update-data circ-id [:roles] (add-role :mix))
                         (cell-send config sock circ-id :create2 (:create dest))))
 
         ;; our relay extend has been acknowledged. Process as a created2 message.
         p-extended  #(recv-created2 config socket circ-id r-payload)
+
+        ;; we are asked to be RDV:
+        p-rdv       (fn []
+                      (log/info "Acting as RDV for" circ-id)
+                      (update-data circ-id [:roles] (add-role :rdv)))
 
         ;; draft of sip integration, likely to change.
         p-sip       #(if-let [sip-ch (:sip-ch config)]
@@ -474,7 +486,8 @@
       14 (p-extend)
       15 (p-extended)
       ;; aqua specific: sip things.
-      16 (p-sip)
+      ;16 (p-sip) ;; keep commented as long as it's unused
+      17 (p-rdv)
       (log/error "unsupported relay command"))))
 
 ;; see tor spec 6.
@@ -552,7 +565,9 @@
    :resolved   12
    :begin_dir  13
    :extend2    14
-   :extended2  15})
+   :extended2  15
+   ;; extended 
+   :rdv        17})
 
 (def wait-buffer (atom nil)) ;; FIXME we need one per socket
 

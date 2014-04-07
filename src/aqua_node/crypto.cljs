@@ -32,8 +32,8 @@
 
 ;; curve:
 
-(defn gen-keys []
+(defn gen-keys [config]
   (let [[curve crypto] [(node/require "node-curve25519") (node/require "crypto")]
-        sec            (.makeSecretKey curve (.randomBytes crypto 32))
+        sec            (.makeSecretKey curve (.randomBytes crypto (-> config :ntor-values :key-len)))
         pub            (.derivePublicKey curve sec)]
     [sec pub]))

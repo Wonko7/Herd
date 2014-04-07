@@ -25,7 +25,7 @@
 
 (defn app-proxy-init [config socket dest]
   "Attach a socket from socks proxy to a single circuit"
-  (go (let [circ-id (<! (path/get-path config :single))] ;; FIXME -> rt for testing, but really this should be single path. -> Fixed, but untested for now.
+  (go (let [circ-id (<! (path/get-path :single))] ;; FIXME -> rt for testing, but really this should be single path. -> Fixed, but untested for now.
         (c/update-data socket [:circuit] circ-id)
         (circ/update-data circ-id [:ap-dest] dest)
         (circ/update-data circ-id [:backward-hop] socket)
