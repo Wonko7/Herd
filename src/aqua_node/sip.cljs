@@ -57,8 +57,6 @@
                                               (.send sip (.makeResponse sip rq 180 "RINGING")))
                               nil)))]
         (>! rdv-ctrl :rdv)
-        ;; create path to sip dir.
-        ;; create rdv. now, or on register?
         (.start sip (cljs/clj->js {:protocol "UDP"}) process)
         (log/info "SIP proxy listening on default UDP SIP port"))))
 
