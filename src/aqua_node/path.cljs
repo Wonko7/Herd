@@ -50,7 +50,8 @@
             (circ/relay-extend config id n)
             (log/debug "Circ" id "extended, remaining =" (count nodes))
             (recur (<! ctrl) nodes)))
-        ;; the circuit is built, waiting on dest-ctrl for a destination before sending relay begin.
+        ;; the circuit is built, waiting on dest-ctrl for a destination before sending relay begin,
+        ;; or a :rdv command to make the last node a rdv.
         (let [cmd  (<! dest)
               circ (circ/get-data id)]
           (condp = cmd
@@ -61,7 +62,22 @@
                        (>! (-> circ :backward-hop c/get-data :ctrl) :relay)
                        (log/info "Single Circuit" id "is ready for relay"))
             :rdv   (do (circ/relay-rdv config id)
-                       (log/info "Single Circuit" id "is our RDV"))
+                       (log/info "Single Circuit" id "is our RDV")
+                       ;; each time we receive a new dest, we ask rdv to extend to it.
+                       ;; if the rdv already had a next hop, it will destroy it.
+                       (loop [next-hop (<! dest)]
+                         (let [enc-path (-> id circ/get-data :path)]
+                           ;; if rdv had a next hop, remove it from the encryption node list.
+                           (when (> (count enc-path) (count all-nodes))
+                             (circ/update-data id [:path] (drop-last enc-path)))
+                           ;; send extend, then wait for extended.
+                           (circ/relay-extend config id dest)
+                           (<! ctrl)
+                           ;; notify:
+                           ;; FIXME
+                           (circ/update-data id [:state] :relay)
+                           (log/info "RDV" id "is ready for relay")
+                           (recur (<! dest)))))
             :else  (log/error "Did not understand command" cmd "on circ" id))))
     id))
 
