@@ -201,10 +201,10 @@
   (let [reg          (-> loc :reg)
         select-mixes #(->> net-info seq (map second) (filter %) shuffle)
         ;; entry mix, for :rt --> will be assigned by dir.
-        mix          (first (select-mixes #(= (:reg %) reg)))
+        mix          (first (select-mixes #(and (= (:role %) :mix) (= (:reg %) reg))))
         ;; make path for :single, three hops, the first being mix chosen for :rt.
         mk-path      (fn []
-                       (->> (select-mixes #(not= mix %)) (take 2) (cons mix) (map #(merge % {:dest %})))) ;; use same mix as entry point for single & rt. ; not= mix
+                       (->> (select-mixes #(and (= (:role %) :mix) (not= mix %))) (take 2) (cons mix) (map #(merge % {:dest %})))) ;; use same mix as entry point for single & rt. ; not= mix
         connected    (chan)
         soc          (conn/new :aqua :client mix config {:connect #(go (>! connected :done))})]
     (log/info "Init Circuit pools: we are in" (:country loc) "/" (geo/reg-to-continent reg))

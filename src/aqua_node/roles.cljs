@@ -88,7 +88,7 @@
   "Tests if a role is part of the given roles"
   (some #(= role %) roles))
 
-(defn bootstrap [{roles :roles ap :app-proxy aq :aqua ds :remote-dir dir :dir :as config}]
+(defn bootstrap [{roles :roles ap :app-proxy aq :aqua ds :remote-dir dir :dir sip-dir :sip-dir :as config}]
   "Setup the services needed by the given role."
   (go (let [is?         #(is? % roles)                        ;; tests roles for our running instance
             geo         (go (<! (geo/parse config)))          ;; match our ip against database, unless already specified in config:
@@ -117,4 +117,6 @@
                                      (go (<! con)
                                          (rate/init config soc))))
               (is? :dir)       (conn/new :dir :server dir config {:connect aqua-dir-recv})
+              (is? :sip-dir)   (do (conn/new :aqua :server sip-dir config {:connect aqua-server-recv})
+                                   (register-to-dir (merge config {:aqua sip-dir}) (<! geo) nil ds))
               :else            (log/error "No supported roles in config:" roles)))))

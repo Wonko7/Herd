@@ -14,7 +14,7 @@
   (:require-macros [cljs.core.async.macros :as m :refer [go-loop go]]))
 
 
-(defn create-server [{sip-dir :sip-dir :as config} net-info things]
+(defn create-server [{sip-dir :remote-sip-dir :as config} net-info things]
   (go (let [sip         (node/require "sip")
             rdv-id      (<! (path/get-path :single)) ;; FIXME we should specify what zone we want our rdv in.
             rdv-ctrl    (-> rdv-id circ/get-data :dest-ctrl)
@@ -28,13 +28,19 @@
                               "REGISTER"  (let [contact  (-> nrq :headers :contact first)
                                                 name     (or (-> contact :name)
                                                              (->> contact :uri (re-find #"sip:(.*)@") second))
-                                                rdv-data (circ/get-data rdv-id)]
-                                            (>! rdv-ctrl sip-dir)
-                                            (<! rdv-notify)
-                                            (dir/sip-register rdv-id name)
-                                            (println (-> nrq :headers :via first))
-                                            (println :name name)
-                                            (.send sip (.makeResponse sip rq 200 "OK")))
+                                                rdv-data (circ/get-data rdv-id)
+                                                sip-dir-dest (net-info [(:host sip-dir) (:port sip-dir)])
+                                                sip-dir-dest (merge sip-dir-dest {:dest sip-dir-dest})] ;; FIXME; we'll get rid of :dest in circ someday.
+                                            (if (:auth sip-dir-dest)
+                                              (do (>! rdv-ctrl sip-dir-dest) ;; connect to sip dir to send register
+                                                  (<! rdv-notify)            ;; wait until connected to send it
+                                                  ;(dir/sip-register rdv-id name)
+                                                  (println (-> nrq :headers :via first))
+                                                  (println :name name)
+                                                  (.send sip (.makeResponse sip rq 200 "OK")))
+                                              (do (log/error "Could not find SIP DIR" sip-dir)
+                                                  (doall (->> net-info seq (map second) (map #(dissoc % :auth)) (map println)))
+                                                  (.send sip (.makeResponse sip rq "404" "Not Found")))))
                               "SUBSCRIBE" (condp = (-> nrq :headers :event)
                                             "presence.winfo"  (do (println (:event nrq))
                                                                   ;; and register the gringo.
@@ -57,6 +63,7 @@
                                               (.send sip (.makeResponse sip rq 180 "RINGING")))
                               nil)))]
         (>! rdv-ctrl :rdv)
+        (println (keys (second (first (seq net-info)))))
         (.start sip (cljs/clj->js {:protocol "UDP"}) process)
         (log/info "SIP proxy listening on default UDP SIP port"))))
 

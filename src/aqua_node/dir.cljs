@@ -23,6 +23,15 @@
 (def app-dir (atom {}))       ;; directory of application proxies
 (def net-info-buf (atom nil)) ;; keep the mix topology in a buffer ready to be sent. This is updated when clients register.
 
+;; The data is a map with [ip port] as key for each mix entry:
+;; [ip port] {:proto   protocol
+;;            :type    ip type
+;;            :host    host address
+;;            :port    port
+;;            :reg     geo location
+;;            :role    its role
+;;            :auth    its pub key & id}
+
 (defn get-net-info []
   "Return our local mix topology, obtained from a dir."
   @mix-dir)
@@ -42,7 +51,10 @@
   - ip/host, port, connection type
   - if it's an app-proxy, parse the next entry as its rendez vous mix
   return the appropriate entry and the rest of the payload."
-  (let [role         (if (zero? (.readUInt8 msg 0)) :app-proxy :mix)
+  (let [role         (condp = (.readUInt8 msg 0)
+                       0 :app-proxy ;; FIXME: app-proxy will stop registering to dir, only to sip-dir.
+                       1 :mix
+                       2 :sip-dir)
         reg          (.readUInt8 msg 1)
         id-len       (-> config :ntor-values :node-id-len)
         [id pub msg] (b/cut (.slice msg 2) id-len (+ id-len (-> config :ntor-values :h-len)))
@@ -56,7 +68,10 @@
 (defn mk-info-buf [info]
   "Create an entry from info, that parse-info can read."
   (let [zero  (-> [0] cljs/clj->js b/new)
-        role  (if (= :app-proxy (:role info)) 0 1)
+        role  (condp = (:role info)
+                :app-proxy 0
+                :mix       1
+                :sip-dir   2)
         msg   [(-> [role (-> info :reg geo/reg-to-int)] cljs/clj->js b/new)
                (-> info :auth :srv-id)
                (-> info :auth :pub-B)
@@ -82,11 +97,13 @@
 (defn send-client-info [config soc geo mix done-chan]
   "Send our info to the given directory (soc). This is how we register."
   (let [header (-> [(from-cmd :client-info)] cljs/clj->js b/new)
+        is?    (fn [role]
+                 (first (filter #(= role %) (:roles config))))
         info   {:auth {:srv-id   (-> config :auth :aqua-id :id)
                        :pub-B    (-> config :auth :aqua-id :pub)}
                 :host (-> config :external-ip)
                 :port (-> config :aqua :port)
-                :role (or (->> config :roles (filter #(= :app-proxy)) first) :mix)
+                :role (or (is? :sip-dir) (is? :mix) (is? :app-proxy))
                 :mix  mix
                 :reg  (-> geo :reg)}]
     (.write soc (b/copycat2 header (mk-info-buf info)) #(go (>! done-chan :done)))))
@@ -109,7 +126,7 @@
   (let [[info]      (parse-info config msg)
         ip          (:host info)
         role        (:role info)]
-    (if (= role :mix)
+    (if (or (= role :sip-dir) (= role :mix))
       ;; FIXME: mixes should also timeout.
       (do (swap! mix-dir merge {[ip (:port info)] info})
           (mk-net-buf!))
