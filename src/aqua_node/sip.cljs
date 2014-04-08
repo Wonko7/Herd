@@ -13,12 +13,16 @@
             [aqua-node.dir :as dir])
   (:require-macros [cljs.core.async.macros :as m :refer [go-loop go]]))
 
+(declare register)
 
 (defn create-server [{sip-dir :remote-sip-dir :as config} net-info things]
+  "Creates the listening service that will process the connected SIP client's requests"
   (go (let [sip         (node/require "sip")
+            ;; Prepare RDV:
             rdv-id      (<! (path/get-path :single)) ;; FIXME we should specify what zone we want our rdv in.
             rdv-ctrl    (-> rdv-id circ/get-data :dest-ctrl)
             rdv-notify  (-> rdv-id circ/get-data :notify)
+            ;; Process logic:
             process     (fn [rq]
                           (let [nrq  (-> rq cljs/js->clj walk/keywordize-keys)
                                 name (-> nrq :headers :contact first :name)]
@@ -35,6 +39,7 @@
                                               (go (>! rdv-ctrl sip-dir-dest) ;; connect to sip dir to send register
                                                   (<! rdv-notify)            ;; wait until connected to send it
                                                   ;(dir/sip-register rdv-id name)
+                                                  (register config name rdv-id)
                                                   (println)
                                                   (println (-> nrq :headers :via first))
                                                   (println :name name)
@@ -69,17 +74,35 @@
         (log/info "SIP proxy listening on default UDP SIP port"))))
 
 
+;; Sip dir & register:
+
 
 (def dir (atom {}))
 
-(defn dir [config info]
+(def from-cmd {:register 0})
+(def to-cmd
+  (apply merge (for [k (keys from-cmd)]
+                 {(from-cmd k) k})))
+
+(defn dir [config]
+  "Wait for sip requests on the sip channel and process them.
+  Returns the SIP channel it is listening on."
   (let [sip-chan (chan)]
-  (go-loop [sip (<! sip-chan)]
-       (println sip)
-       (comment
-         (when is-sip-register
-           (swap! dir update entry {key {:name aoeu :timeout (use expire info)}}))))
+    (go-loop [{circ :circ-id rq :sip-rq} (<! sip-chan)]
+      (let [[cmd rdv name] (b/cut rq 1 5)]
+        (log/info "SIP Dir, received:" (-> cmd to-cmd .readUInt8) "RDV:" (.readUInt32BE rdv) "name:" (.toString name))
+        ;(swap! dir update entry {key {:name aoeu :timeout (use expire info)}})
+        (recur (<! sip-chan))))
     sip-chan))
+
+(defn register [config name rdv]
+  (let [cmd    (b/new 1)
+        rdv-b  (b/new 4)
+        name-b (b/new name)]
+    (log/debug "SIP: registering" name "on RDV" rdv)
+    (.writeUInt8 cmd (from-cmd :register) 0)
+    (.writeUInt32BE rdv-b rdv 0)
+    (circ/relay-sip config rdv (b/cat cmd rdv-b name-b))))
 
 
 ;; replace all uris, tags, ports by hc defaults.

@@ -254,8 +254,14 @@
             (.copy m data 2)
             (relay config (:forward-hop (@circuits circ-id)) circ-id :data :f-enc data))))))
 
+;; Instead of individual functions, make relay extendable from outside.
 (defn relay-rdv [config circ-id]
+  "Relay rdv command to the last hop"
   (relay config (:forward-hop (@circuits circ-id)) circ-id :rdv :f-enc (b/new 0)))
+
+(defn relay-sip [config circ-id payload]
+  "Relay a sip command (like a register to a sip dir). Meant to be used from a RDV circ."
+  (relay config (:forward-hop (@circuits circ-id)) circ-id :sip :f-enc payload))
 
 (defn padding [config socket]
   "Send padding message. Will be dropped."
@@ -463,7 +469,7 @@
                       (update-data circ-id [:roles] (add-role :rdv)))
 
         ;; draft of sip integration, likely to change.
-        p-sip       #(if-let [sip-ch (:sip-ch config)]
+        p-sip       #(if-let [sip-ch (:sip-chan config)]
                        (go (>! sip-ch {:circ circ :circ-id circ-id :sip-rq r-payload}))
                        (log/error "SIP-DIR uninitialised, dropping request on circuit:" circ-id))]
 
@@ -485,8 +491,8 @@
       13 (log/error :relay-begin_dir "is an unsupported relay command")
       14 (p-extend)
       15 (p-extended)
-      ;; aqua specific: sip things.
-      ;16 (p-sip) ;; keep commented as long as it's unused
+      ;; aqua specific:
+      16 (p-sip)
       17 (p-rdv)
       (log/error "unsupported relay command"))))
 
@@ -567,6 +573,7 @@
    :extend2    14
    :extended2  15
    ;; extended 
+   :sip        16
    :rdv        17})
 
 (def wait-buffer (atom nil)) ;; FIXME we need one per socket

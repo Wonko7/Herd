@@ -117,6 +117,8 @@
                                      (go (<! con)
                                          (rate/init config soc))))
               (is? :dir)       (conn/new :dir :server dir config {:connect aqua-dir-recv})
-              (is? :sip-dir)   (do (conn/new :aqua :server sip-dir config {:connect aqua-server-recv})
-                                   (register-to-dir (merge config {:aqua sip-dir}) (<! geo) nil ds))
+              (is? :sip-dir)   (let [sip-chan (sip/dir config)
+                                     cfg      (merge config {:sip-chan sip-chan :aqua sip-dir})]
+                                 (conn/new :aqua :server sip-dir cfg {:connect aqua-server-recv})
+                                 (register-to-dir cfg (<! geo) nil ds))
               :else            (log/error "No supported roles in config:" roles)))))
