@@ -90,7 +90,7 @@
   (let [sip-chan (chan)]
     (go-loop [{circ :circ-id rq :sip-rq} (<! sip-chan)]
       (let [[cmd rdv name] (b/cut rq 1 5)]
-        (log/info "SIP Dir, received:" (-> cmd to-cmd .readUInt8) "RDV:" (.readUInt32BE rdv) "name:" (.toString name))
+        (log/info "SIP Dir, received:" (-> cmd (.readUInt8 0) to-cmd) "RDV:" (.readUInt32BE rdv 0) "name:" (.toString name))
         ;(swap! dir update entry {key {:name aoeu :timeout (use expire info)}})
         (recur (<! sip-chan))))
     sip-chan))
