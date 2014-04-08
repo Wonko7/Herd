@@ -64,7 +64,7 @@
                        (>! (-> circ :backward-hop c/get-data :ctrl) :relay)
                        (log/info "Single Circuit" id "is ready for relay"))
             :rdv   (do (circ/relay-rdv config id)
-                       (log/info "Single Circuit" id "is our RDV")
+                       (log/info "Using Single Circuit" id "as RDV")
                        ;; each time we receive a new dest, we ask rdv to extend to it.
                        ;; if the rdv already had a next hop, it will destroy it.
                        (loop [next-hop (<! dest)]
@@ -72,9 +72,10 @@
                            ;; if rdv had a next hop, remove it from the encryption node list.
                            (when (> (count enc-path) (count all-nodes))
                              (circ/update-data id [:path] (drop-last enc-path)))
+                           (log/debug "Extending RDV" id)
                            ;; send extend, then wait for extended before notifying upstream.
-                           (circ/relay-extend config id dest)
-                           (<! ctrl)
+                           (circ/relay-extend config id next-hop)
+                           (<! ctrl) ;; FIXME add timeout in case things go wrong.
                            ;; notify:
                            (circ/update-data id [:state] :relay)
                            (log/info "RDV" id "is ready for relay")

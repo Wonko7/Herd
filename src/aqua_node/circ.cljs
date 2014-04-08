@@ -368,7 +368,7 @@
               :else              (do (if socket
                                        (d dest)
                                        (map d hops))))
-        (rm circ)))))
+        (rm circ-id)))))
 
 (defn process-relay [config socket circ-id relay-data]
   "Process an incoming relay message: parse header, and dispatch to appropriate relay processing function."
@@ -449,7 +449,7 @@
                             fhop       (:forward-hop circ)]
                         (assert sock "could not find destination")
                         (when (and (is? :rdv circ) fhop)
-                          (send-destroy config fhop circ-id "because reasons"))
+                          (send-destroy config fhop circ-id (b/new "because reasons")))
                         (update-data circ-id [:forward-hop] sock)
                         (update-data circ-id [:roles] (add-role :mix))
                         (cell-send config sock circ-id :create2 (:create dest))))

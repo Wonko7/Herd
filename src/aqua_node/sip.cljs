@@ -32,9 +32,10 @@
                                                 sip-dir-dest (net-info [(:host sip-dir) (:port sip-dir)])
                                                 sip-dir-dest (merge sip-dir-dest {:dest sip-dir-dest})] ;; FIXME; we'll get rid of :dest in circ someday.
                                             (if (:auth sip-dir-dest)
-                                              (do (>! rdv-ctrl sip-dir-dest) ;; connect to sip dir to send register
+                                              (go (>! rdv-ctrl sip-dir-dest) ;; connect to sip dir to send register
                                                   (<! rdv-notify)            ;; wait until connected to send it
                                                   ;(dir/sip-register rdv-id name)
+                                                  (println)
                                                   (println (-> nrq :headers :via first))
                                                   (println :name name)
                                                   (.send sip (.makeResponse sip rq 200 "OK")))
