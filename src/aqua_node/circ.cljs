@@ -65,11 +65,12 @@
 ;;  :ctrl          A control channel used by path. used to know when
 ;;                 transaction are finished (send extend, receive extended:
 ;;                 notify on :ctrl)
-;;  :dest-ctrl     A control channel for :rt circuits, used to give the final
-;;                 hop. subject to change.
+;;  :dest-ctrl     A control channel for circuits, used to give the final
+;;                 hop. subject to change. See create-* in path for usage.
 ;;  :mk-path-fn    A function to be called after a transaction. In pratice, it
 ;;                 usually just updates the :ctrl channel, see path.
-;;  :path-dest     The destination of the path.}
+;;  :path-dest     The destination of the path.
+;;  :rdv           Optional, only if path is a rdv, contains rdv node data.}
 
 (defn add [circ-id socket & [state]]
   ;; FIXME remove socket from there. this shall become :forward-hop.

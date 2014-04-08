@@ -38,11 +38,7 @@
                                             (if (:auth sip-dir-dest)
                                               (go (>! rdv-ctrl sip-dir-dest) ;; connect to sip dir to send register
                                                   (<! rdv-notify)            ;; wait until connected to send it
-                                                  ;(dir/sip-register rdv-id name)
-                                                  (register config name rdv-id)
-                                                  (println)
-                                                  (println (-> nrq :headers :via first))
-                                                  (println :name name)
+                                                  (register config name rdv-id (:rdv rdv-data))
                                                   (.send sip (.makeResponse sip rq 200 "OK")))
                                               (do (log/error "Could not find SIP DIR" sip-dir)
                                                   (doall (->> net-info seq (map second) (map #(dissoc % :auth)) (map println)))
@@ -89,20 +85,29 @@
   Returns the SIP channel it is listening on."
   (let [sip-chan (chan)]
     (go-loop [{circ :circ-id rq :sip-rq} (<! sip-chan)]
-      (let [[cmd rdv name] (b/cut rq 1 5)]
-        (log/info "SIP Dir, received:" (-> cmd (.readUInt8 0) to-cmd) "RDV:" (.readUInt32BE rdv 0) "name:" (.toString name))
+      (let [[cmd rdv rq]  (b/cut rq 1 5)
+            [rdv-dest rq] (conv/parse-addr rq)
+            name          (.toString rq)]
+        (log/info "SIP Dir, received:" (-> cmd (.readUInt8 0) to-cmd) "RDV:" (.readUInt32BE rdv 0) "RDV@:" rdv-dest "name:" name )
         ;(swap! dir update entry {key {:name aoeu :timeout (use expire info)}})
         (recur (<! sip-chan))))
     sip-chan))
 
-(defn register [config name rdv]
-  (let [cmd    (b/new 1)
-        rdv-b  (b/new 4)
-        name-b (b/new name)]
-    (log/debug "SIP: registering" name "on RDV" rdv)
+(defn register [config name rdv-id rdv-data]
+  "Send a register to a sip dir. Format of message:
+  - cmd: 0 = register
+  - rdv's circuit id
+  - rdv ip @ & port
+  - sip name."
+  (let [zero     (-> [0] cljs/clj->js b/new)
+        cmd      (b/new 1)
+        rdv-b    (b/new 4)
+        name-b   (b/new name)
+        rdv-dest (b/new (conv/dest-to-tor-str {:type :ip4 :proto :udp :host (:host rdv-data) :port (:port rdv-data)}))]
+    (log/debug "SIP: registering" name "on RDV" rdv-id)
     (.writeUInt8 cmd (from-cmd :register) 0)
-    (.writeUInt32BE rdv-b rdv 0)
-    (circ/relay-sip config rdv (b/cat cmd rdv-b name-b))))
+    (.writeUInt32BE rdv-b rdv-id 0)
+    (circ/relay-sip config rdv-id (b/cat cmd rdv-b rdv-dest zero name-b))))
 
 
 ;; replace all uris, tags, ports by hc defaults.

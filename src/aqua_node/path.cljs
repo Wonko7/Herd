@@ -57,14 +57,17 @@
         (let [cmd  (<! dest)
               circ (circ/get-data id)]
           (condp = cmd
+            ;; normal circuit, what app-proxy uses:
             :begin (do (circ/relay-begin config id (:ap-dest circ))
                        (circ/update-data id [:state] :relay-ack-pending)
                        (circ/update-data id [:path-dest :port] (:port (<! ctrl)))
                        (circ/update-data id [:state] :relay)
                        (>! (-> circ :backward-hop c/get-data :ctrl) :relay)
                        (log/info "Single Circuit" id "is ready for relay"))
+            ;; RDV logic: send relay rdv to ask last node to become our rdv point.
             :rdv   (do (circ/relay-rdv config id)
                        (log/info "Using Single Circuit" id "as RDV")
+                       (circ/update-data id [:rdv] (last all-nodes))
                        ;; each time we receive a new dest, we ask rdv to extend to it.
                        ;; if the rdv already had a next hop, it will destroy it.
                        (loop [next-hop (<! dest)]
