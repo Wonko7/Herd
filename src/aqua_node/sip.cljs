@@ -13,7 +13,7 @@
             [aqua-node.dir :as dir])
   (:require-macros [cljs.core.async.macros :as m :refer [go-loop go]]))
 
-(declare register)
+(declare register query)
 
 (defn create-server [{sip-dir :remote-sip-dir :as config} net-info things]
   "Creates the listening service that will process the connected SIP client's requests"
@@ -60,9 +60,10 @@
                                                 (do (log/error "SIP: Unsupported PUBLISH event:" (-> nrq :headers :event))
                                                     (.send sip (.makeResponse sip rq 501 "Not Implemented")))))
                               "OPTIONS"   (.send sip (.makeResponse sip rq 200 "OK"))
-                              "INVITE"    (do (.send sip (.makeResponse sip rq 100 "TRYING"))
-                                              ;(<! send-invite), create rtp circ to dest, continue;
-                                              (.send sip (.makeResponse sip rq 180 "RINGING")))
+                              "INVITE"    (let [name (second (re-find #"sip:(.*)@" (:uri nrq)))]
+                                            (query config name rdv-id)
+                                            (.send sip (.makeResponse sip rq 100 "TRYING"))
+                                            (.send sip (.makeResponse sip rq 180 "RINGING")))
                               nil)))]
         (>! rdv-ctrl :rdv)
         (println (keys (second (first (seq net-info)))))
@@ -105,16 +106,17 @@
                        (swap! dir merge {name {:rdv rdv-dest :rdv-id rdv-id :timeout timeout-id}})))
         ;; process query:
         p-query    (fn [{circ :circ-id rq :sip-rq}]
-                     (circ/relay-sip config circ :b-enc
-                                     (if (name @dir)
-                                       (let [entry    (name @dir)
-                                             cmd      (-> [(from-cmd :query-reply)] cljs/clj->js b/new)
-                                             rdv-dest (b/new (conv/dest-to-tor-str (merge {:type :ip4 :proto :udp} (:rdv entry))))
-                                             rdv-id   (b/new 4)]
-                                         (log/debug "SIP DIR, query for" name "on RDV:" rdv-id "RDV dest:" rdv-dest)
-                                         (.writeUInt32BE rdv-id (:rdv-id entry) 0)
-                                         (b/cat rdv-id rdv-dest b/zero))
-                                       (b/cat (-> [(from-cmd :error)] cljs/clj->js b/new) (b/new "404")))))]
+                     (let [name  (.toString (.slice rq 1))
+                           reply (if-let [entry   (@dir name)]
+                                   (let [cmd      (-> [(from-cmd :query-reply)] cljs/clj->js b/new)
+                                         rdv-dest (b/new (conv/dest-to-tor-str (merge {:type :ip4 :proto :udp} (:rdv entry))))
+                                         rdv-id   (b/new 4)]
+                                     (log/debug "SIP DIR, query for" name "on RDV:" rdv-id "RDV dest:" rdv-dest)
+                                     (.writeUInt32BE rdv-id (:rdv-id entry) 0)
+                                     (b/cat rdv-id rdv-dest b/zero))
+                                   (do (log/debug "SIP DIR, could not find" name)
+                                       (b/cat (-> [(from-cmd :error)] cljs/clj->js b/new) (b/new "404"))))]
+                           (circ/relay-sip config circ :b-enc reply)))]
     ;; dispatch requests to the corresponding functions:
     (go-loop [request (<! sip-chan)]
       (condp = (-> request :sip-rq (.readUInt8 0) to-cmd)
@@ -137,6 +139,12 @@
     (log/debug "SIP: registering" name "on RDV" rdv-id)
     (.writeUInt32BE rdv-b rdv-id 0)
     (circ/relay-sip config rdv-id :f-enc (b/cat cmd rdv-b rdv-dest b/zero name-b))))
+
+(defn query [config name rdv-id]
+  (let [cmd         (-> [(from-cmd :query)] cljs/clj->js b/new)
+        name-b      (b/new name)]
+    (log/debug "SIP: querying for" name "on RDV" rdv-id)
+    (circ/relay-sip config rdv-id :f-enc (b/cat cmd name-b))))
 
 
 ;; replace all uris, tags, ports by hc defaults.
