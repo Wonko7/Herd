@@ -117,7 +117,7 @@
                                        (b/cat (-> [(from-cmd :error)] cljs/clj->js b/new) (b/new "404")))))]
     ;; dispatch requests to the corresponding functions:
     (go-loop [request (<! sip-chan)]
-      (condp = (to-cmd (.readUInt8 request 0))
+      (condp = (-> request :sip-rq (.readUInt8 0) to-cmd)
         :register (p-register request)
         :query    (p-query request)
         (log/error "SIP DIR, received unknown command"))
