@@ -260,9 +260,9 @@
   "Relay rdv command to the last hop"
   (relay config (:forward-hop (@circuits circ-id)) circ-id :rdv :f-enc (b/new 0)))
 
-(defn relay-sip [config circ-id payload]
+(defn relay-sip [config circ-id direction payload]
   "Relay a sip command (like a register to a sip dir). Meant to be used from a RDV circ."
-  (relay config (:forward-hop (@circuits circ-id)) circ-id :sip :f-enc payload))
+  (relay config (:forward-hop (@circuits circ-id)) circ-id :sip direction payload))
 
 (defn padding [config socket]
   "Send padding message. Will be dropped."

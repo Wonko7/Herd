@@ -75,7 +75,8 @@
 
 (def dir (atom {}))
 
-(def from-cmd {:register 0})
+(def from-cmd {:register 0
+               :query    1})
 (def to-cmd
   (apply merge (for [k (keys from-cmd)]
                  {(from-cmd k) k})))
@@ -87,23 +88,40 @@
 (defn create-dir [config]
   "Wait for sip requests on the sip channel and process them.
   Returns the SIP channel it is listening on."
-  (let [sip-chan (chan)]
-    (go-loop [{circ :circ-id rq :sip-rq} (<! sip-chan)]
-      ;; the following is register cmd only, for now:
-      (let [cmd           (to-cmd (.readUInt8 rq 0))
-            rdv           (.readUInt32BE rq 1)
-            [rdv-dest rq] (conv/parse-addr (.slice rq 5))
-            name          (.toString rq)
-            timeout-id    (js/setTimeout #(do (log/debug "SIP DIR: timeout for" name)
-                                              (rm name))
-                                         (:sip-register-interval config))]
-        (log/info "SIP Dir, received:" cmd "RDV:" rdv "RDV@:" rdv-dest "name:" name )
-        ;; if the user is renewing its registration, remove rm timeout:
-        (when (@dir name)
-          (js/clearTimeout (:timeout (@dir name))))
-        ;; update the global directory:
-        (swap! dir merge {name {:rdv rdv-dest :circ-id rdv :timeout timeout-id}})
-        (recur (<! sip-chan))))
+  (let [sip-chan   (chan)
+        ;; process register:
+        p-register (fn [{rq :sip-rq}]
+                     (let [rdv-id        (.readUInt32BE rq 1)
+                           [rdv-dest rq] (conv/parse-addr (.slice rq 5))
+                           name          (.toString rq)
+                           timeout-id    (js/setTimeout #(do (log/debug "SIP DIR: timeout for" name)
+                                                             (rm name))
+                                                        (:sip-register-interval config))]
+                       (log/debug "SIP DIR, registering" name "on RDV:" rdv-id "RDV dest:" rdv-dest)
+                       ;; if the user is renewing its registration, remove rm timeout:
+                       (when (@dir name)
+                         (js/clearTimeout (:timeout (@dir name))))
+                       ;; update the global directory:
+                       (swap! dir merge {name {:rdv rdv-dest :rdv-id rdv-id :timeout timeout-id}})))
+        ;; process query:
+        p-query    (fn [{circ :circ-id rq :sip-rq}]
+                     (circ/relay-sip config circ :b-enc
+                                     (if (name @dir)
+                                       (let [entry    (name @dir)
+                                             cmd      (-> [(from-cmd :query-reply)] cljs/clj->js b/new)
+                                             rdv-dest (b/new (conv/dest-to-tor-str (merge {:type :ip4 :proto :udp} (:rdv entry))))
+                                             rdv-id   (b/new 4)]
+                                         (log/debug "SIP DIR, query for" name "on RDV:" rdv-id "RDV dest:" rdv-dest)
+                                         (.writeUInt32BE rdv-id (:rdv-id entry) 0)
+                                         (b/cat rdv-id rdv-dest b/zero))
+                                       (b/cat (-> [(from-cmd :error)] cljs/clj->js b/new) (b/new "404")))))]
+    ;; dispatch requests to the corresponding functions:
+    (go-loop [request (<! sip-chan)]
+      (condp = (to-cmd (.readUInt8 request 0))
+        :register (p-register request)
+        :query    (p-query request)
+        (log/error "SIP DIR, received unknown command"))
+      (recur (<! sip-chan)))
     sip-chan))
 
 (defn register [config name rdv-id rdv-data]
@@ -112,15 +130,13 @@
   - rdv's circuit id
   - rdv ip @ & port
   - sip name."
-  (let [zero        (-> [0] cljs/clj->js b/new)
-        cmd         (b/new 1)
+  (let [cmd         (-> [(from-cmd :register)] cljs/clj->js b/new)
         rdv-b       (b/new 4)
         name-b      (b/new name)
         rdv-dest    (b/new (conv/dest-to-tor-str {:type :ip4 :proto :udp :host (:host rdv-data) :port (:port rdv-data)})) ]
     (log/debug "SIP: registering" name "on RDV" rdv-id)
-    (.writeUInt8 cmd (from-cmd :register) 0)
     (.writeUInt32BE rdv-b rdv-id 0)
-    (circ/relay-sip config rdv-id (b/cat cmd rdv-b rdv-dest zero name-b))))
+    (circ/relay-sip config rdv-id :f-enc (b/cat cmd rdv-b rdv-dest b/zero name-b))))
 
 
 ;; replace all uris, tags, ports by hc defaults.

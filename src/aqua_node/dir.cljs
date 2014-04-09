@@ -67,8 +67,7 @@
 
 (defn mk-info-buf [info]
   "Create an entry from info, that parse-info can read."
-  (let [zero  (-> [0] cljs/clj->js b/new)
-        role  (condp = (:role info)
+  (let [role  (condp = (:role info)
                 :app-proxy 0
                 :mix       1
                 :sip-dir   2)
@@ -76,9 +75,9 @@
                (-> info :auth :srv-id)
                (-> info :auth :pub-B)
                (b/new (conv/dest-to-tor-str {:type :ip4 :proto :udp :host (:host info) :port (:port info)}))
-               zero]
+               b/zero]
         msg   (if (zero? role)
-                (concat msg [(b/new (conv/dest-to-tor-str (merge (:mix info) {:proto :udp :type :ip4}))) zero])
+                (concat msg [(b/new (conv/dest-to-tor-str (merge (:mix info) {:proto :udp :type :ip4}))) b/zero])
                 msg)]
     (apply b/cat msg)))
 
