@@ -262,7 +262,9 @@
 
 (defn relay-sip [config circ-id direction payload]
   "Relay a sip command (like a register to a sip dir). Meant to be used from a RDV circ."
-  (relay config (:forward-hop (@circuits circ-id)) circ-id :sip direction payload))
+  (relay config ((if (= direction :f-enc) :forward-hop :backward-hop)
+                 (@circuits circ-id))
+         circ-id :sip direction payload))
 
 (defn padding [config socket]
   "Send padding message. Will be dropped."

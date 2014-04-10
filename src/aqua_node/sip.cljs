@@ -76,8 +76,10 @@
 
 (def dir (atom {}))
 
-(def from-cmd {:register 0
-               :query    1})
+(def from-cmd {:register    0
+               :query       1
+               :query-reply 2
+               :error       9})
 (def to-cmd
   (apply merge (for [k (keys from-cmd)]
                  {(from-cmd k) k})))
@@ -107,16 +109,18 @@
         ;; process query:
         p-query    (fn [{circ :circ-id rq :sip-rq}]
                      (let [name  (.toString (.slice rq 1))
-                           reply (if-let [entry   (@dir name)]
+                           reply (when-let [entry   (@dir name)]
                                    (let [cmd      (-> [(from-cmd :query-reply)] cljs/clj->js b/new)
                                          rdv-dest (b/new (conv/dest-to-tor-str (merge {:type :ip4 :proto :udp} (:rdv entry))))
-                                         rdv-id   (b/new 4)]
-                                     (log/debug "SIP DIR, query for" name "on RDV:" rdv-id "RDV dest:" rdv-dest)
-                                     (.writeUInt32BE rdv-id (:rdv-id entry) 0)
-                                     (b/cat rdv-id rdv-dest b/zero))
-                                   (do (log/debug "SIP DIR, could not find" name)
-                                       (b/cat (-> [(from-cmd :error)] cljs/clj->js b/new) (b/new "404"))))]
-                           (circ/relay-sip config circ :b-enc reply)))]
+                                         rdv-id   (b/new4 (:rdv-id entry))]
+                                     (b/cat cmd rdv-id rdv-dest b/zero)))]
+                       (println :to circ :sending reply)
+                       (if reply
+                         (do (log/debug "SIP DIR, query for" name)
+                             (circ/relay-sip config circ :b-enc reply))
+                         (do (log/debug "SIP DIR, could not find" name)
+                             (circ/relay-sip config circ :b-enc
+                                             (b/cat (-> [(from-cmd :error)] cljs/clj->js b/new) (b/new "404")))))))]
     ;; dispatch requests to the corresponding functions:
     (go-loop [request (<! sip-chan)]
       (condp = (-> request :sip-rq (.readUInt8 0) to-cmd)
@@ -133,11 +137,10 @@
   - rdv ip @ & port
   - sip name."
   (let [cmd         (-> [(from-cmd :register)] cljs/clj->js b/new)
-        rdv-b       (b/new 4)
+        rdv-b       (b/new4 rdv-id)
         name-b      (b/new name)
         rdv-dest    (b/new (conv/dest-to-tor-str {:type :ip4 :proto :udp :host (:host rdv-data) :port (:port rdv-data)})) ]
     (log/debug "SIP: registering" name "on RDV" rdv-id)
-    (.writeUInt32BE rdv-b rdv-id 0)
     (circ/relay-sip config rdv-id :f-enc (b/cat cmd rdv-b rdv-dest b/zero name-b))))
 
 (defn query [config name rdv-id]
