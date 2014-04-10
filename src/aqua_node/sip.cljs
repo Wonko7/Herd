@@ -29,6 +29,7 @@
                             (println)
                             (println :nrq nrq)
                             (condp = (:method nrq)
+
                               "REGISTER"  (let [contact  (-> nrq :headers :contact first)
                                                 name     (or (-> contact :name)
                                                              (->> contact :uri (re-find #"sip:(.*)@") second))
@@ -43,29 +44,37 @@
                                               (do (log/error "Could not find SIP DIR" sip-dir)
                                                   (doall (->> net-info seq (map second) (map #(dissoc % :auth)) (map println)))
                                                   (.send sip (.makeResponse sip rq "404" "Not Found")))))
+
                               "SUBSCRIBE" (condp = (-> nrq :headers :event)
                                             "presence.winfo"  (do (println (:event nrq))
                                                                   ;; and register the gringo.
                                                                   (.send sip (.makeResponse sip rq 200 "OK")))
                                             "message-summary" (do (println :200 :OK) (.send sip (.makeResponse sip rq 200 "OK")))
                                             (.send sip (.makeResponse sip rq 501 "Not Implemented")))
+
                               "PUBLISH"   (go (if (= "presence" (-> nrq :headers :event))
                                                 (let [parse-xml (-> (node/require "xml2js") .-parseString)
                                                       xml       (chan)]
                                                   (parse-xml (:content nrq) #(go (println %2) (>! xml %2)))
-                                                  (println 1)
                                                   (println (-> (<! xml) cljs/js->clj walk/keywordize-keys))
-                                                  (println 2)
                                                   (.send sip (.makeResponse sip rq 200 "OK")))
                                                 (do (log/error "SIP: Unsupported PUBLISH event:" (-> nrq :headers :event))
                                                     (.send sip (.makeResponse sip rq 501 "Not Implemented")))))
+
                               "OPTIONS"   (.send sip (.makeResponse sip rq 200 "OK"))
-                              "INVITE"    (let [name (second (re-find #"sip:(.*)@" (:uri nrq)))]
-                                            (query config name rdv-id)
-                                            (.send sip (.makeResponse sip rq 100 "TRYING"))
-                                            (.send sip (.makeResponse sip rq 180 "RINGING")))
+
+                              "INVITE"    (go (let [;; get callee name, query for it
+                                                    name           (second (re-find #"sip:(.*)@" (:uri nrq)))
+                                                    callee-rdv     (:sip-rq (<! (query config name rdv-id)))
+                                                    callee-rdv-id  (.readUInt32BE callee-rdv 1)
+                                                    callee-rdv-dst (conv/parse-addr (.slice callee-rdv 5))]
+                                                (println :got callee-rdv-id callee-rdv-dst)
+                                                (.send sip (.makeResponse sip rq 100 "TRYING"))
+                                                (.send sip (.makeResponse sip rq 180 "RINGING"))))
+
                               nil)))]
         (>! rdv-ctrl :rdv)
+        (circ/update-data rdv-id [:sip-chan] (chan))
         (println (keys (second (first (seq net-info)))))
         (.start sip (cljs/clj->js {:protocol "UDP"}) process)
         (log/info "SIP proxy listening on default UDP SIP port"))))
@@ -147,7 +156,8 @@
   (let [cmd         (-> [(from-cmd :query)] cljs/clj->js b/new)
         name-b      (b/new name)]
     (log/debug "SIP: querying for" name "on RDV" rdv-id)
-    (circ/relay-sip config rdv-id :f-enc (b/cat cmd name-b))))
+    (circ/relay-sip config rdv-id :f-enc (b/cat cmd name-b))
+    (go (<! (-> rdv-id circ/get-data :sip-chan)))))
 
 
 ;; replace all uris, tags, ports by hc defaults.

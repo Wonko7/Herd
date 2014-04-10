@@ -471,8 +471,7 @@
                       (log/info "Acting as RDV for" circ-id)
                       (update-data circ-id [:roles] (add-role :rdv)))
 
-        ;; draft of sip integration, likely to change.
-        p-sip       #(if-let [sip-ch (:sip-chan config)]
+        p-sip       #(if-let [sip-ch (or (:sip-chan circ) (:sip-chan config))] ;; sip dir servers use a global chan so it is stored in config, clients use a per circ chan.
                        (go (>! sip-ch {:circ circ :circ-id circ-id :sip-rq r-payload}))
                        (log/error "SIP-DIR uninitialised, dropping request on circuit:" circ-id))]
 
