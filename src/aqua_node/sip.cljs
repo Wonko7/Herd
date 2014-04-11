@@ -13,7 +13,7 @@
             [aqua-node.dir :as dir])
   (:require-macros [cljs.core.async.macros :as m :refer [go-loop go]]))
 
-(declare register query)
+(declare register query dir mk-invite)
 
 (defn create-server [{sip-dir :remote-sip-dir :as config} net-info things]
   "Creates the listening service that will process the connected SIP client's requests"
@@ -43,7 +43,7 @@
                                                   (.send sip (.makeResponse sip rq 200 "OK")))
                                               (do (log/error "Could not find SIP DIR" sip-dir)
                                                   (doall (->> net-info seq (map second) (map #(dissoc % :auth)) (map println)))
-                                                  (.send sip (.makeResponse sip rq "404" "Not Found")))))
+                                                  (.send sip (.makeResponse sip rq "404" "NOT FOUND")))))
 
                               "SUBSCRIBE" (condp = (-> nrq :headers :event)
                                             "presence.winfo"  (do (println (:event nrq))
@@ -67,10 +67,20 @@
                                                     name           (second (re-find #"sip:(.*)@" (:uri nrq)))
                                                     callee-rdv     (:sip-rq (<! (query config name rdv-id)))
                                                     callee-rdv-id  (.readUInt32BE callee-rdv 1)
-                                                    callee-rdv-dst (conv/parse-addr (.slice callee-rdv 5))]
-                                                (println :got callee-rdv-id callee-rdv-dst)
-                                                (.send sip (.makeResponse sip rq 100 "TRYING"))
-                                                (.send sip (.makeResponse sip rq 180 "RINGING"))))
+                                                    callee-rdv-dst (conv/parse-addr (.slice callee-rdv 5))
+                                                    callee-rdv     (@dir [(:host callee-rdv-dst) (:port callee-rdv-dst)])]
+                                                (if callee-rdv
+                                                  (do (println :got callee-rdv-id callee-rdv-dst)
+                                                      (.send sip (.makeResponse sip rq 100 "TRYING"))
+                                                      (>! rdv-ctrl callee-rdv)
+                                                      (<! rdv-notify)
+                                                      ;; (circ/relay-sip config rdv-id :f-enc demand-mix)
+                                                      ;; (rt-path-add (<! callee-mix))
+                                                      ;; (rt-path-ask-mix to connect with callee) ; -> mix must keep a dir of its own
+                                                      ;; (mk invite for local rt)
+                                                      (.send sip (.makeResponse sip rq 180 "RINGING")))
+                                                  (do (log/error "SIP: Could not find callee's mix:" name)
+                                                      (.send sip (.makeResponse sip rq 404 "NOT FOUND"))))))
 
                               nil)))]
         (>! rdv-ctrl :rdv)
@@ -100,6 +110,7 @@
 (defn create-dir [config]
   "Wait for sip requests on the sip channel and process them.
   Returns the SIP channel it is listening on."
+  (println (mk-invite))
   (let [sip-chan   (chan)
         ;; process register:
         p-register (fn [{rq :sip-rq}]
@@ -157,36 +168,54 @@
         name-b      (b/new name)]
     (log/debug "SIP: querying for" name "on RDV" rdv-id)
     (circ/relay-sip config rdv-id :f-enc (b/cat cmd name-b))
-    (go (<! (-> rdv-id circ/get-data :sip-chan)))))
+    (-> rdv-id circ/get-data :sip-chan)))
 
+(defn mk-invite []
+  (cljs/clj->js {"method"  "INVITE"
+                 "uri"     "sip:aoeu1@172.17.0.7"
+                 "headers" {"to"      {"uri" "aoeu1@172.17.0.7"}
+                            "from"    {"uri" "from-uri"}
+                            "contact" [{"uri" "sip:aoeu1@172.17.42.1"}]
+                            "content" (apply str (interleave ["v=0"
+                                                              "o=- 3606192961 3606192961 IN IP4 139.19.186.120"
+                                                              "s=pjmedia"
+                                                              "c=IN IP4 139.19.186.120"
+                                                              "t=0 0"
+                                                              "a=X-nat:0"
+                                                              "m=audio 4000 RTP/AVP 96"
+                                                              "a=rtcp:4001 IN IP4 139.19.186.120"
+                                                              "a=sendrecv"
+                                                              "a=rtpmap:96 telephone-event/8000"
+                                                              "a=fmtp:96 0-15"]
+                                                             (repeat "\r\n")))}}))
 
 ;; replace all uris, tags, ports by hc defaults.
-;; {method REGISTER
-;;  uri sip:localhost                                                                                  ; URI
-;;  version 2.0
-;;  headers {contact [{name "aqua"
-;;                     uri sip:aqua@127.0.0.1:18750;transport=udp;registering_acc=localhost            ; URI
-;;                     params {expires 600}}]
-;;           user-agent Jitsi2.5.5104Linux                                                             ; becomes aqua-version.
-;;           call-id 659987c14fca0876dc89d5fa4ec715e5@0:0:0:0:0:0:0:0                                  ; this changes.
-;;           from {name "aqua"
-;;                 uri sip:aqua@localhost                                                              ; URI
-;;                 params {tag 81429e45}}                                                              ; tag.
-;;           via [{version 2.0
-;;                 protocol UDP
-;;                 host 127.0.0.1                                                                      ; remove this. remove via entirely?
-;;                 port 18750
-;;                 params {branch z9hG4bK-313432-de5cc56153489d6de96fa6deeabaab8f
-;;                         received 127.0.0.1}}]                                                       ; and this
-;;           expires 600
-;;           max-forwards 70
-;;           content-length 0
-;;           to {name "aqua"
-;;               uri sip:aqua@localhost
-;;               params {}}
-;;           cseq {seq 1
-;;                 method REGISTER}}
-;;  content }
+    ;; {method REGISTER
+   ;;  uri sip:localhost                                                                                  ; URI
+   ;;  version 2.0
+   ;;  headers {contact [{name "aqua"
+   ;;                     uri sip:aqua@127.0.0.1:18750;transport=udp;registering_acc=localhost            ; URI
+   ;;                     params {expires 600}}]
+   ;;           user-agent Jitsi2.5.5104Linux                                                             ; becomes aqua-version.
+   ;;           call-id 659987c14fca0876dc89d5fa4ec715e5@0:0:0:0:0:0:0:0                                  ; this changes.
+   ;;           from {name "aqua"
+   ;;                 uri sip:aqua@localhost                                                              ; URI
+   ;;                 params {tag 81429e45}}                                                              ; tag.
+   ;;           via [{version 2.0
+   ;;                 protocol UDP
+   ;;                 host 127.0.0.1                                                                      ; remove this. remove via entirely?
+   ;;                 port 18750
+   ;;                 params {branch z9hG4bK-313432-de5cc56153489d6de96fa6deeabaab8f
+   ;;                         received 127.0.0.1}}]                                                       ; and this
+   ;;           expires 600
+   ;;           max-forwards 70
+   ;;           content-length 0
+   ;;           to {name "aqua"
+   ;;               uri sip:aqua@localhost
+   ;;               params {}}
+   ;;           cseq {seq 1
+   ;;                 method REGISTER}}
+   ;;  content }
 
 ;; media session.
 ;;                         B2BUA
