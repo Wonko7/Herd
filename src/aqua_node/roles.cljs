@@ -95,30 +95,33 @@
             net-info    (go (when-not (is? :dir)              ;; request net-info if we're not a dir. FIXME -> get-net-info will be called periodically.
                               (<! (get-net-info config ds))))]
         (log/info "Bootstrapping as" roles)
-        (cond (is? :app-proxy) (let [geo      (<! geo)
-                                     net-info (<! net-info)
-                                     mix      (path/init-pools config net-info geo 4)]
-                                 (conn/new :socks :server ap config {:data     path/app-proxy-forward
-                                                                     :udp-data path/app-proxy-forward-udp
-                                                                     :init     app-proxy-init
-                                                                     :error    circ/destroy-from-socket})
-                                 (sip/create-server config net-info nil) ;; FIXME testing.
-                                 (log/info "Dir: sending register info")
-                                 (register-to-dir config geo mix ds))
-              (is? :mix)       (do (conn/new :aqua :server aq config {:connect aqua-server-recv})
-                                   (register-to-dir config (<! geo) nil ds)
-                                   ;; for each mix in node info, extract ip & port and connect.
-                                   (doseq [[[ip port] mix] (seq (<! net-info))
-                                           :when (or (not= (:host aq) ip)
-                                                     (not= (:port aq) port))
-                                           :let [con (chan)
-                                                 soc (conn/new :aqua :client mix config {:connect #(go (>! con :done))})]]
-                                     (c/add-listeners soc {:data #(circ/process config soc %)})
-                                     (go (<! con)
-                                         (rate/init config soc))))
-              (is? :dir)       (conn/new :dir :server dir config {:connect aqua-dir-recv})
-              (is? :sip-dir)   (let [sip-chan (sip/create-dir config)
-                                     cfg      (merge config {:sip-chan sip-chan :aqua sip-dir})]
-                                 (conn/new :aqua :server sip-dir cfg {:connect aqua-server-recv})
-                                 (register-to-dir cfg (<! geo) nil ds))
-              :else            (log/error "No supported roles in config:" roles)))))
+        (when (is? :app-proxy)
+          (let [geo      (<! geo)
+                net-info (<! net-info)
+                mix      (path/init-pools config net-info geo 4)]
+            (conn/new :socks :server ap config {:data     path/app-proxy-forward
+                                                :udp-data path/app-proxy-forward-udp
+                                                :init     app-proxy-init
+                                                :error    circ/destroy-from-socket})
+            (sip/create-server config net-info nil) ;; FIXME testing.
+            (log/info "Dir: sending register info")
+            (register-to-dir config geo mix ds)))
+        (when (is? :mix)
+          (do (conn/new :aqua :server aq config {:connect aqua-server-recv})
+              (register-to-dir config (<! geo) nil ds)
+              ;; for each mix in node info, extract ip & port and connect.
+              (doseq [[[ip port] mix] (seq (<! net-info))
+                      :when (or (not= (:host aq) ip)
+                                (not= (:port aq) port))
+                      :let [con (chan)
+                            soc (conn/new :aqua :client mix config {:connect #(go (>! con :done))})]]
+                (c/add-listeners soc {:data #(circ/process config soc %)})
+                (go (<! con)
+                    (rate/init config soc)))))
+        (when (is? :dir)
+          (conn/new :dir :server dir config {:connect aqua-dir-recv}))
+        (when (is? :sip-dir)
+          (let [sip-chan (sip/create-dir config)
+                cfg      (merge config {:sip-chan sip-chan :aqua sip-dir})]
+            (conn/new :aqua :server sip-dir cfg {:connect aqua-server-recv})
+            (register-to-dir cfg (<! geo) nil ds))))))
