@@ -2,7 +2,6 @@
   (:require [cljs.core :as cljs]
             [cljs.nodejs :as node]
             [cljs.core.async :refer [chan <! >!]]
-            [clojure.set :refer [rename-keys]]
             [clojure.walk :as walk]
             [aqua-node.log :as log]
             [aqua-node.buf :as b]
@@ -191,24 +190,24 @@
 (defn mk-invite [headers uri-to ipfrom]
   (-> {:method  "INVITE"
        :uri     uri-to
-       :headers {
-                 :to      (-> headers :from)
-                 :from    (-> headers :to)
-                 :via     (-> headers :via)
-                 :contact [{"uri" (str "sip:from@" ipfrom)}]
-                 :cseq    {:seq (rand-int 888888) , :method "INVITE"} ;; FIXME find real cseq max
-                 :content (apply str (interleave ["v=0"
-                                                  (str "o=- 3606192961 3606192961 IN IP4 " ipfrom)
-                                                  "s=pjmedia"
-                                                  (str "c=IN IP4 " ipfrom)
-                                                  "t=0 0"
-                                                  "a=X-nat:0"
-                                                  "m=audio 4000 RTP/AVP 96"
-                                                  (str "a=rtcp:4001 IN IP4 " ipfrom)
-                                                  "a=sendrecv"
-                                                  "a=rtpmap:96 telephone-event/8000"
-                                                  "a=fmtp:96 0-15"]
-                                                 (repeat "\r\n")))}}
+       :headers {:to               (-> headers :from)
+                 :from             (-> headers :to)
+                 :call-id          (-> (node/require "crypto") (.randomBytes 16) (.toString "hex"))
+                 :via              (-> headers :via)
+                 :contact          [{"uri" (str "sip:from@" ipfrom)}]
+                 :cseq             {:seq (rand-int 888888) , :method "INVITE"}} ;; FIXME find real cseq max
+       :content (apply str (interleave ["v=0"
+                                        (str "o=- 3606192961 3606192961 IN IP4 " ipfrom)
+                                        "s=pjmedia"
+                                        (str "c=IN IP4 " ipfrom)
+                                        "t=0 0"
+                                        "a=X-nat:0"
+                                        "m=audio 4000 RTP/AVP 96"
+                                        (str "a=rtcp:4001 IN IP4 " ipfrom)
+                                        "a=sendrecv"
+                                        "a=rtpmap:96 telephone-event/8000"
+                                        "a=fmtp:96 0-15"]
+                                       (repeat "\r\n")))}
       ;(update-in [:headers] #(merge % headers))
       walk/stringify-keys
       cljs/clj->js))
