@@ -190,7 +190,7 @@
 (defn mk-invite [headers uri-to ipfrom]
   (-> {:method  "INVITE"
        :uri     uri-to
-       :headers {:to               (-> headers :from)
+       :headers {:to               {:uri uri-to} ;(-> headers :from)
                  :from             (-> headers :to)
                  :call-id          (-> (node/require "crypto") (.randomBytes 16) (.toString "hex"))
                  :via              (-> headers :via)
