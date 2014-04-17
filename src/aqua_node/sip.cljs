@@ -2,6 +2,7 @@
   (:require [cljs.core :as cljs]
             [cljs.nodejs :as node]
             [cljs.core.async :refer [chan <! >!]]
+            [clojure.set :refer [rename-keys]]
             [clojure.walk :as walk]
             [aqua-node.log :as log]
             [aqua-node.buf :as b]
@@ -17,7 +18,9 @@
 
 (defn create-server [{sip-dir :remote-sip-dir :as config} net-info things]
   "Creates the listening service that will process the connected SIP client's requests"
+  ;; assuming only one client
   (go (let [sip         (node/require "sip")
+            headers     (atom {})
             ;; Prepare RDV:
             rdv-id      (<! (path/get-path :single)) ;; FIXME we should specify what zone we want our rdv in.
             rdv-ctrl    (-> rdv-id circ/get-data :dest-ctrl)
@@ -26,24 +29,39 @@
             process     (fn [rq]
                           (let [nrq  (-> rq cljs/js->clj walk/keywordize-keys)
                                 name (-> nrq :headers :contact first :name)]
+                            ;; debug <--
                             (println)
                             (println :nrq nrq)
+                            ;; debug -->
                             (condp = (:method nrq)
 
-                              "REGISTER"  (let [contact  (-> nrq :headers :contact first)
-                                                name     (or (-> contact :name)
-                                                             (->> contact :uri (re-find #"sip:(.*)@") second))
-                                                rdv-data (circ/get-data rdv-id)
+                              "REGISTER"  (let [contact      (-> nrq :headers :contact first)
+                                                name         (or (-> contact :name)
+                                                                 (->> contact :uri (re-find #"sip:(.*)@") second))
+                                                rdv-data     (circ/get-data rdv-id)
                                                 sip-dir-dest (net-info [(:host sip-dir) (:port sip-dir)])
-                                                sip-dir-dest (merge sip-dir-dest {:dest sip-dir-dest})] ;; FIXME; we'll get rid of :dest in circ someday.
+                                                sip-dir-dest (merge sip-dir-dest {:dest sip-dir-dest})
+                                                ack          (.makeResponse sip rq 200 "OK")
+                                                uri-to       (-> contact :uri)] ;; FIXME; we'll get rid of :dest in circ someday.
                                             (if (:auth sip-dir-dest)
                                               (go (>! rdv-ctrl sip-dir-dest) ;; connect to sip dir to send register
                                                   (<! rdv-notify)            ;; wait until connected to send it
                                                   (register config name rdv-id (:rdv rdv-data))
-                                                  (.send sip (.makeResponse sip rq 200 "OK")))
-                                              (do (log/error "Could not find SIP DIR" sip-dir)
-                                                  (doall (->> net-info seq (map second) (map #(dissoc % :auth)) (map println)))
-                                                  (.send sip (.makeResponse sip rq "404" "NOT FOUND")))))
+                                                  (.send sip ack)
+                                                  (println :HEADERS (reset! headers (-> ack cljs/js->clj walk/keywordize-keys :headers ;(rename-keys {:from :to, :to :from})
+                                                                                        )))
+                                                  ;; debug <--
+                                                  (println :reg-ack ack)
+                                                  (println (mk-invite @headers uri-to "172.17.42.1")) ;; Find int max for cseq
+                                                  (js/console.log (mk-invite @headers uri-to "172.17.42.1"))
+                                                  (.send sip (mk-invite @headers uri-to "172.17.42.1")
+                                                         (fn [rs] (println (.-status rs)))))
+                                                  ;; debug -->
+                                                  (do (log/error "Could not find SIP DIR" sip-dir)
+                                                      ;; debug <--
+                                                      (doall (->> net-info seq (map second) (map #(dissoc % :auth)) (map println)))
+                                                      ;; debug -->
+                                                      (.send sip (.makeResponse sip rq "404" "NOT FOUND")))))
 
                               "SUBSCRIBE" (condp = (-> nrq :headers :event)
                                             "presence.winfo"  (do (println (:event nrq))
@@ -110,7 +128,7 @@
 (defn create-dir [config]
   "Wait for sip requests on the sip channel and process them.
   Returns the SIP channel it is listening on."
-  (println (mk-invite))
+  ;(println )
   (let [sip-chan   (chan)
         ;; process register:
         p-register (fn [{rq :sip-rq}]
@@ -170,52 +188,58 @@
     (circ/relay-sip config rdv-id :f-enc (b/cat cmd name-b))
     (-> rdv-id circ/get-data :sip-chan)))
 
-(defn mk-invite []
-  (cljs/clj->js {"method"  "INVITE"
-                 "uri"     "sip:aoeu1@172.17.0.7"
-                 "headers" {"to"      {"uri" "aoeu1@172.17.0.7"}
-                            "from"    {"uri" "from-uri"}
-                            "contact" [{"uri" "sip:aoeu1@172.17.42.1"}]
-                            "content" (apply str (interleave ["v=0"
-                                                              "o=- 3606192961 3606192961 IN IP4 139.19.186.120"
-                                                              "s=pjmedia"
-                                                              "c=IN IP4 139.19.186.120"
-                                                              "t=0 0"
-                                                              "a=X-nat:0"
-                                                              "m=audio 4000 RTP/AVP 96"
-                                                              "a=rtcp:4001 IN IP4 139.19.186.120"
-                                                              "a=sendrecv"
-                                                              "a=rtpmap:96 telephone-event/8000"
-                                                              "a=fmtp:96 0-15"]
-                                                             (repeat "\r\n")))}}))
+(defn mk-invite [headers uri-to ipfrom]
+  (-> {:method  "INVITE"
+       :uri     uri-to
+       :headers {
+                 :to      (-> headers :from)
+                 :from    (-> headers :to)
+                 :via     (-> headers :via)
+                 :contact [{"uri" (str "sip:from@" ipfrom)}]
+                 :cseq    {:seq (rand-int 888888) , :method "INVITE"} ;; FIXME find real cseq max
+                 :content (apply str (interleave ["v=0"
+                                                  (str "o=- 3606192961 3606192961 IN IP4 " ipfrom)
+                                                  "s=pjmedia"
+                                                  (str "c=IN IP4 " ipfrom)
+                                                  "t=0 0"
+                                                  "a=X-nat:0"
+                                                  "m=audio 4000 RTP/AVP 96"
+                                                  (str "a=rtcp:4001 IN IP4 " ipfrom)
+                                                  "a=sendrecv"
+                                                  "a=rtpmap:96 telephone-event/8000"
+                                                  "a=fmtp:96 0-15"]
+                                                 (repeat "\r\n")))}}
+      ;(update-in [:headers] #(merge % headers))
+      walk/stringify-keys
+      cljs/clj->js))
 
 ;; replace all uris, tags, ports by hc defaults.
-    ;; {method REGISTER
-   ;;  uri sip:localhost                                                                                  ; URI
-   ;;  version 2.0
-   ;;  headers {contact [{name "aqua"
-   ;;                     uri sip:aqua@127.0.0.1:18750;transport=udp;registering_acc=localhost            ; URI
-   ;;                     params {expires 600}}]
-   ;;           user-agent Jitsi2.5.5104Linux                                                             ; becomes aqua-version.
-   ;;           call-id 659987c14fca0876dc89d5fa4ec715e5@0:0:0:0:0:0:0:0                                  ; this changes.
-   ;;           from {name "aqua"
-   ;;                 uri sip:aqua@localhost                                                              ; URI
-   ;;                 params {tag 81429e45}}                                                              ; tag.
-   ;;           via [{version 2.0
-   ;;                 protocol UDP
-   ;;                 host 127.0.0.1                                                                      ; remove this. remove via entirely?
-   ;;                 port 18750
-   ;;                 params {branch z9hG4bK-313432-de5cc56153489d6de96fa6deeabaab8f
-   ;;                         received 127.0.0.1}}]                                                       ; and this
-   ;;           expires 600
-   ;;           max-forwards 70
-   ;;           content-length 0
-   ;;           to {name "aqua"
-   ;;               uri sip:aqua@localhost
-   ;;               params {}}
-   ;;           cseq {seq 1
-   ;;                 method REGISTER}}
-   ;;  content }
+;; {method REGISTER
+;;  uri sip:localhost                                                                                  ; URI
+;;  version 2.0
+;;  headers {contact [{name "aqua"
+;;                     uri sip:aqua@127.0.0.1:18750;transport=udp;registering_acc=localhost            ; URI
+;;                     params {expires 600}}]
+;;           user-agent Jitsi2.5.5104Linux                                                             ; becomes aqua-version.
+;;           call-id 659987c14fca0876dc89d5fa4ec715e5@0:0:0:0:0:0:0:0                                  ; this changes.
+;;           from {name "aqua"
+;;                 uri sip:aqua@localhost                                                              ; URI
+;;                 params {tag 81429e45}}                                                              ; tag.
+;;           via [{version 2.0
+;;                 protocol UDP
+;walkiwalki;                 host 127.0.0.1                                                                      ; remove this. remove via entirely?
+;;                 port 18750
+;;                 params {branch z9hG4bK-313432-de5cc56153489d6de96fa6deeabaab8f
+;;                         received 127.0.0.1}}]                                                       ; and this
+;;           expires 600
+;;           max-forwards 70
+;;           content-length 0
+;;           to {name "aqua"
+;;               uri sip:aqua@localhost
+;;               params {}}
+;;           cseq {seq 1
+;;                 method REGISTER}}
+;;  content }
 
 ;; media session.
 ;;                         B2BUA
@@ -305,3 +329,46 @@
 ;;                     :uri sip:me@localhost
 ;;                     :params {:tag ba13e9ef}}}
 ;;
+
+;; {:method INVITE
+;;  :uri sip:lol@172.17.0.7
+;;  :version 2.0
+;;  :headers {:supported " replaces, 100rel, timer, norefersub,"
+;;            :via [{:version 2.0
+;;                   :protocol UDP
+;;                   :host 172.17.42.1
+;;                   :port 5555
+;;                   :params {:rport 5555
+;;                            :branch z9hG4bKPjb3bfc8f5-ced1-42ce-ade2-495d7bad0c60
+;;                            :received 172.17.42.1}}]
+;;            :content-type "application/sdp"
+;;            :max-forwards 70
+;;            :content-length 230
+;;            :to {:name nil
+;;                 :uri "sip:lol@172.17.0.7"
+;;                 :params {}}
+;;            :cseq {:seq 9058
+;;                   :method INVITE}
+;;            :session-expires 1800
+;;            :contact [{:name nil
+;;                       :uri "sip:aoeu1@172.17.42.1:5555;transport=UDP;ob"
+;;                       :params {}}]
+;;            :user-agent "PJSUA v1.14.0 Linux-3.13.5/x86_64/glibc-2.17 "
+;;            :allow " PRACK, INVITE, ACK, BYE, CANCEL, UPDATE, SUBSCRIBE, NOTIFY, REFER, MESSAGE, OPTIONS,"
+;;            :call-id "4e6eb96d-c8e5-482b-ac12-f0cb9076655b"
+;;            :from {:name nil
+;;                   :uri "sip:aoeu1@172.17.0.7"
+;;                   :params {:tag 676d64bf-a738-48fe-9b6b-6c108f484edd}}
+;;            :min-se 90}
+;;  :content "v=0
+;;           o=- 3606712585 3606712585 IN IP4 139.19.186.120
+;;           s=pjmedia
+;;           c=IN IP4 139.19.186.120
+;;           t=0 0
+;;           a=X-nat:0
+;;           m=audio 4000 RTP/AVP 96
+;;           a=rtcp:4001 IN IP4 139.19.186.120
+;;           a=sendrecv
+;;           a=rtpmap:96 telephone-event/8000
+;;           a=fmtp:96 0-15" }
+
