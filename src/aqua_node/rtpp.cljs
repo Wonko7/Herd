@@ -52,7 +52,7 @@
                                               (assert cid "no circuits available. how quaint.")
                                               (let [circ           (circ/get-data cid)
                                                     state          (chan)]
-                                                (circ/update-data cid [:state-ch] state)
+                                                (circ/update-data cid [:state-ch] state) ;; FIXME: if we ever need this code again, that channel has been named notify.
                                                 (go (>! (:dest-ctrl circ) {:host distant-ip :port distant-port :proto :udp :type :ip4}))
                                                 (go (let [state          (<! state)
                                                           [_ local-port] (<! (path/attach-local-udp4 config cid {:host local-ip} path/app-proxy-forward-udp))]

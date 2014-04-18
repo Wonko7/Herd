@@ -35,10 +35,12 @@
             process     (fn [rq]
                           (let [nrq  (-> rq cljs/js->clj walk/keywordize-keys)
                                 name (-> nrq :headers :contact first :name)]
+
                             ;; debug <--
                             (println)
                             (println :nrq nrq)
                             ;; debug -->
+
                             (condp = (:method nrq)
 
                               "REGISTER"  (let [contact      (-> nrq :headers :contact first)
@@ -87,12 +89,24 @@
                                                     callee-rdv     (:sip-rq (<! (query config name rdv-id)))
                                                     callee-rdv-id  (.readUInt32BE callee-rdv 1)
                                                     callee-rdv-dst (conv/parse-addr (.slice callee-rdv 5))
-                                                    callee-rdv     (@dir [(:host callee-rdv-dst) (:port callee-rdv-dst)])]
+                                                    callee-rdv     (net-info [(:host callee-rdv-dst) (:port callee-rdv-dst)])] ;; FIXME: this is fine for PoC, but in the future net-info will be a atom and will be updated regularly.
                                                 (if callee-rdv
                                                   (do (println :got callee-rdv-id callee-rdv-dst)
                                                       (.send sip (.makeResponse sip rq 100 "TRYING"))
                                                       (>! rdv-ctrl callee-rdv)
                                                       (<! rdv-notify)
+                                                      ;; FIXME: once this works we'll add relay-sip extend to callee so rdv can't read demand.
+                                                      (circ/relay-sip config rdv-id :f-enc demand-mix)
+                                                      (let [reply (<! rdv-notify)]
+                                                        (condp = (:status reply)
+                                                          :ok     (let [rt       (<! (path/get-path :rt))
+                                                                        rt-data  (circ/get-data rt)]
+                                                                    (>! (:dest-ctrl rt-data) (:mix reply))
+                                                                    (<! (:notiyf rt-data)))
+                                                          :busy    (do (log/info "Couldn't complete call," name "is busy")
+                                                                       (.send sip "BUSY")) ;; FIXME
+                                                          :error   (do (log/info "Couldn't find" name)
+                                                                       (.send sip "404 or something."))))
                                                       ;; (circ/relay-sip config rdv-id :f-enc demand-mix)
                                                       ;; (rt-path-add (<! callee-mix))
                                                       ;; (rt-path-ask-mix to connect with callee) ; -> mix must keep a dir of its own
@@ -229,6 +243,7 @@
 
 
 ;; MIX DIR service and associated client functions ;;;;;;;;;;;;;;;
+
 ;; This will also keep track of what clients are active.
 ;; this might get exported to another module at some point.
 ;; Either that, or merge with create-dir, while separating functionality to avoid abuse.
@@ -278,7 +293,6 @@
       (recur (<! sip-chan)))
     sip-chan))
 
-
 (defn register-to-mix [config name circ-id]
   "Register client's sip username to the mix so people can extend circuits to us.
   Format:
@@ -289,7 +303,6 @@
         name-b (b/new name)]
     (log/debug "SIP: registering" name "on mix" circ-id)
     (circ/relay-sip config circ-id :f-enc (b/cat cmd dest b/zero name-b))))
-
 
 
 
