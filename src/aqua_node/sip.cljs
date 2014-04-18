@@ -13,7 +13,7 @@
             [aqua-node.dir :as dir])
   (:require-macros [cljs.core.async.macros :as m :refer [go-loop go]]))
 
-(declare register query dir mk-invite)
+(declare register-to-mix register query dir mk-invite)
 
 
 ;; Manage local SIP client requests ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
@@ -31,9 +31,7 @@
             rdv-notify  (-> rdv-id circ/get-data :notify)
             ;; Prepare MIX SIG:
             mix-id      (<! (path/get-path :one-hop))
-            mix-ctrl    (-> rdv-id circ/get-data :dest-ctrl)
-            mix-notify  (-> rdv-id circ/get-data :notify)
-            ;; Process logic:
+            ;; Process SIP logic:
             process     (fn [rq]
                           (let [nrq  (-> rq cljs/js->clj walk/keywordize-keys)
                                 name (-> nrq :headers :contact first :name)]
@@ -54,9 +52,7 @@
                                               (go (>! rdv-ctrl sip-dir-dest)                      ;; --- RDV: connect to sip dir to send register
                                                   (<! rdv-notify)                                 ;; wait until connected to send
                                                   (register config name rdv-id (:rdv rdv-data))   ;; send register to dir, ack to sip client:
-                                                  (>! rdv-ctrl @path/chosen-mix)                  ;; --- MIX: connect to chosen mix
-                                                  (<! rdv-notify)                                 ;; wait until connected to send
-                                                  (register-mix config name)                      ;; register our sip user name (needed for last step of incoming rt circs, without giving our ip to caller)
+                                                  (register-to-mix config name mix-id)            ;; register our sip user name (needed for last step of incoming rt circs, without giving our ip to caller)
                                                   (.send sip ack)                                 ;; --- SIP: answer sip client, successfully registered.
                                                   (reset! uri-to  (-> contact :uri))              ;; save uri & headers for building invite later:
                                                   (reset! headers (-> ack cljs/js->clj walk/keywordize-keys :headers)))
@@ -118,17 +114,23 @@
         (log/info "SIP proxy listening on default UDP SIP port"))))
 
 
-;; SIP DIR service and associated client functions ;;;;;;;;;;;;;;;
+;; Commands used by SIP DIR & sip mix dir ;;;;;;;;;;;;;;;;;;;;;;;;
 
-(def dir (atom {}))
+(def from-cmd {:register        0
+               :query           1
+               :query-reply     2
+               :register-to-mix 3
+               :mix-query       4
+               :error           9})
 
-(def from-cmd {:register    0
-               :query       1
-               :query-reply 2
-               :error       9})
 (def to-cmd
   (apply merge (for [k (keys from-cmd)]
                  {(from-cmd k) k})))
+
+
+;; SIP DIR service and associated client functions ;;;;;;;;;;;;;;;
+
+(def dir (atom {}))
 
 (defn rm [name]
   "Remove name from dir"
@@ -148,7 +150,7 @@
                                                              (rm name))
                                                         (:sip-register-interval config))]
                        (log/debug "SIP DIR, registering" name "on RDV:" rdv-id "RDV dest:" rdv-dest)
-                       ;; if the user is renewing its registration, remove rm timeout:
+                       ;; if the user is renewing his registration, remove rm timeout:
                        (when (@dir name)
                          (js/clearTimeout (:timeout (@dir name))))
                        ;; update the global directory:
@@ -187,7 +189,7 @@
   (let [cmd         (-> [(from-cmd :register)] cljs/clj->js b/new)
         rdv-b       (b/new4 rdv-id)
         name-b      (b/new name)
-        rdv-dest    (b/new (conv/dest-to-tor-str {:type :ip4 :proto :udp :host (:host rdv-data) :port (:port rdv-data)})) ]
+        rdv-dest    (b/new (conv/dest-to-tor-str {:host (:host rdv-data) :port (:port rdv-data) :type :ip4 :proto :udp}))]
     (log/debug "SIP: registering" name "on RDV" rdv-id)
     (circ/relay-sip config rdv-id :f-enc (b/cat cmd rdv-b rdv-dest b/zero name-b))))
 
@@ -227,6 +229,66 @@
 
 
 ;; MIX DIR service and associated client functions ;;;;;;;;;;;;;;;
+;; This will also keep track of what clients are active.
+;; this might get exported to another module at some point.
+;; Either that, or merge with create-dir, while separating functionality to avoid abuse.
+;; maybe a different go-loop based on role?
+
+(def mix-dir (atom {}))
+
+(defn create-mix-dir [config]
+  "Wait for sip requests on the sip channel and process them.
+  Returns the SIP channel it is listening on.
+  Mixes start this service to keep track of the state of its users."
+  (let [sip-chan   (chan)
+        ;; process register:
+        p-register (fn [{rq :sip-rq}]
+                     (let [[client-dest rq] (conv/parse-addr (.slice rq 1))
+                           name             (.toString rq)
+                           timeout-id       (js/setTimeout #(do (log/debug "SIP DIR: timeout for" name)
+                                                                (rm name))
+                                                           (:sip-register-interval config))]
+                       (log/debug "SIP MIX DIR, registering" name "dest:" client-dest)
+                       ;; if the user is renewing his registration, remove rm timeout:
+                       (when (@mix-dir name)
+                         (js/clearTimeout (:timeout (@mix-dir name))))
+                       ;; update the global directory:
+                       (swap! mix-dir merge {name {:dest client-dest :state :inactive}})))
+        ;; process extend:
+        p-extend   (fn [{circ :circ-id rq :sip-rq}]
+                     (let [name  (.toString (.slice rq 1))
+                           reply (when-let [entry   (@mix-dir name)]
+                                   (let [cmd      (-> [(from-cmd :query-reply)] cljs/clj->js b/new)
+                                         rdv-dest (b/new (conv/dest-to-tor-str (merge {:type :ip4 :proto :udp} (:rdv entry))))
+                                         rdv-id   (b/new4 (:rdv-id entry))]
+                                     (b/cat cmd rdv-id rdv-dest b/zero)))]
+                       (println :to circ :sending reply)
+                       (if reply
+                         (do (log/debug "SIP DIR, query for" name)
+                             (circ/relay-sip config circ :b-enc reply))
+                         (do (log/debug "SIP DIR, could not find" name)
+                             (circ/relay-sip config circ :b-enc
+                                             (b/cat (-> [(from-cmd :error)] cljs/clj->js b/new) (b/new "404")))))))]
+    ;; dispatch requests to the corresponding functions:
+    (go-loop [request (<! sip-chan)]
+      (condp = (-> request :sip-rq (.readUInt8 0) to-cmd)
+        :register-to-mix (p-register request)
+        :extend       (p-extend request)
+        (log/error "SIP DIR, received unknown command"))
+      (recur (<! sip-chan)))
+    sip-chan))
+
+
+(defn register-to-mix [config name circ-id]
+  "Register client's sip username to the mix so people can extend circuits to us.
+  Format:
+  - dest (tor dest thing)
+  - username"
+  (let [cmd    (-> [(from-cmd :register-to-mix)] cljs/clj->js b/new)
+        dest   (b/new (conv/dest-to-tor-str {:host (:external-ip config) :port 0 :type :ip4 :proto :udp}))
+        name-b (b/new name)]
+    (log/debug "SIP: registering" name "on mix" circ-id)
+    (circ/relay-sip config circ-id :f-enc (b/cat cmd dest b/zero name-b))))
 
 
 

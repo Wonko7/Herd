@@ -125,11 +125,9 @@
   "Creates a one hop path. Assumes a connection to the first & only node exists. used for SIP dir signaling. See sip.cljs."
   ;; Find the first mix's (will be our assigned mix/SP) socket & send a create.
   (let [id     (circ/create config socket (:auth mix))
-        ctrl   (chan)
-        dest   (chan)]
+        ctrl   (chan)]
     (circ/update-data id [:roles] [:origin])
     (circ/update-data id [:ctrl] ctrl)
-    (circ/update-data id [:dest-ctrl] dest)
     (circ/update-data id [:mk-path-fn] #(go (>! ctrl :next)))
     (go (<! ctrl)
         (circ/update-data id [:state] :relay)

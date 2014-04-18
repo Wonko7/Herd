@@ -27,8 +27,9 @@
   (->> (.toString buf16 "hex") (partition 4) (interpose [\:]) (apply concat) (apply str)))
 
 (defn dest-to-tor-str [{proto :proto host :host port :port type :type}]
-  "Used in TOR to specify destination. Modified to accept udp & tcp.
-  Returns the string: '[u|t]:host:port'"
+  "Used in TOR circuits to specify destination. Modified to accept udp & tcp.
+  Returns the string: '[u|t]:host:port'
+  Warning: this started of as the TOR function but is not compatible anymore because of the added proto field."
   (let [host   (if (= type :ip6) (str "[" host "]") host)]
     (str (if (= :udp proto) "u" "t") ":" host ":" port)))
 
