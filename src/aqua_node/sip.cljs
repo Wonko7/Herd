@@ -15,8 +15,12 @@
 
 (declare register query dir mk-invite)
 
+
+;; Manage local SIP client requests ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
 (defn create-server [{sip-dir :remote-sip-dir :as config} net-info things]
-  "Creates the listening service that will process the connected SIP client's requests"
+  "Creates the listening service that will process the connected SIP client's requests.
+  Application Proxies start this service."
   ;; assuming only one client
   (go (let [sip         (node/require "sip")
             headers     (atom {})
@@ -25,6 +29,10 @@
             rdv-id      (<! (path/get-path :single)) ;; FIXME we should specify what zone we want our rdv in.
             rdv-ctrl    (-> rdv-id circ/get-data :dest-ctrl)
             rdv-notify  (-> rdv-id circ/get-data :notify)
+            ;; Prepare MIX SIG:
+            mix-id      (<! (path/get-path :one-hop))
+            mix-ctrl    (-> rdv-id circ/get-data :dest-ctrl)
+            mix-notify  (-> rdv-id circ/get-data :notify)
             ;; Process logic:
             process     (fn [rq]
                           (let [nrq  (-> rq cljs/js->clj walk/keywordize-keys)
@@ -110,8 +118,7 @@
         (log/info "SIP proxy listening on default UDP SIP port"))))
 
 
-;; Sip dir & register:
-
+;; SIP DIR service and associated client functions ;;;;;;;;;;;;;;;
 
 (def dir (atom {}))
 
@@ -129,7 +136,8 @@
 
 (defn create-dir [config]
   "Wait for sip requests on the sip channel and process them.
-  Returns the SIP channel it is listening on."
+  Returns the SIP channel it is listening on.
+  SIP directories start this service."
   (let [sip-chan   (chan)
         ;; process register:
         p-register (fn [{rq :sip-rq}]
@@ -174,7 +182,8 @@
   - cmd: 0 = register
   - rdv's circuit id
   - rdv ip @ & port
-  - sip name."
+  - sip name.
+  Used by application proxies to register the SIP username of a client & its RDV to a SIP DIR."
   (let [cmd         (-> [(from-cmd :register)] cljs/clj->js b/new)
         rdv-b       (b/new4 rdv-id)
         name-b      (b/new name)
@@ -183,6 +192,8 @@
     (circ/relay-sip config rdv-id :f-enc (b/cat cmd rdv-b rdv-dest b/zero name-b))))
 
 (defn query [config name rdv-id]
+  "Query for the RDV that is used for the given name.
+  Used by application proxies to connect to callee."
   (let [cmd         (-> [(from-cmd :query)] cljs/clj->js b/new)
         name-b      (b/new name)]
     (log/debug "SIP: querying for" name "on RDV" rdv-id)
@@ -213,6 +224,12 @@
       ;(update-in [:headers] #(merge % headers))
       walk/stringify-keys
       cljs/clj->js))
+
+
+;; MIX DIR service and associated client functions ;;;;;;;;;;;;;;;
+
+
+
 
 ;; replace all uris, tags, ports by hc defaults.
 ;; {method REGISTER
