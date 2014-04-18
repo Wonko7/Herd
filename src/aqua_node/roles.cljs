@@ -98,7 +98,7 @@
         (when (is? :app-proxy)
           (let [geo      (<! geo)
                 net-info (<! net-info)
-                mix      (path/init-pools config net-info geo 4)]
+                mix      (path/init-pools config net-info geo 2)]
             (conn/new :socks :server ap config {:data     path/app-proxy-forward
                                                 :udp-data path/app-proxy-forward-udp
                                                 :init     app-proxy-init

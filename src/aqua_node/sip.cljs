@@ -20,6 +20,7 @@
   ;; assuming only one client
   (go (let [sip         (node/require "sip")
             headers     (atom {})
+            uri-to      (atom "")
             ;; Prepare RDV:
             rdv-id      (<! (path/get-path :single)) ;; FIXME we should specify what zone we want our rdv in.
             rdv-ctrl    (-> rdv-id circ/get-data :dest-ctrl)
@@ -39,28 +40,23 @@
                                                                  (->> contact :uri (re-find #"sip:(.*)@") second))
                                                 rdv-data     (circ/get-data rdv-id)
                                                 sip-dir-dest (net-info [(:host sip-dir) (:port sip-dir)])
-                                                sip-dir-dest (merge sip-dir-dest {:dest sip-dir-dest})
-                                                ack          (.makeResponse sip rq 200 "OK")
-                                                uri-to       (-> contact :uri)] ;; FIXME; we'll get rid of :dest in circ someday.
+                                                sip-dir-dest (merge sip-dir-dest {:dest sip-dir-dest}) ;; FIXME; we'll get rid of :dest in circ someday.
+                                                ack          (.makeResponse sip rq 200 "OK")]
                                             (if (:auth sip-dir-dest)
-                                              (go (>! rdv-ctrl sip-dir-dest) ;; connect to sip dir to send register
-                                                  (<! rdv-notify)            ;; wait until connected to send it
-                                                  (register config name rdv-id (:rdv rdv-data))
-                                                  (.send sip ack)
-                                                  (println :HEADERS (reset! headers (-> ack cljs/js->clj walk/keywordize-keys :headers ;(rename-keys {:from :to, :to :from})
-                                                                                        )))
+                                              (go (>! rdv-ctrl sip-dir-dest)                      ;; --- RDV: connect to sip dir to send register
+                                                  (<! rdv-notify)                                 ;; wait until connected to send
+                                                  (register config name rdv-id (:rdv rdv-data))   ;; send register to dir, ack to sip client:
+                                                  (>! rdv-ctrl @path/chosen-mix)                  ;; --- MIX: connect to chosen mix
+                                                  (<! rdv-notify)                                 ;; wait until connected to send
+                                                  (register-mix config name)                      ;; register our sip user name (needed for last step of incoming rt circs, without giving our ip to caller)
+                                                  (.send sip ack)                                 ;; --- SIP: answer sip client, successfully registered.
+                                                  (reset! uri-to  (-> contact :uri))              ;; save uri & headers for building invite later:
+                                                  (reset! headers (-> ack cljs/js->clj walk/keywordize-keys :headers)))
+                                              (do (log/error "Could not find SIP DIR" sip-dir)
                                                   ;; debug <--
-                                                  (println :reg-ack ack)
-                                                  (println (mk-invite @headers uri-to "172.17.42.1")) ;; Find int max for cseq
-                                                  (js/console.log (mk-invite @headers uri-to "172.17.42.1"))
-                                                  (.send sip (mk-invite @headers uri-to "172.17.42.1")
-                                                         (fn [rs] (println (.-status rs)))))
+                                                  (doall (->> net-info seq (map second) (map #(dissoc % :auth)) (map println)))
                                                   ;; debug -->
-                                                  (do (log/error "Could not find SIP DIR" sip-dir)
-                                                      ;; debug <--
-                                                      (doall (->> net-info seq (map second) (map #(dissoc % :auth)) (map println)))
-                                                      ;; debug -->
-                                                      (.send sip (.makeResponse sip rq "404" "NOT FOUND")))))
+                                                  (.send sip (.makeResponse sip rq "404" "NOT FOUND")))))
 
                               "SUBSCRIBE" (condp = (-> nrq :headers :event)
                                             "presence.winfo"  (do (println (:event nrq))
@@ -72,8 +68,10 @@
                               "PUBLISH"   (go (if (= "presence" (-> nrq :headers :event))
                                                 (let [parse-xml (-> (node/require "xml2js") .-parseString)
                                                       xml       (chan)]
+                                                  ;; debug <--
                                                   (parse-xml (:content nrq) #(go (println %2) (>! xml %2)))
                                                   (println (-> (<! xml) cljs/js->clj walk/keywordize-keys))
+                                                  ;; debug -->
                                                   (.send sip (.makeResponse sip rq 200 "OK")))
                                                 (do (log/error "SIP: Unsupported PUBLISH event:" (-> nrq :headers :event))
                                                     (.send sip (.makeResponse sip rq 501 "Not Implemented")))))
@@ -95,7 +93,12 @@
                                                       ;; (rt-path-add (<! callee-mix))
                                                       ;; (rt-path-ask-mix to connect with callee) ; -> mix must keep a dir of its own
                                                       ;; (mk invite for local rt)
-                                                      (.send sip (.makeResponse sip rq 180 "RINGING")))
+                                                      (.send sip (.makeResponse sip rq 180 "RINGING"))
+                                                      ;; debug <--
+                                                      (js/console.log (mk-invite @headers uri-to "172.17.42.1"))
+                                                      (.send sip (mk-invite @headers uri-to "172.17.42.1") ;; FIXME this will become mk-sdp, and be sent as an ack here.
+                                                             (fn [rs] (go (println (-> rs cljs/js->clj walk/keywordize-keys)) (.-status rs)))))
+                                                      ;; debug -->
                                                   (do (log/error "SIP: Could not find callee's mix:" name)
                                                       (.send sip (.makeResponse sip rq 404 "NOT FOUND"))))))
 
@@ -127,7 +130,6 @@
 (defn create-dir [config]
   "Wait for sip requests on the sip channel and process them.
   Returns the SIP channel it is listening on."
-  ;(println )
   (let [sip-chan   (chan)
         ;; process register:
         p-register (fn [{rq :sip-rq}]
@@ -187,10 +189,10 @@
     (circ/relay-sip config rdv-id :f-enc (b/cat cmd name-b))
     (-> rdv-id circ/get-data :sip-chan)))
 
-(defn mk-invite [headers uri-to ipfrom]
+(defn mk-invite [headers uri-to ipfrom] ;; ip from will become a :dest from a rt circ
   (-> {:method  "INVITE"
        :uri     uri-to
-       :headers {:to               {:uri uri-to} ;(-> headers :from)
+       :headers {:to               {:uri uri-to}
                  :from             (-> headers :to)
                  :call-id          (-> (node/require "crypto") (.randomBytes 16) (.toString "hex"))
                  :via              (-> headers :via)

@@ -50,7 +50,7 @@
     (go (loop [cmd (<! ctrl), [n & nodes] nodes]
           (when n
             (circ/relay-extend config id n)
-            (log/debug "Circ" id "extended, remaining =" (count nodes))
+            (log/debug "Single Circuit:" id "extended, remaining =" (count nodes))
             (recur (<! ctrl) nodes)))
         ;; the circuit is built, waiting on dest-ctrl for a destination before sending relay begin,
         ;; or a :rdv command to make the last node a rdv.
@@ -63,7 +63,7 @@
                        (circ/update-data id [:path-dest :port] (:port (<! ctrl)))
                        (circ/update-data id [:state] :relay)
                        (>! (-> circ :backward-hop c/get-data :ctrl) :relay)
-                       (log/info "Single Circuit" id "is ready for relay"))
+                       (log/info "Single Circuit:" id "is ready for relay"))
             ;; RDV logic: send relay rdv to ask last node to become our rdv point.
             :rdv   (do (circ/relay-rdv config id)
                        (log/info "Using Single Circuit" id "as RDV")
@@ -84,7 +84,7 @@
                            (log/info "RDV" id "is ready for relay")
                            (go (>! notify :extended))
                            (recur (<! dest)))))
-            :else  (log/error "Did not understand command" cmd "on circ" id))))
+            :else  (log/error "Single: Did not understand command" cmd "on circ" id))))
     id))
 
 ;; create a realtime path for RTP. This version connects to the callee's ap.
@@ -115,11 +115,25 @@
                 ;; we are done, update state info & notify we are ready.
                 (let [circ (circ/get-data id)]
                   (circ/relay-begin config id rt-dest) ;; ask exit (callee's ap) to begin relaying data.
-                  (circ/update-data id [:state] :relay-ack-pending)
                   (circ/update-data id [:state] :relay)
                   (<! ctrl)                            ;; relay begin was acknowledged.
                   (>! (-> circ :state-ch) :done)       ;; notify we can start relaying data.
                   (log/info "RT Circuit" id "is ready for relay"))))))
+    id))
+
+(defn create-one-hop [config socket mix]
+  "Creates a one hop path. Assumes a connection to the first & only node exists. used for SIP dir signaling. See sip.cljs."
+  ;; Find the first mix's (will be our assigned mix/SP) socket & send a create.
+  (let [id     (circ/create config socket (:auth mix))
+        ctrl   (chan)
+        dest   (chan)]
+    (circ/update-data id [:roles] [:origin])
+    (circ/update-data id [:ctrl] ctrl)
+    (circ/update-data id [:dest-ctrl] dest)
+    (circ/update-data id [:mk-path-fn] #(go (>! ctrl :next)))
+    (go (<! ctrl)
+        (circ/update-data id [:state] :relay)
+        (log/info "One Hop Circuit" id "is ready for Signaling"))
     id))
 
 
@@ -193,9 +207,10 @@
   "Initialises a channel, filling it with as many circuits as it will take.
   Replaces them as they are consumed."
   (let [new-path (condp = type
-                   :single #(create-single config (path-data))
-                   :rt     #(create-rt config soc path-data))]
-    (go-loop [] ;; as soon as one of our buffered circs is claimed, this loop recurs once to replace it:
+                   :one-hop #(create-one-hop config soc path-data)
+                   :single  #(create-single config (path-data))
+                   :rt      #(create-rt config soc path-data))]
+   (go-loop [] ;; as soon as one of our buffered circs is claimed, this loop recurs once to replace it:
       (>! (@pool type) (new-path))
       (recur))))
 
@@ -210,18 +225,20 @@
         mk-path      (fn []
                        (->> (select-mixes #(and (= (:role %) :mix) (not= mix %))) (take 2) (cons mix) (map #(merge % {:dest %})))) ;; use same mix as entry point for single & rt. ; not= mix
         connected    (chan)
-        soc          (conn/new :aqua :client mix config {:connect #(go (>! connected :done))})]
+        soc          (conn/new :aqua :client mix config {:connect #(go (>! connected :done))})
+        N            (dec N)] ;; an additional circ is created waiting for the channel to be ready to receive.
     (log/info "Init Circuit pools: we are in" (:country loc) "/" (geo/reg-to-continent reg))
     (log/debug "Chosen mix:" (:host mix) (:port mix))
     (reset! chosen-mix mix)
     ;; init channel pools:
-    (reset! pool {:rt (chan N) :single (chan N)})
+    (reset! pool {:one-hop (chan N) :rt (chan N) :single (chan N)})
     ;; wait until connected to the chosen mix before sending requests
     (go (<! connected)
         (rate/init config soc)
         (c/add-listeners soc {:data #(circ/process config soc %)})
         (init-pool config soc :rt mix)
-        (init-pool config soc :single mk-path))
+        (init-pool config soc :single mk-path)
+        (init-pool config soc :one-hop mix))
     mix))
 
 (defn get-path [type]
