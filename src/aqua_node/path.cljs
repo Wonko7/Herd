@@ -234,11 +234,6 @@
     ;; init channel pools:
     (reset! pool {:one-hop (chan N) :rt (chan N) :single (chan N)})
     ;; wait until connected to the chosen mix before sending requests
-    (println :net-info (count (select-mixes identity)))
-    (println :my-rdvs (count rdvs))
-    (println :my-mixes (count (select-mixes #(and (= (:role %) :mix) (= (:reg %) reg)))))
-    (println :all-rdvs (count (select-mixes #(and (= (:role %) :rdv) ))))
-    (println :all-mixes (count (select-mixes #(and (= (:role %) :mix) ))))
     (go (<! connected)
         (rate/init config soc)
         (c/add-listeners soc {:data #(circ/process config soc %)})

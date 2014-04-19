@@ -13,7 +13,7 @@
             [aqua-node.dir :as dir])
   (:require-macros [cljs.core.async.macros :as m :refer [go-loop go]]))
 
-(declare register-to-mix register query dir mk-invite)
+(declare register-to-mix register query dir mk-invite to-cmd from-cmd)
 
 
 ;; Manage local SIP client requests ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
@@ -30,6 +30,7 @@
             rdv-data    (circ/get-data rdv-id)
             rdv-ctrl    (:dest-ctrl rdv-data)
             rdv-notify  (:notify rdv-data)
+            from-rdv    (chan)
             ;; Prepare MIX SIG:
             mix-id      (<! (path/get-path :one-hop))
 
@@ -100,8 +101,14 @@
                                                         (>! rdv-ctrl (merge callee-rdv {:dest callee-rdv}))
                                                         (<! rdv-notify)
                                                         (log/debug "Extended to callee's RDV"))
-                                                      ;; FIXME: once this works we'll add relay-sip extend to callee so rdv can't read demand.
-                                                      (circ/relay-sip config rdv-id :f-enc demand-mix)
+                                                      ;; FIXME: once this works we'll add relay-sip extend to callee so rdv can't read demand,
+                                                      ;; and client can match our HS against the keys he has for his contacts.
+                                                      (circ/relay-sip config rdv-id :f-enc
+                                                                      (b/cat (-> [(from-cmd :invite)] cljs/clj->js b/new)
+                                                                             (b/new4 callee-rdv-id)
+                                                                             (b/new (conv/dest-to-tor-str (merge {:type :ip4 :proto :udp} @path/chosen-mix)))
+                                                                             name))
+                                                      ;; and now we wait for our
                                                       (let [reply (<! rdv-notify)]
                                                         (condp = (:status reply)
                                                           :ok     (let [rt       (<! (path/get-path :rt))
@@ -127,8 +134,15 @@
 
                               nil)))]
         (>! rdv-ctrl :rdv)
-        (circ/update-data rdv-id [:sip-chan] (chan))
+        (circ/update-data rdv-id [:sip-chan] from-rdv)
         (.start sip (cljs/clj->js {:protocol "UDP"}) process)
+        (go-loop [query (<! from-rdv)]
+          (let [cmd (-> query :sip-rq (.readUInt8 0) to-cmd)]
+            (condp cmd = 
+              :invite (let [[mix q] (conv/parse-addr (.slice (:sip-rq query) 5))
+                            caller  (.toString q)]
+                        (println "got invited by" caller mix))))
+          (recur (<! from-rdv)))
         (log/info "SIP proxy listening on default UDP SIP port"))))
 
 
@@ -139,6 +153,7 @@
                :query-reply     2
                :register-to-mix 3
                :mix-query       4
+               :invite          5
                :error           9})
 
 (def to-cmd
@@ -263,38 +278,45 @@
   Mixes start this service to keep track of the state of its users."
   (let [sip-chan   (chan)
         ;; process register:
-        p-register (fn [{rq :sip-rq}]
-                     (let [[client-dest rq] (conv/parse-addr (.slice rq 1))
-                           name             (.toString rq)
-                           timeout-id       (js/setTimeout #(do (log/debug "SIP DIR: timeout for" name)
-                                                                (rm name))
-                                                           (:sip-register-interval config))]
-                       (log/debug "SIP MIX DIR, registering" name "dest:" client-dest)
-                       ;; if the user is renewing his registration, remove rm timeout:
-                       (when (@mix-dir name)
-                         (js/clearTimeout (:timeout (@mix-dir name))))
-                       ;; update the global directory:
-                       (swap! mix-dir merge {name {:dest client-dest :state :inactive}})))
+        p-register     (fn [{rq :sip-rq}]
+                         (let [[client-dest rq] (conv/parse-addr (.slice rq 1))
+                               name             (.toString rq)
+                               timeout-id       (js/setTimeout #(do (log/debug "SIP DIR: timeout for" name)
+                                                                    (rm name))
+                                                               (:sip-register-interval config))]
+                           (log/debug "SIP MIX DIR, registering" name "dest:" client-dest)
+                           ;; if the user is renewing his registration, remove rm timeout:
+                           (when (@mix-dir name)
+                             (js/clearTimeout (:timeout (@mix-dir name))))
+                           ;; update the global directory:
+                           (swap! mix-dir merge {name {:dest client-dest :state :inactive}})))
         ;; process extend:
-        p-extend   (fn [{circ :circ-id rq :sip-rq}]
-                     (let [name  (.toString (.slice rq 1))
-                           reply (when-let [entry   (@mix-dir name)]
-                                   (let [cmd      (-> [(from-cmd :query-reply)] cljs/clj->js b/new)
-                                         rdv-dest (b/new (conv/dest-to-tor-str (merge {:type :ip4 :proto :udp} (:rdv entry))))
-                                         rdv-id   (b/new4 (:rdv-id entry))]
-                                     (b/cat cmd rdv-id rdv-dest b/zero)))]
-                       (println :to circ :sending reply)
-                       (if reply
-                         (do (log/debug "SIP DIR, query for" name)
-                             (circ/relay-sip config circ :b-enc reply))
-                         (do (log/debug "SIP DIR, could not find" name)
-                             (circ/relay-sip config circ :b-enc
-                                             (b/cat (-> [(from-cmd :error)] cljs/clj->js b/new) (b/new "404")))))))]
+        p-extend       (fn [{circ :circ-id rq :sip-rq}]
+                         (let [name  (.toString (.slice rq 1))
+                               reply (when-let [entry   (@mix-dir name)]
+                                       (let [cmd      (-> [(from-cmd :query-reply)] cljs/clj->js b/new)
+                                             rdv-dest (b/new (conv/dest-to-tor-str (merge {:type :ip4 :proto :udp} (:rdv entry))))
+                                             rdv-id   (b/new4 (:rdv-id entry))]
+                                         (b/cat cmd rdv-id rdv-dest b/zero)))]
+                           (println :to circ :sending reply)
+                           (if reply
+                             (do (log/debug "SIP DIR, query for" name)
+                                 (circ/relay-sip config circ :b-enc reply))
+                             (do (log/debug "SIP DIR, could not find" name)
+                                 (circ/relay-sip config circ :b-enc
+                                                 (b/cat (-> [(from-cmd :error)] cljs/clj->js b/new) (b/new "404")))))))
+        ;; relay mix queries to client:
+        p-relay-invite (fn [{cid :circ-id rq :sip-rq}]
+                         (let [rdv-id (.readUInt32BE rq 1)
+                               caller (.slice rq 5)]
+                           (when (circ/get-data rdv-id)
+                             (circ/relay-sip config rdv-id :b-enc rq))))]
     ;; dispatch requests to the corresponding functions:
     (go-loop [request (<! sip-chan)]
       (condp = (-> request :sip-rq (.readUInt8 0) to-cmd)
         :register-to-mix (p-register request)
-        :extend       (p-extend request)
+        :extend          (p-extend request)
+        :invite          (p-relay-invite request)
         (log/error "SIP DIR, received unknown command"))
       (recur (<! sip-chan)))
     sip-chan))
