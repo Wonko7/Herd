@@ -216,12 +216,15 @@
   "Initialise a pool of N of each type of circuits (rt and single for now)
   net-info is the list of mixes with their geo info."
   (let [reg          (-> loc :reg)
+        fixme-path   (fn [path] (map #(merge % {:dest %}) path)) ;; FIXME yes, get rid of this
         select-mixes #(->> net-info seq (map second) (filter %) shuffle)
         ;; entry mix, for :rt --> will be assigned by dir.
         mix          (first (select-mixes #(and (= (:role %) :mix) (= (:reg %) reg))))
         ;; make path for :single, three hops, the first being mix chosen for :rt.
         mk-path      (fn [] ;; change (take n) for a path of n+1 nodes.
-                       (->> (select-mixes #(and (= (:role %) :mix) (not= mix %))) (take 1) (cons mix) (map #(merge % {:dest %})))) ;; use same mix as entry point for single & rt. ; not= mix
+                       (->> (select-mixes #(and (= (:role %) :mix) (not= mix %))) (take 0) (cons mix) fixme-path)) ;; use same mix as entry point for single & rt. ; not= mix
+        ;; rdvs in our zone:
+        rdvs         (select-mixes #(and (= (:role %) :rdv) (= (:reg %) reg)))
         connected    (chan)
         soc          (conn/new :aqua :client mix config {:connect #(go (>! connected :done))})
         N            (dec N)] ;; an additional circ is created waiting for the channel to be ready to receive.
@@ -231,11 +234,16 @@
     ;; init channel pools:
     (reset! pool {:one-hop (chan N) :rt (chan N) :single (chan N)})
     ;; wait until connected to the chosen mix before sending requests
+    (println :net-info (count (select-mixes identity)))
+    (println :my-rdvs (count rdvs))
+    (println :my-mixes (count (select-mixes #(and (= (:role %) :mix) (= (:reg %) reg)))))
+    (println :all-rdvs (count (select-mixes #(and (= (:role %) :rdv) ))))
+    (println :all-mixes (count (select-mixes #(and (= (:role %) :mix) ))))
     (go (<! connected)
         (rate/init config soc)
         (c/add-listeners soc {:data #(circ/process config soc %)})
         (init-pool config soc :rt mix)
-        (init-pool config soc :single mk-path)
+        (init-pool config soc :single #(concat (mk-path) (->> rdvs shuffle (take 1) fixme-path))) ;; for now all single circuits are for rdvs, if this changes this'll have to change too.
         (init-pool config soc :one-hop mix))
     mix))
 

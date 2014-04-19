@@ -54,7 +54,8 @@
   (let [role         (condp = (.readUInt8 msg 0)
                        0 :app-proxy ;; FIXME: app-proxy will stop registering to dir, only to sip-dir.
                        1 :mix
-                       2 :sip-dir)
+                       2 :sip-dir
+                       3 :rdv)
         reg          (.readUInt8 msg 1)
         id-len       (-> config :ntor-values :node-id-len)
         [id pub msg] (b/cut (.slice msg 2) id-len (+ id-len (-> config :ntor-values :h-len)))
@@ -70,7 +71,8 @@
   (let [role  (condp = (:role info)
                 :app-proxy 0
                 :mix       1
-                :sip-dir   2)
+                :sip-dir   2
+                :rdv       3)
         msg   [(-> [role (-> info :reg geo/reg-to-int)] cljs/clj->js b/new)
                (-> info :auth :srv-id)
                (-> info :auth :pub-B)
@@ -102,7 +104,7 @@
                        :pub-B    (-> config :auth :aqua-id :pub)}
                 :host (-> config :external-ip)
                 :port (-> config :aqua :port)
-                :role (or (is? :sip-dir) (is? :mix) (is? :app-proxy))
+                :role (or (is? :sip-dir) (is? :rdv) (is? :mix) (is? :app-proxy))
                 :mix  mix
                 :reg  (-> geo :reg)}]
     (.write soc (b/copycat2 header (mk-info-buf info)) #(go (>! done-chan :done)))))
@@ -125,7 +127,7 @@
   (let [[info]      (parse-info config msg)
         ip          (:host info)
         role        (:role info)]
-    (if (or (= role :sip-dir) (= role :mix))
+    (if (or (= role :sip-dir) (= role :rdv) (= role :mix))
       ;; FIXME: mixes should also timeout.
       (do (swap! mix-dir merge {[ip (:port info)] info})
           (mk-net-buf!))

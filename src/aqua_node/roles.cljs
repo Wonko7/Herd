@@ -106,7 +106,7 @@
             (sip/create-server config net-info nil) ;; FIXME testing.
             (log/info "Dir: sending register info")
             (register-to-dir config geo mix ds)))
-        (when (is? :mix)
+        (when (or (is? :mix) (is? :rdv))
           (let [sip-chan (sip/create-mix-dir config)
                 cfg      (merge config {:sip-chan sip-chan :aqua sip-dir})]
             (conn/new :aqua :server aq cfg {:connect aqua-server-recv})
