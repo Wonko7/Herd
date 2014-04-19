@@ -27,29 +27,28 @@
             uri-to      (atom "")
             ;; Prepare RDV:
             rdv-id      (<! (path/get-path :single)) ;; FIXME we should specify what zone we want our rdv in.
-            rdv-ctrl    (-> rdv-id circ/get-data :dest-ctrl)
-            rdv-notify  (-> rdv-id circ/get-data :notify)
+            rdv-data    (circ/get-data rdv-id)
+            rdv-ctrl    (:dest-ctrl rdv-data)
+            rdv-notify  (:notify rdv-data)
             ;; Prepare MIX SIG:
             mix-id      (<! (path/get-path :one-hop))
+
             ;; Process SIP logic:
             process     (fn [rq]
-                          (let [nrq  (-> rq cljs/js->clj walk/keywordize-keys)
-                                name (-> nrq :headers :contact first :name)]
-
+                          (let [nrq       (-> rq cljs/js->clj walk/keywordize-keys)
+                                contact   (-> nrq :headers :contact first)
+                                name      (or (-> contact :name)
+                                              (->> contact :uri (re-find #"sip:(.*)@") second))]
                             ;; debug <--
                             (println)
                             (println :nrq nrq)
                             ;; debug -->
-
                             (condp = (:method nrq)
 
-                              "REGISTER"  (let [contact      (-> nrq :headers :contact first)
-                                                name         (or (-> contact :name)
-                                                                 (->> contact :uri (re-find #"sip:(.*)@") second))
-                                                rdv-data     (circ/get-data rdv-id)
-                                                sip-dir-dest (net-info [(:host sip-dir) (:port sip-dir)])
-                                                sip-dir-dest (merge sip-dir-dest {:dest sip-dir-dest}) ;; FIXME; we'll get rid of :dest in circ someday.
-                                                ack          (.makeResponse sip rq 200 "OK")]
+                              "REGISTER"  (let [rdv-data     (circ/get-data rdv-id)
+                                                sip-dir-dest (net-info [(:host sip-dir) (:port sip-dir)]) ;; find sip dir from config for now. will change that.
+                                                sip-dir-dest (merge sip-dir-dest {:dest sip-dir-dest})    ;; FIXME will get rid of :dest someday.
+                                                ack          (.makeResponse sip rq 200 "OK")]             ;; prepare sip successful answer
                                             (if (:auth sip-dir-dest)
                                               (go (>! rdv-ctrl sip-dir-dest)                      ;; --- RDV: connect to sip dir to send register
                                                   (<! rdv-notify)                                 ;; wait until connected to send
@@ -84,17 +83,23 @@
 
                               "OPTIONS"   (.send sip (.makeResponse sip rq 200 "OK"))
 
-                              "INVITE"    (go (let [;; get callee name, query for it
-                                                    name           (second (re-find #"sip:(.*)@" (:uri nrq)))
-                                                    callee-rdv     (:sip-rq (<! (query config name rdv-id)))
+                              "INVITE"    (go (let [callee-name    (second (re-find #"sip:(.*)@" (:uri nrq)))			;; get callee name
+                                                    callee-rdv     (:sip-rq (<! (query config callee-name rdv-id)))		;; query for its rdv
                                                     callee-rdv-id  (.readUInt32BE callee-rdv 1)
-                                                    callee-rdv-dst (conv/parse-addr (.slice callee-rdv 5))
-                                                    callee-rdv     (net-info [(:host callee-rdv-dst) (:port callee-rdv-dst)])] ;; FIXME: this is fine for PoC, but in the future net-info will be a atom and will be updated regularly.
+                                                    callee-rdv-dst (->  callee-rdv (.slice 5) conv/parse-addr first)
+                                                    _ (println :rcvd callee-rdv-dst)
+                                                    callee-rdv     (net-info [(:host callee-rdv-dst) (:port callee-rdv-dst)])]	;; FIXME: this is fine for PoC, but in the future net-info will be a atom and will be updated regularly.
                                                 (if callee-rdv
-                                                  (do (println :got callee-rdv-id callee-rdv-dst)
+                                                  (do ;; debug <--
+                                                      (println :callee callee-name :caller name :got callee-rdv-id callee-rdv-dst)
+                                                      (b/print-x (-> callee-rdv :auth :srv-id))
+                                                      (b/print-x (-> rdv-id circ/get-data :rdv :auth :srv-id))
+                                                      ;; debug -->
                                                       (.send sip (.makeResponse sip rq 100 "TRYING"))
-                                                      (>! rdv-ctrl callee-rdv)
-                                                      (<! rdv-notify)
+                                                      (when (not= (-> callee-rdv :auth :srv-id) (-> rdv-id circ/get-data :rdv :auth :srv-id)) ;; if we are using the same RDV we don't extend to it, it would fail (can't reuse the same node in a circ)
+                                                        (>! rdv-ctrl (merge callee-rdv {:dest callee-rdv}))
+                                                        (<! rdv-notify)
+                                                        (log/debug "Extended to callee's RDV"))
                                                       ;; FIXME: once this works we'll add relay-sip extend to callee so rdv can't read demand.
                                                       (circ/relay-sip config rdv-id :f-enc demand-mix)
                                                       (let [reply (<! rdv-notify)]
@@ -103,9 +108,9 @@
                                                                         rt-data  (circ/get-data rt)]
                                                                     (>! (:dest-ctrl rt-data) (:mix reply))
                                                                     (<! (:notiyf rt-data)))
-                                                          :busy    (do (log/info "Couldn't complete call," name "is busy")
+                                                          :busy    (do (log/info "Couldn't complete call," callee-name "is busy")
                                                                        (.send sip "BUSY")) ;; FIXME
-                                                          :error   (do (log/info "Couldn't find" name)
+                                                          :error   (do (log/info "Couldn't find" callee-name)
                                                                        (.send sip "404 or something."))))
                                                       ;; (circ/relay-sip config rdv-id :f-enc demand-mix)
                                                       ;; (rt-path-add (<! callee-mix))
@@ -123,7 +128,6 @@
                               nil)))]
         (>! rdv-ctrl :rdv)
         (circ/update-data rdv-id [:sip-chan] (chan))
-        (println (keys (second (first (seq net-info)))))
         (.start sip (cljs/clj->js {:protocol "UDP"}) process)
         (log/info "SIP proxy listening on default UDP SIP port"))))
 
@@ -177,7 +181,9 @@
                                          rdv-dest (b/new (conv/dest-to-tor-str (merge {:type :ip4 :proto :udp} (:rdv entry))))
                                          rdv-id   (b/new4 (:rdv-id entry))]
                                      (b/cat cmd rdv-id rdv-dest b/zero)))]
+                       ;; debug <--
                        (println :to circ :sending reply)
+                       ;; debug -->
                        (if reply
                          (do (log/debug "SIP DIR, query for" name)
                              (circ/relay-sip config circ :b-enc reply))

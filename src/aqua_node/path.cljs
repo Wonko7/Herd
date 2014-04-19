@@ -220,8 +220,8 @@
         ;; entry mix, for :rt --> will be assigned by dir.
         mix          (first (select-mixes #(and (= (:role %) :mix) (= (:reg %) reg))))
         ;; make path for :single, three hops, the first being mix chosen for :rt.
-        mk-path      (fn []
-                       (->> (select-mixes #(and (= (:role %) :mix) (not= mix %))) (take 2) (cons mix) (map #(merge % {:dest %})))) ;; use same mix as entry point for single & rt. ; not= mix
+        mk-path      (fn [] ;; change (take n) for a path of n+1 nodes.
+                       (->> (select-mixes #(and (= (:role %) :mix) (not= mix %))) (take 1) (cons mix) (map #(merge % {:dest %})))) ;; use same mix as entry point for single & rt. ; not= mix
         connected    (chan)
         soc          (conn/new :aqua :client mix config {:connect #(go (>! connected :done))})
         N            (dec N)] ;; an additional circ is created waiting for the channel to be ready to receive.
