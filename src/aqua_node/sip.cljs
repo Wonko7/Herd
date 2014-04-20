@@ -13,8 +13,81 @@
             [aqua-node.dir :as dir])
   (:require-macros [cljs.core.async.macros :as m :refer [go-loop go]]))
 
-(declare register-to-mix register query dir mk-invite to-cmd from-cmd)
+(declare register-to-mix register query)
 
+
+;; Call management ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+(def calls (atom {}))
+(def sip-to-call-id (atom {}))
+
+(defn add-call [call-id data]
+  (swap! calls merge {call-id data}))
+
+(defn add-sip-call [sip-id call-id]
+  (swap! calls merge {sip-id call-id}))
+
+(defn update-data [call-id keys data]
+  (swap! calls assoc-in (cons call-id keys) data))
+
+(defn rm-call [call-id]
+  (when-let [sip-id (-> call-id (@calls) :sip-id)]
+    (swap! sip-to-call-id dissoc call-id))
+  (swap! calls dissoc call-id))
+
+
+;; Commands for our voip protocol ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+(def from-cmd {:register        0
+               :query           1
+               :query-reply     2
+               :register-to-mix 3
+               :mix-query       4
+               :invite          5
+               :error           9})
+
+(def to-cmd
+  (apply merge (for [k (keys from-cmd)]
+                 {(from-cmd k) k})))
+
+
+;; Parsing ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+(defn get-call-id [msg]
+  "First byte is command identifier. Then Call id null terminated. return call id and remainder of the buffer"
+  (let [z (->> (range (.-length msg))
+               (map #(when (= 0 (.readUInt8 msg %)) %))
+               (some identity))]
+    [(.toString (.slice msg 1 z)) (.slice msg (inc z))]))
+
+
+;; SIP sdp creation ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+
+(defn mk-invite [headers uri-to ipfrom] ;; ip from will become a :dest from a rt circ
+  (-> {:method  "INVITE"
+       :uri     uri-to
+       :headers {:to               {:uri uri-to}
+                 :from             (-> headers :to)
+                 :call-id          (-> (node/require "crypto") (.randomBytes 16) (.toString "hex"))
+                 :via              (-> headers :via)
+                 :contact          [{"uri" (str "sip:from@" ipfrom)}]
+                 :cseq             {:seq (rand-int 888888) , :method "INVITE"}} ;; FIXME find real cseq max
+       :content (apply str (interleave ["v=0"
+                                        (str "o=- 3606192961 3606192961 IN IP4 " ipfrom)
+                                        "s=pjmedia"
+                                        (str "c=IN IP4 " ipfrom)
+                                        "t=0 0"
+                                        "a=X-nat:0"
+                                        "m=audio 4000 RTP/AVP 96"
+                                        (str "a=rtcp:4001 IN IP4 " ipfrom)
+                                        "a=sendrecv"
+                                        "a=rtpmap:96 telephone-event/8000"
+                                        "a=fmtp:96 0-15"]
+                                       (repeat "\r\n")))}
+      ;(update-in [:headers] #(merge % headers))
+      walk/stringify-keys
+      cljs/clj->js))
 
 ;; Manage local SIP client requests ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
@@ -103,11 +176,11 @@
                                                         (log/debug "Extended to callee's RDV"))
                                                       ;; FIXME: once this works we'll add relay-sip extend to callee so rdv can't read demand,
                                                       ;; and client can match our HS against the keys he has for his contacts.
-                                                      (circ/relay-sip config rdv-id :f-enc
-                                                                      (b/cat (-> [(from-cmd :invite)] cljs/clj->js b/new)
-                                                                             (b/new4 callee-rdv-id)
-                                                                             (b/new (conv/dest-to-tor-str (merge {:type :ip4 :proto :udp} @path/chosen-mix)))
-                                                                             name))
+                                                      ;;(circ/relay-sip config callee-rdv-id :f-enc
+                                                      ;;                (b/cat (-> [(from-cmd :invite)] cljs/clj->js b/new)
+                                                      ;;                       (b/new4 callee-rdv-id)
+                                                      ;;                       (b/new (conv/dest-to-tor-str (merge {:type :ip4 :proto :udp} @path/chosen-mix)))
+                                                      ;;                       name))
                                                       ;; and now we wait for our
                                                       (let [reply (<! rdv-notify)]
                                                         (condp = (:status reply)
@@ -128,7 +201,7 @@
                                                       (js/console.log (mk-invite @headers uri-to "172.17.42.1"))
                                                       (.send sip (mk-invite @headers uri-to "172.17.42.1") ;; FIXME this will become mk-sdp, and be sent as an ack here.
                                                              (fn [rs] (go (println (-> rs cljs/js->clj walk/keywordize-keys)) (.-status rs)))))
-                                                      ;; debug -->
+                                                  ;; debug -->
                                                   (do (log/error "SIP: Could not find callee's mix:" name)
                                                       (.send sip (.makeResponse sip rq 404 "NOT FOUND"))))))
 
@@ -136,29 +209,23 @@
         (>! rdv-ctrl :rdv)
         (circ/update-data rdv-id [:sip-chan] from-rdv)
         (.start sip (cljs/clj->js {:protocol "UDP"}) process)
+        ;; FIXME: sip-ch is general and dispatched according to callid to sub channels.
         (go-loop [query (<! from-rdv)]
           (let [cmd (-> query :sip-rq (.readUInt8 0) to-cmd)]
             (condp cmd = 
               :invite (let [[mix q] (conv/parse-addr (.slice (:sip-rq query) 5))
                             caller  (.toString q)]
-                        (println "got invited by" caller mix))))
+                        ;; debug <--
+                        (println "got invited by" caller mix)
+                        (add-call ))
+              ;; If it's not an invite, try to dispatch to an exsiting call:
+              (let [[call-id msg] (get-call-id (:sip-rq query))
+                    call-ch       (@calls call-id)]
+                (if call-ch
+                  (go (>! call-ch (merge query {:data msg :call-id call-id})))
+                  (log/info "SIP: incoming message with unknown call id:" call-id "-- dropping.")))))
           (recur (<! from-rdv)))
         (log/info "SIP proxy listening on default UDP SIP port"))))
-
-
-;; Commands used by SIP DIR & sip mix dir ;;;;;;;;;;;;;;;;;;;;;;;;
-
-(def from-cmd {:register        0
-               :query           1
-               :query-reply     2
-               :register-to-mix 3
-               :mix-query       4
-               :invite          5
-               :error           9})
-
-(def to-cmd
-  (apply merge (for [k (keys from-cmd)]
-                 {(from-cmd k) k})))
 
 
 ;; SIP DIR service and associated client functions ;;;;;;;;;;;;;;;
@@ -168,6 +235,29 @@
 (defn rm [name]
   "Remove name from dir"
   (swap! dir dissoc name))
+
+(defn register [config name rdv-id rdv-data]
+  "Send a register to a sip dir. Format of message:
+  - cmd: 0 = register
+  - rdv's circuit id
+  - rdv ip @ & port
+  - sip name.
+  Used by application proxies to register the SIP username of a client & its RDV to a SIP DIR."
+  (let [cmd         (-> [(from-cmd :register)] cljs/clj->js b/new)
+        rdv-b       (b/new4 rdv-id)
+        name-b      (b/new name)
+        rdv-dest    (b/new (conv/dest-to-tor-str {:host (:host rdv-data) :port (:port rdv-data) :type :ip4 :proto :udp}))]
+    (log/debug "SIP: registering" name "on RDV" rdv-id)
+    (circ/relay-sip config rdv-id :f-enc (b/cat cmd rdv-b rdv-dest b/zero name-b))))
+
+(defn query [config name rdv-id]
+  "Query for the RDV that is used for the given name.
+  Used by application proxies to connect to callee."
+  (let [cmd         (-> [(from-cmd :query)] cljs/clj->js b/new)
+        name-b      (b/new name)]
+    (log/debug "SIP: querying for" name "on RDV" rdv-id)
+    (circ/relay-sip config rdv-id :f-enc (b/cat cmd name-b))
+    (-> rdv-id circ/get-data :sip-chan)))
 
 (defn create-dir [config]
   "Wait for sip requests on the sip channel and process them.
@@ -213,54 +303,6 @@
         (log/error "SIP DIR, received unknown command"))
       (recur (<! sip-chan)))
     sip-chan))
-
-(defn register [config name rdv-id rdv-data]
-  "Send a register to a sip dir. Format of message:
-  - cmd: 0 = register
-  - rdv's circuit id
-  - rdv ip @ & port
-  - sip name.
-  Used by application proxies to register the SIP username of a client & its RDV to a SIP DIR."
-  (let [cmd         (-> [(from-cmd :register)] cljs/clj->js b/new)
-        rdv-b       (b/new4 rdv-id)
-        name-b      (b/new name)
-        rdv-dest    (b/new (conv/dest-to-tor-str {:host (:host rdv-data) :port (:port rdv-data) :type :ip4 :proto :udp}))]
-    (log/debug "SIP: registering" name "on RDV" rdv-id)
-    (circ/relay-sip config rdv-id :f-enc (b/cat cmd rdv-b rdv-dest b/zero name-b))))
-
-(defn query [config name rdv-id]
-  "Query for the RDV that is used for the given name.
-  Used by application proxies to connect to callee."
-  (let [cmd         (-> [(from-cmd :query)] cljs/clj->js b/new)
-        name-b      (b/new name)]
-    (log/debug "SIP: querying for" name "on RDV" rdv-id)
-    (circ/relay-sip config rdv-id :f-enc (b/cat cmd name-b))
-    (-> rdv-id circ/get-data :sip-chan)))
-
-(defn mk-invite [headers uri-to ipfrom] ;; ip from will become a :dest from a rt circ
-  (-> {:method  "INVITE"
-       :uri     uri-to
-       :headers {:to               {:uri uri-to}
-                 :from             (-> headers :to)
-                 :call-id          (-> (node/require "crypto") (.randomBytes 16) (.toString "hex"))
-                 :via              (-> headers :via)
-                 :contact          [{"uri" (str "sip:from@" ipfrom)}]
-                 :cseq             {:seq (rand-int 888888) , :method "INVITE"}} ;; FIXME find real cseq max
-       :content (apply str (interleave ["v=0"
-                                        (str "o=- 3606192961 3606192961 IN IP4 " ipfrom)
-                                        "s=pjmedia"
-                                        (str "c=IN IP4 " ipfrom)
-                                        "t=0 0"
-                                        "a=X-nat:0"
-                                        "m=audio 4000 RTP/AVP 96"
-                                        (str "a=rtcp:4001 IN IP4 " ipfrom)
-                                        "a=sendrecv"
-                                        "a=rtpmap:96 telephone-event/8000"
-                                        "a=fmtp:96 0-15"]
-                                       (repeat "\r\n")))}
-      ;(update-in [:headers] #(merge % headers))
-      walk/stringify-keys
-      cljs/clj->js))
 
 
 ;; MIX DIR service and associated client functions ;;;;;;;;;;;;;;;
