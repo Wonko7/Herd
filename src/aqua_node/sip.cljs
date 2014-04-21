@@ -193,7 +193,7 @@
                                                           (log/debug "Extended to callee's RDV"))
                                                         ;; FIXME: once this works we'll add relay-sip extend to callee so rdv can't read demand,
                                                         ;; and client can match our HS against the keys he has for his contacts.
-                                                        (circ/relay-sip config rdv-id :f-enc (b/cat (-> [(from-cmd :invite)] cljs/clj->js b/new)
+                                                        (circ/relay-sip config rdv-id :f-enc (b/cat (-> :invite from-cmd b/new1)
                                                                                                     (b/new call-id)
                                                                                                     b/zero
                                                                                                     (b/new4 callee-rdv-id)
@@ -266,21 +266,27 @@
   - rdv ip @ & port
   - sip name.
   Used by application proxies to register the SIP username of a client & its RDV to a SIP DIR."
-  (let [cmd         (-> [(from-cmd :register)] cljs/clj->js b/new)
+  (let [cmd         (-> :register from-cmd b/new1)
         rdv-b       (b/new4 rdv-id)
         name-b      (b/new name)
         rdv-dest    (b/new (conv/dest-to-tor-str {:host (:host rdv-data) :port (:port rdv-data) :type :ip4 :proto :udp}))]
     (log/debug "SIP: registering" name "on RDV" rdv-id)
     (circ/relay-sip config rdv-id :f-enc (b/cat cmd rdv-b rdv-dest b/zero name-b))))
 
-(defn query [config name rdv-id sip-ctrl]
+(defn query [config name rdv-id call-id]
   "Query for the RDV that is used for the given name.
   Used by application proxies to connect to callee."
-  (let [cmd         (-> [(from-cmd :query)] cljs/clj->js b/new)
+  (let [cmd         (-> :query from-cmd b/new1)
         name-b      (b/new name)]
     (log/debug "SIP: querying for" name "on RDV" rdv-id)
-    (circ/relay-sip config rdv-id :f-enc (b/cat cmd name-b))
-    sip-ctrl))
+    (circ/relay-sip config rdv-id :f-enc (b/cat cmd call-id b/zero name-b))))
+
+(defn mk-query-reply [name dir call-id]
+  (when-let [entry   (@dir name)]
+    (let [cmd      (-> :query-reply from-cmd b/new1)
+          rdv-dest (b/new (conv/dest-to-tor-str (merge {:type :ip4 :proto :udp} (:rdv entry))))
+          rdv-id   (b/new4 (:rdv-id entry))]
+      (b/cat cmd (b/new call-id) b/zero rdv-id rdv-dest b/zero))))
 
 (defn create-dir [config]
   "Wait for sip requests on the sip channel and process them.
@@ -303,12 +309,9 @@
                        (swap! dir merge {name {:rdv rdv-dest :rdv-id rdv-id :timeout timeout-id}})))
         ;; process query:
         p-query    (fn [{circ :circ-id rq :sip-rq}]
-                     (let [name  (.toString (.slice rq 1))
-                           reply (when-let [entry   (@dir name)]
-                                   (let [cmd      (-> [(from-cmd :query-reply)] cljs/clj->js b/new)
-                                         rdv-dest (b/new (conv/dest-to-tor-str (merge {:type :ip4 :proto :udp} (:rdv entry))))
-                                         rdv-id   (b/new4 (:rdv-id entry))]
-                                     (b/cat cmd rdv-id rdv-dest b/zero)))]
+                     (let [[call-id name] (get-call-id rq)
+                           name           (.toString name)
+                           reply          (mk-query-reply name dir call-id)]
                        ;; debug <--
                        (println :to circ :sending reply)
                        ;; debug -->
@@ -317,7 +320,7 @@
                              (circ/relay-sip config circ :b-enc reply))
                          (do (log/debug "SIP DIR, could not find" name)
                              (circ/relay-sip config circ :b-enc
-                                             (b/cat (-> [(from-cmd :error)] cljs/clj->js b/new) (b/new "404")))))))]
+                                             (b/cat (-> :error from-cmd b/new1) (b/new "404")))))))]
     ;; dispatch requests to the corresponding functions:
     (go-loop [request (<! sip-chan)]
       (condp = (-> request :sip-rq (.readUInt8 0) to-cmd)
@@ -357,19 +360,16 @@
                            (swap! mix-dir merge {name {:dest client-dest :state :inactive}})))
         ;; process extend:
         p-extend       (fn [{circ :circ-id rq :sip-rq}]
-                         (let [name  (.toString (.slice rq 1))
-                               reply (when-let [entry   (@mix-dir name)]
-                                       (let [cmd      (-> [(from-cmd :query-reply)] cljs/clj->js b/new)
-                                             rdv-dest (b/new (conv/dest-to-tor-str (merge {:type :ip4 :proto :udp} (:rdv entry))))
-                                             rdv-id   (b/new4 (:rdv-id entry))]
-                                         (b/cat cmd rdv-id rdv-dest b/zero)))]
+                         (let [[call-id name] (get-call-id rq)
+                               name           (.toString name)
+                               reply (mk-query-reply name mix-dir call-id)]
                            (println :to circ :sending reply)
                            (if reply
                              (do (log/debug "SIP DIR, query for" name)
                                  (circ/relay-sip config circ :b-enc reply))
                              (do (log/debug "SIP DIR, could not find" name)
                                  (circ/relay-sip config circ :b-enc
-                                                 (b/cat (-> [(from-cmd :error)] cljs/clj->js b/new) (b/new "404")))))))
+                                                 (b/cat (-> :error from-cmd b/new1) (b/new "404")))))))
         ;; relay mix queries to client:
         p-relay-invite (fn [{cid :circ-id rq :sip-rq}]
                          (let [rdv-id (.readUInt32BE rq 1)
@@ -391,7 +391,7 @@
   Format:
   - dest (tor dest thing)
   - username"
-  (let [cmd    (-> [(from-cmd :register-to-mix)] cljs/clj->js b/new)
+  (let [cmd    (-> :register-to-mix from-cmd b/new1)
         dest   (b/new (conv/dest-to-tor-str {:host (:external-ip config) :port 0 :type :ip4 :proto :udp}))
         name-b (b/new name)]
     (log/debug "SIP: registering" name "on mix" circ-id)
