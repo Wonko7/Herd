@@ -239,6 +239,7 @@
         ;; FIXME: sip-ch is general and dispatched according to callid to sub channels.
         (go-loop [query (<! from-rdv)]
           (let [cmd (-> query :sip-rq (.readUInt8 0) to-cmd)]
+          (println :got-something-from-rdv! :lol cmd)
             (condp = cmd
               :invite (let [[mix q] (conv/parse-addr (.slice (:sip-rq query) 5))
                             caller  (.toString q)]
@@ -321,7 +322,7 @@
                            name           (.toString name)
                            reply          (mk-query-reply name dir call-id)]
                        ;; debug <--
-                       (println :to circ :sending reply :cid call-id)
+                       (println :to circ :cid call-id)
                        ;; debug -->
                        (if reply
                          (do (log/debug "SIP DIR, query for" name)
@@ -371,7 +372,7 @@
                          (let [[call-id name] (get-call-id rq)
                                name           (.toString name)
                                reply (mk-query-reply name mix-dir call-id)]
-                           (println :to circ :sending reply :cid call-id)
+                           (println :to circ :cid call-id)
                            (if reply
                              (do (log/debug "SIP DIR, query for" name)
                                  (circ/relay-sip config circ :b-enc reply))
@@ -379,9 +380,9 @@
                                  (circ/relay-sip config circ :b-enc
                                                  (b/cat (-> :error from-cmd b/new1) (b/new call-id) b/zero (b/new "404")))))))
         ;; relay mix queries to client:
-        p-relay-invite (fn [{cid :circ-id rq :sip-rq}]
-                         (let [rdv-id (.readUInt32BE rq 1)
-                               caller (.slice rq 5)]
+        p-relay-invite (fn [{rq :sip-rq}]
+                         (let [[_ data] (get-call-id rq)
+                               rdv-id   (.readUInt32BE data 0)]
                            (when (circ/get-data rdv-id)
                              (circ/relay-sip config rdv-id :b-enc rq))))]
     ;; dispatch requests to the corresponding functions:

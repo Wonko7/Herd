@@ -116,7 +116,7 @@
                     :when (or (not= (:host aq) ip)
                               (not= (:port aq) port))
                     :let [con (chan)
-                          soc (conn/new :aqua :client mix config {:connect #(go (>! con :done))})]]
+                          soc (conn/new :aqua :client mix cfg {:connect #(go (>! con :done))})]]
               (c/add-listeners soc {:data #(circ/process config soc %)})
               (go (<! con)
                   (rate/init config soc)))))
