@@ -275,13 +275,21 @@
   "Send a relay extend message to given next hop."
   (let [data          (@circuits circ-id)
         socket        (:forward-hop data)
-        [auth create] (mk-create config nh-auth circ-id) ;; FIXME use the same id or create a new one?
+        [auth create] (mk-create config nh-auth circ-id) ;; FIXME id should be changed at each hop. keeping it this way for debugging for now.
         nspec         (condp = (:type nh-dest)
                         :ip4 (b/cat (b/new (cljs/clj->js [1 3 6]))  (conv/ip4-to-bin (:host nh-dest)) (conv/port-to-bin (:port nh-dest)))
                         :ip6 (b/cat (b/new (cljs/clj->js [1 4 16])) (conv/ip6-to-bin (:host nh-dest)) (conv/port-to-bin (:port nh-dest)))
                         (assert nil "unsupported next hop address type"))]
     (add-path-auth circ-id data auth) ;; FIXME: PATH: mk pluggable
     (relay config socket circ-id :extend2 :f-enc (b/cat nspec create))))
+
+(defn relay-extend-sip-user [config circ-id {nh-auth :auth name :name}]
+  "Send a relay extend message to given next hop."
+  (let [data          (@circuits circ-id)
+        socket        (:forward-hop data)
+        [auth create] (mk-create config nh-auth circ-id)]
+    (add-path-auth circ-id data auth)
+    (relay config socket circ-id :extend2 :f-enc (b/cat (b/new name) b/zero create))))
 
 (defn forward [config circ-id dest-str cell]
   "Part of the multipath prototype"
@@ -326,7 +334,7 @@
       (let [mux?       (is? :mux circ)
             auth       (if mux? (-> circ :mux :auth) (-> circ :path last :auth))
             len        (.readUInt16BE payload 0)
-            shared-sec (hs/client-finalise auth (.slice payload 2) (-> config :enc :key-len))] ;; FIXME aes 256 seems to want 32 len key. seems short to me. Also, xchacha in newer openssl.
+            shared-sec (hs/client-finalise auth (.slice payload 2) (-> config :enc :key-len))]
         (if mux?
           (update-data circ-id [:mux :auth :secret] shared-sec) ;; broken but unused on noiv.
           (add-path-secret-to-last config circ-id circ shared-sec))
@@ -381,99 +389,108 @@
 
 (defn process-relay [config socket circ-id relay-data]
   "Process an incoming relay message: parse header, and dispatch to appropriate relay processing function."
-  (let [circ        (@circuits circ-id)
-        r-payload   (:payload relay-data)
-        add-role    #(->> circ :roles (cons %) distinct)
+  (let [circ         (@circuits circ-id)
+        r-payload    (:payload relay-data)
+        add-role     #(->> circ :roles (cons %) distinct)
 
         ;; process data packet: forward payload as rtp, udp to destination socket.
-        p-data      (fn []
-                      (let [[fhop bhop :as hops] (map circ [:forward-hop :backward-hop])
-                            dest                 (if (= socket fhop) bhop fhop)
-                            dest-data            (c/get-data dest)]
-                        (assert (some (partial = socket) hops) "relay data came from neither forward or backward hop.")
-                        (assert dest "no destination, illegal state")
-                        (condp = (:type dest-data)
-                          :udp-exit  (if (:send-udp circ) ;; FIXME this is tmp, for rtp only, single path would crash things
-                                       (let [real-sz (.readUInt16BE r-payload 0)
-                                             msg     (.slice r-payload 2 (+ real-sz 2))]
-                                         ((:send-udp circ) msg))
-                                       (let [[r1 r2]    (b/mk-readers r-payload)
-                                             type       (r1 3)
-                                             [h p data] (condp = type
-                                                          1 [(conv/ip4-to-str (.slice r-payload 4 8)) (r2 8) (.slice r-payload 10)]
-                                                          4 [(conv/ip6-to-str (.slice r-payload 4 20)) (r2 20) (.slice r-payload 22)]
-                                                          3 (let [len  (.-length r-payload)
-                                                                  ml?  (>= len 5)
-                                                                  alen (when ml? (r1 4))
-                                                                  aend (when ml? (+ alen 5))]
-                                                              [(.toString r-payload "utf8" 5 aend) (r2 aend) (.slice r-payload (inc aend))])
-                                                          (assert false "bad socks5 header"))]
-                                         (.send dest data 0 (.-length data) p h)))
-                          :udp-ap    (.send dest r-payload 0 (.-length r-payload) (-> dest-data :from :port) (-> dest-data :from :host))
-                          :rtp-exit  (.send dest r-payload 0 (.-length r-payload) (-> dest-data :from :port) (-> dest-data :from :host)) ;; FIXME unused for now, going through udp-exit for now
-                          :rtp-ap    (.send dest r-payload 0 (.-length r-payload) (-> circ :local-dest :port) (-> circ :local-dest :host)) ;; FIXME quick and diiiirty
-                          (.write dest r-payload))))
+        p-data       (fn []
+                       (let [[fhop bhop :as hops] (map circ [:forward-hop :backward-hop])
+                             dest                 (if (= socket fhop) bhop fhop)
+                             dest-data            (c/get-data dest)]
+                         (assert (some (partial = socket) hops) "relay data came from neither forward or backward hop.")
+                         (assert dest "no destination, illegal state")
+                         (condp = (:type dest-data)
+                           :udp-exit  (if (:send-udp circ) ;; FIXME this is tmp, for rtp only, single path would crash things
+                                        (let [real-sz (.readUInt16BE r-payload 0)
+                                              msg     (.slice r-payload 2 (+ real-sz 2))]
+                                          ((:send-udp circ) msg))
+                                        (let [[r1 r2]    (b/mk-readers r-payload)
+                                              type       (r1 3)
+                                              [h p data] (condp = type
+                                                           1 [(conv/ip4-to-str (.slice r-payload 4 8)) (r2 8) (.slice r-payload 10)]
+                                                           4 [(conv/ip6-to-str (.slice r-payload 4 20)) (r2 20) (.slice r-payload 22)]
+                                                           3 (let [len  (.-length r-payload)
+                                                                   ml?  (>= len 5)
+                                                                   alen (when ml? (r1 4))
+                                                                   aend (when ml? (+ alen 5))]
+                                                               [(.toString r-payload "utf8" 5 aend) (r2 aend) (.slice r-payload (inc aend))])
+                                                           (assert false "bad socks5 header"))]
+                                          (.send dest data 0 (.-length data) p h)))
+                           :udp-ap    (.send dest r-payload 0 (.-length r-payload) (-> dest-data :from :port) (-> dest-data :from :host))
+                           :rtp-exit  (.send dest r-payload 0 (.-length r-payload) (-> dest-data :from :port) (-> dest-data :from :host)) ;; FIXME unused for now, going through udp-exit for now
+                           :rtp-ap    (.send dest r-payload 0 (.-length r-payload) (-> circ :local-dest :port) (-> circ :local-dest :host)) ;; FIXME quick and diiiirty
+                           (.write dest r-payload))))
 
         ;; we are being asked to begin relaying data -> we are the exit mix.
-        p-begin     (fn []
-                      (assert (is-not? :origin circ) "relay begin command makes no sense") ;; FIXME this assert is good, but more like these are needed. roles are not inforced.
-                      (log/info "Relay exit for circuit" circ-id)
-                      (update-data circ-id [:roles] (cons :exit (:roles circ)))
-                      (let [dest         (first (conv/parse-addr r-payload))
-                            sock-connect (chan)
-                            get-sock     #(go (>! sock-connect {:host (-> % .address .-address) :port (-> % .address .-port)}))
-                            cbs          {:connect get-sock
-                                          :error   #(do (log/debug "closed:" dest)
-                                                        (destroy config circ-id))}
-                            sock         (condp = (:proto dest) ;; FIXME -> this should be set by each transport/tunnel type. -> call backs from socks, rtpp, etc.
-                                           :tcp (conn/new :tcp :client dest config (merge cbs {:data (fn [config soc b] ;; FIXME -> mk this a fn used in roles?
-                                                                                                       (doall (map (fn [b] (.nextTick js/process #(relay config socket circ-id :data :b-enc b)))
-                                                                                                                   (apply (partial b/cut b) (range 1350 (.-length b) 1350)))))}))
-                                           :udp (conn/new :udp :client nil config (merge cbs {:data (fn [config soc msg rinfo]
-                                                                                                      (relay config socket circ-id :data :b-enc msg))}))
-                                           :rtp (conn/new :rtp :client nil config (merge cbs {:data #(relay config %1 circ-id :data :b-enc %2)})))]
-                        (when (= :udp (:proto dest)) ;; FIXME tmp
-                          (update-data circ-id [:send-udp] #(.send sock % 0 (.-length %) (:port dest) (:host dest))))
-                        (c/update-data sock [:circuit] circ-id)
-                        (update-data circ-id [:forward-hop] sock)
-                        (go (relay-connected config circ-id (merge dest (<! sock-connect))))))
+        p-begin      (fn []
+                       (assert (is-not? :origin circ) "relay begin command makes no sense") ;; FIXME this assert is good, but more like these are needed. roles are not inforced.
+                       (log/info "Relay exit for circuit" circ-id)
+                       (update-data circ-id [:roles] (cons :exit (:roles circ)))
+                       (let [dest         (first (conv/parse-addr r-payload))
+                             sock-connect (chan)
+                             get-sock     #(go (>! sock-connect {:host (-> % .address .-address) :port (-> % .address .-port)}))
+                             cbs          {:connect get-sock
+                                           :error   #(do (log/debug "closed:" dest)
+                                                         (destroy config circ-id))}
+                             sock         (condp = (:proto dest) ;; FIXME -> this should be set by each transport/tunnel type. -> call backs from socks, rtpp, etc.
+                                            :tcp (conn/new :tcp :client dest config (merge cbs {:data (fn [config soc b] ;; FIXME -> mk this a fn used in roles?
+                                                                                                        (doall (map (fn [b] (.nextTick js/process #(relay config socket circ-id :data :b-enc b)))
+                                                                                                                    (apply (partial b/cut b) (range 1350 (.-length b) 1350)))))}))
+                                            :udp (conn/new :udp :client nil config (merge cbs {:data (fn [config soc msg rinfo]
+                                                                                                       (relay config socket circ-id :data :b-enc msg))}))
+                                            :rtp (conn/new :rtp :client nil config (merge cbs {:data #(relay config %1 circ-id :data :b-enc %2)})))]
+                         (when (= :udp (:proto dest)) ;; FIXME tmp
+                           (update-data circ-id [:send-udp] #(.send sock % 0 (.-length %) (:port dest) (:host dest))))
+                         (c/update-data sock [:circuit] circ-id)
+                         (update-data circ-id [:forward-hop] sock)
+                         (go (relay-connected config circ-id (merge dest (<! sock-connect))))))
 
         ;; we are an app-proxy, and our relay begin has been acknowledged: we may start relaying data, notify on control channel.
-        p-connected (fn []
-                      (let [proxy-dest (first (conv/parse-addr r-payload))]
-                        (assert (is? :origin circ) "Connected message makes no sense")
-                        (update-data circ-id [:proxy-local] proxy-dest)
-                        (go (>! (:ctrl circ) proxy-dest))))
+        p-connected  (fn []
+                       (let [proxy-dest (first (conv/parse-addr r-payload))]
+                         (assert (is? :origin circ) "Connected message makes no sense")
+                         (update-data circ-id [:proxy-local] proxy-dest)
+                         (go (>! (:ctrl circ) proxy-dest))))
 
         ;; we are being asked to extend the circuit: send create2 to the next hop.
-        p-extend    (fn []
-                      (let [[r1 r2 r4] (b/mk-readers r-payload)
-                            nb-lspec   (r1 0) ;; FIXME we're assuming 1 for now.
-                            ls-type    (r1 1)
-                            ls-len     (r1 2)
-                            dest       (condp = ls-type
-                                         3 {:type :ip4 :host (conv/ip4-to-str (.slice r-payload 3 7))  :port (r2 7)  :create (.slice r-payload 9)}
-                                         4 {:type :ip6 :host (conv/ip6-to-str (.slice r-payload 3 19)) :port (r2 19) :create (.slice r-payload 21)})
-                            sock       (c/find-by-dest dest)
-                            fhop       (:forward-hop circ)]
-                        (assert sock "could not find destination")
-                        (when (and (is? :rdv circ) fhop)
-                          (send-destroy config fhop circ-id (b/new "because reasons")))
-                        (update-data circ-id [:forward-hop] sock)
-                        (update-data circ-id [:roles] (add-role :mix))
-                        (cell-send config sock circ-id :create2 (:create dest))))
+        p-extend     (fn []
+                       (let [[r1 r2 r4] (b/mk-readers r-payload)
+                             nb-lspec   (r1 0) ;; FIXME we're assuming 1 for now.
+                             ls-type    (r1 1)
+                             ls-len     (r1 2)
+                             dest       (condp = ls-type
+                                          3 {:type :ip4 :host (conv/ip4-to-str (.slice r-payload 3 7))  :port (r2 7)  :create (.slice r-payload 9)}
+                                          4 {:type :ip6 :host (conv/ip6-to-str (.slice r-payload 3 19)) :port (r2 19) :create (.slice r-payload 21)})
+                             sock       (c/find-by-dest dest)
+                             fhop       (:forward-hop circ)]
+                         (assert sock "could not find destination")
+                         (when (and (is? :rdv circ) fhop)
+                           (send-destroy config fhop circ-id (b/new "because reasons")))
+                         (update-data circ-id [:forward-hop] sock)
+                         (update-data circ-id [:roles] (add-role :mix))
+                         (cell-send config sock circ-id :create2 (:create dest))))
+
+        p-extend-sip (fn []
+                       (let [[name create] (b/cut-at-null-byte r-payload)
+                             dest          (@(:sip-mix-dir config) name)
+                             sock          (c/find-by-dest dest)]
+                         (assert sock "could not find destination")
+                         (update-data circ-id [:forward-hop] sock)
+                         (update-data circ-id [:roles] (add-role :mix))
+                         (cell-send config sock circ-id :create2 create)))
 
         ;; our relay extend has been acknowledged. Process as a created2 message.
-        p-extended  #(recv-created2 config socket circ-id r-payload)
+        p-extended   #(recv-created2 config socket circ-id r-payload)
 
         ;; we are asked to be RDV:
-        p-rdv       (fn []
-                      (log/info "Acting as RDV for" circ-id)
-                      (update-data circ-id [:roles] (add-role :rdv)))
+        p-rdv        (fn []
+                       (log/info "Acting as RDV for" circ-id)
+                       (update-data circ-id [:roles] (add-role :rdv)))
 
-        p-sip       #(if-let [sip-ch (or (:sip-chan circ) (:sip-chan config))] ;; sip dir servers use a global chan so it is stored in config, clients use a per circ chan.
-                       (go (>! sip-ch {:circ circ :circ-id circ-id :sip-rq r-payload}))
-                       (log/error "SIP uninitialised, dropping request on circuit:" circ-id))]
+        p-sip        #(if-let [sip-ch (or (:sip-chan circ) (:sip-chan config))] ;; sip dir servers use a global chan so it is stored in config, clients use a per circ chan.
+                        (go (>! sip-ch {:circ circ :circ-id circ-id :sip-rq r-payload}))
+                        (log/error "SIP uninitialised, dropping request on circuit:" circ-id))]
 
     ;; dispatch the relay command to appropriate function.
     (condp = (:relay-cmd relay-data)
@@ -496,6 +513,7 @@
       ;; aqua specific:
       16 (p-sip)
       17 (p-rdv)
+      18 (p-extend-sip)
       (log/error "unsupported relay command"))))
 
 ;; see tor spec 6.

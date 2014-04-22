@@ -10,10 +10,10 @@
             [aqua-node.conn-mgr :as conn]
             [aqua-node.circ :as circ]
             [aqua-node.path :as path]
-            [aqua-node.dir :as dir])
+            [aqua-node.dir :as dir]
+            [aqua-node.sip-dir :as sd]
+            [aqua-node.sip-helpers :as s])
   (:require-macros [cljs.core.async.macros :as m :refer [go-loop go]]))
-
-(declare register-to-mix register query)
 
 
 ;; Call management ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
@@ -46,37 +46,6 @@
   (-> (node/require "crypto") (.randomBytes 16) (.toString "hex")))
 
 
-;; Commands for our voip protocol ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
-
-(def from-cmd {:register        0
-               :query           1
-               :query-reply     2
-               :register-to-mix 3
-               :mix-query       4
-               :invite          5
-               :error           9})
-
-(def to-cmd
-  (apply merge (for [k (keys from-cmd)]
-                 {(from-cmd k) k})))
-
-
-;; Parsing ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
-
-(defn cut-at-null-byte [msg]
-  "return data until null byte and remainder of the buffer"
-  (let [z (->> (range (.-length msg))
-               (map #(when (= 0 (.readUInt8 msg %)) %))
-               (some identity))]
-    [(.slice msg 0 z) (.slice msg (inc z))]))
-
-(defn get-call-id [msg]
-  "First byte is command identifier. Then Call id null terminated. return call id and remainder of the buffer"
-  (let [[id rest] (cut-at-null-byte (.slice msg 1))]
-    [(.toString id) rest]))
-
-
-
 ;; SIP sdp creation ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
 (defn mk-invite [headers uri-to ipfrom] ;; ip from will become a :dest from a rt circ
@@ -103,6 +72,7 @@
       ;(update-in [:headers] #(merge % headers))
       walk/stringify-keys
       cljs/clj->js))
+
 
 ;; Manage local SIP client requests ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
@@ -140,16 +110,16 @@
                             (condp = (:method nrq)
 
                               "REGISTER"  (let [rdv-data     (circ/get-data out-rdv-id)
-                                                sip-dir-dest (net-info [(:host sip-dir) (:port sip-dir)]) ;; find sip dir from config for now. will change that.
-                                                sip-dir-dest (merge sip-dir-dest {:dest sip-dir-dest})    ;; FIXME will get rid of :dest someday.
-                                                ack          (.makeResponse sip rq 200 "OK")]             ;; prepare sip successful answer
+                                                sip-dir-dest (net-info [(:host sip-dir) (:port sip-dir)])     ;; find sip dir from config for now. will change that.
+                                                sip-dir-dest (merge sip-dir-dest {:dest sip-dir-dest})        ;; FIXME will get rid of :dest someday.
+                                                ack          (.makeResponse sip rq 200 "OK")]                 ;; prepare sip successful answer
                                             (if (:auth sip-dir-dest)
-                                              (go (>! out-rdv-ctrl sip-dir-dest)                      ;; --- RDV: connect to sip dir to send register
-                                                  (<! out-rdv-notify)                                 ;; wait until connected to send
-                                                  (register config name out-rdv-id rdv-id (:rdv rdv-data))   ;; send register to dir, ack to sip client:
-                                                  (register-to-mix config name mix-id)            ;; register our sip user name (needed for last step of incoming rt circs, without giving our ip to caller)
-                                                  (.send sip ack)                                 ;; --- SIP: answer sip client, successfully registered.
-                                                  (reset! uri-to  (-> contact :uri))              ;; save uri & headers for building invite later:
+                                              (go (>! out-rdv-ctrl sip-dir-dest)                              ;; --- RDV: connect to sip dir to send register
+                                                  (<! out-rdv-notify)                                         ;; wait until connected to send
+                                                  (sd/register config name out-rdv-id rdv-id (:rdv rdv-data))    ;; send register to dir, ack to sip client:
+                                                  (sd/register-to-mix config name mix-id)                        ;; register our sip user name (needed for last step of incoming rt circs, without giving our ip to caller)
+                                                  (.send sip ack)                                             ;; --- SIP: answer sip client, successfully registered.
+                                                  (reset! uri-to  (-> contact :uri))                          ;; save uri & headers for building invite later:
                                                   (reset! headers (-> ack cljs/js->clj walk/keywordize-keys :headers)))
                                               (do (log/error "Could not find SIP DIR" sip-dir)
                                                   ;; debug <--
@@ -182,10 +152,10 @@
                                                     sip-ctrl         (chan)
                                                     callee-name      (second (re-find #"sip:(.*)@" (:uri nrq)))]                    ;; get callee name
                                                 (add-call call-id {:sip-ctrl sip-ctrl :sip-call-id sip-call-id :state :ringing})
-                                                (query config callee-name out-rdv-id call-id)                                       ;; query for callee's rdv
+                                                (sd/query config callee-name out-rdv-id call-id)                                       ;; query for callee's rdv
                                                 (log/info "SIP:" "intiating call" call-id "to" callee-name)
                                                 (let [query-reply-rdv      (<! sip-ctrl)]                                           ;; get query reply
-                                                  (if (= :error (-> query-reply-rdv :sip-rq (.readUInt8 0) to-cmd))
+                                                  (if (= :error (-> query-reply-rdv :sip-rq (.readUInt8 0) s/to-cmd))
                                                     (do (log/error "Query for" callee-name "failed.")
                                                         (.send sip (.makeResponse sip rq "404")))
                                                     (let [callee-rdv       (:data query-reply-rdv)
@@ -196,8 +166,6 @@
                                                         (do ;; debug <--
                                                             (println :rcvd callee-rdv-dst)
                                                             (println :callee callee-name :caller name :got callee-rdv-id callee-rdv-dst)
-                                                            (b/print-x (-> callee-rdv :auth :srv-id))
-                                                            (b/print-x (-> rdv-id circ/get-data :rdv :auth :srv-id))
                                                             ;; debug -->
                                                             (update-data call-id [:peer-rdv] callee-rdv-id)
                                                             (.send sip (.makeResponse sip rq 100 "TRYING"))
@@ -207,7 +175,7 @@
                                                               (log/debug "Extended to callee's RDV"))
                                                             ;; FIXME: once this works we'll add relay-sip extend to callee so rdv can't read demand,
                                                             ;; and client can match our HS against the keys he has for his contacts.
-                                                            (circ/relay-sip config out-rdv-id :f-enc (b/cat (-> :invite from-cmd b/new1)  ;; Send invite to callee. include our rdv-id so callee can send sig to us.
+                                                            (circ/relay-sip config out-rdv-id :f-enc (b/cat (-> :invite s/from-cmd b/new1)  ;; Send invite to callee. include our rdv-id so callee can send sig to us.
                                                                                                             (b/new call-id)
                                                                                                             b/zero
                                                                                                             (b/new4 callee-rdv-id)
@@ -215,8 +183,8 @@
                                                                                                             b/zero
                                                                                                             (b/new name)
                                                                                                             b/zero
-                                                                                                            (-> config :auth :srv-id)
-                                                                                                            (-> config :auth :pub-B)))
+                                                                                                            (-> config :auth :aqua-id :id)
+                                                                                                            (-> config :auth :aqua-id :pub)))
                                                             (let [reply (<! sip-ctrl)] ;; and now we wait for reply.
                                                               ;; debug <--
                                                               (println (:call-id reply))
@@ -252,13 +220,13 @@
 
         ;; FIXME: sip-ch is general and dispatched according to callid to sub channels.
         (go-loop [query (<! from-rdv)]
-          (let [cmd           (-> query :sip-rq (.readUInt8 0) to-cmd)
-                [call-id msg] (-> query :sip-rq get-call-id)]
+          (let [cmd           (-> query :sip-rq (.readUInt8 0) s/to-cmd)
+                [call-id msg] (-> query :sip-rq s/get-call-id)]
             (log/info "SIP: call-id:" call-id "-" cmd)
             (condp = cmd
               :invite (go (let [caller-rdv-id (.readUInt32BE msg 0)
                                 [mix msg]     (-> msg (.slice 4) conv/parse-addr)
-                                [caller msg]  (cut-at-null-byte msg)
+                                [caller msg]  (b/cut-at-null-byte msg)
                                 [id pub]      (b/cut msg (-> config :ntor-values :node-id-len))
                                 caller        (.toString caller)
                                 sip-ctrl      (chan)
@@ -269,8 +237,7 @@
                             (log/info "SIP: invited by" caller "- Call-ID:" call-id "Rdv" caller-rdv-id)
                             (add-call call-id {:sip-ctrl sip-ctrl, :sip-call-id call-id, :state :ringing, :peer-rdv caller-rdv-id})
                             (>! rtp-ctrl [(net-info [(:host mix) (:port mix)]) {:auth {:pub-B pub :srv-id id} :name caller}])   ;; connect to callee's mix & then to callee.
-                            (<! rtp-notify)
-                            ))
+                            (<! rtp-notify)))
               ;; If it's not an invite, try to dispatch to an exsiting call:
               (let [call-ch       (-> call-id (@calls) :sip-ctrl)]
                 (if call-ch
@@ -280,149 +247,6 @@
 
         (log/info "SIP proxy listening on default UDP SIP port"))))
 
-
-;; SIP DIR service and associated client functions ;;;;;;;;;;;;;;;
-
-(def dir (atom {}))
-
-(defn rm [name]
-  "Remove name from dir"
-  (swap! dir dissoc name))
-
-(defn register [config name out-rdv-id rdv-id rdv-data]
-  "Send a register to a sip dir. Format of message:
-  - cmd: 0 = register
-  - rdv's circuit id
-  - rdv ip @ & port
-  - sip name.
-  Used by application proxies to register the SIP username of a client & its RDV to a SIP DIR."
-  (let [cmd         (-> :register from-cmd b/new1)
-        rdv-b       (b/new4 rdv-id)
-        name-b      (b/new name)
-        rdv-dest    (b/new (conv/dest-to-tor-str {:host (:host rdv-data) :port (:port rdv-data) :type :ip4 :proto :udp}))]
-    (log/debug "SIP: registering" name "on RDV" rdv-id)
-    (circ/relay-sip config out-rdv-id :f-enc (b/cat cmd rdv-b rdv-dest b/zero name-b))))
-
-(defn query [config name rdv-id call-id]
-  "Query for the RDV that is used for the given name.
-  Used by application proxies to connect to callee."
-  (let [cmd         (-> :query from-cmd b/new1)
-        name-b      (b/new name)]
-    (log/debug "SIP: querying for" name "on RDV" rdv-id)
-    (circ/relay-sip config rdv-id :f-enc (b/cat cmd (b/new call-id) b/zero name-b))))
-
-(defn mk-query-reply [name dir call-id]
-  (when-let [entry   (@dir name)]
-    (let [cmd      (-> :query-reply from-cmd b/new1)
-          rdv-dest (b/new (conv/dest-to-tor-str (merge {:type :ip4 :proto :udp} (:rdv entry))))
-          rdv-id   (b/new4 (:rdv-id entry))]
-      (b/cat cmd (b/new call-id) b/zero rdv-id rdv-dest b/zero))))
-
-(defn create-dir [config]
-  "Wait for sip requests on the sip channel and process them.
-  Returns the SIP channel it is listening on.
-  SIP directories start this service."
-  (let [sip-chan   (chan)
-        ;; process register:
-        p-register (fn [{rq :sip-rq}]
-                     (let [rdv-id        (.readUInt32BE rq 1)
-                           [rdv-dest rq] (conv/parse-addr (.slice rq 5))
-                           name          (.toString rq)
-                           timeout-id    (js/setTimeout #(do (log/debug "SIP DIR: timeout for" name)
-                                                             (rm name))
-                                                        (:sip-register-interval config))]
-                       (log/debug "SIP DIR, registering" name "on RDV:" rdv-id "RDV dest:" rdv-dest)
-                       ;; if the user is renewing his registration, remove rm timeout:
-                       (when (@dir name)
-                         (js/clearTimeout (:timeout (@dir name))))
-                       ;; update the global directory:
-                       (swap! dir merge {name {:rdv rdv-dest :rdv-id rdv-id :timeout timeout-id}})))
-        ;; process query:
-        p-query    (fn [{circ :circ-id rq :sip-rq}]
-                     (let [[call-id name] (get-call-id rq)
-                           name           (.toString name)
-                           reply          (mk-query-reply name dir call-id)]
-                       (if reply
-                         (do (log/debug "SIP DIR, query for" name)
-                             (circ/relay-sip config circ :b-enc reply))
-                         (do (log/debug "SIP DIR, could not find" name)
-                             (circ/relay-sip config circ :b-enc
-                                             (b/cat (-> :error from-cmd b/new1) (b/new call-id) b/zero (b/new "404")))))))]
-    ;; dispatch requests to the corresponding functions:
-    (go-loop [request (<! sip-chan)]
-      (condp = (-> request :sip-rq (.readUInt8 0) to-cmd)
-        :register (p-register request)
-        :query    (p-query request)
-        (log/error "SIP DIR, received unknown command"))
-      (recur (<! sip-chan)))
-    sip-chan))
-
-
-;; MIX DIR service and associated client functions ;;;;;;;;;;;;;;;
-
-;; This will also keep track of what clients are active.
-;; this might get exported to another module at some point.
-;; Either that, or merge with create-dir, while separating functionality to avoid abuse.
-;; maybe a different go-loop based on role?
-
-(def mix-dir (atom {}))
-
-(defn create-mix-dir [config]
-  "Wait for sip requests on the sip channel and process them.
-  Returns the SIP channel it is listening on.
-  Mixes start this service to keep track of the state of its users."
-  (let [sip-chan   (chan)
-        ;; process register:
-        p-register     (fn [{rq :sip-rq}]
-                         (let [[client-dest rq] (conv/parse-addr (.slice rq 1))
-                               [name rq]        (cut-at-null-byte rq)
-                               [id pub]         (b/cut rq (-> config :ntor-values :node-id-len))
-                               timeout-id       (js/setTimeout #(do (log/debug "SIP DIR: timeout for" name)
-                                                                    (rm name))
-                                                               (:sip-register-interval config))]
-                           (log/debug "SIP MIX DIR, registering" name "dest:" client-dest)
-                           ;; if the user is renewing his registration, remove rm timeout:
-                           (when (@mix-dir name)
-                             (js/clearTimeout (:timeout (@mix-dir name))))
-                           ;; update the global directory:
-                           (swap! mix-dir merge {name {:dest client-dest :state :inactive :auth {:pub-B pub :srv-id id}}})))
-        ;; process extend:
-        p-extend       (fn [{circ :circ-id rq :sip-rq}]
-                         (let [[call-id name] (get-call-id rq)
-                               name           (.toString name)
-                               reply (mk-query-reply name mix-dir call-id)]
-                           (if reply
-                             (do (log/debug "SIP DIR, query for" name)
-                                 (circ/relay-sip config circ :b-enc reply))
-                             (do (log/debug "SIP DIR, could not find" name)
-                                 (circ/relay-sip config circ :b-enc
-                                                 (b/cat (-> :error from-cmd b/new1) (b/new call-id) b/zero (b/new "404")))))))
-        ;; relay mix queries to client:
-        p-relay-invite (fn [{rq :sip-rq}]
-                         (let [[_ data] (get-call-id rq)
-                               rdv-id   (.readUInt32BE data 0)]
-                           (when (circ/get-data rdv-id)
-                             (circ/relay-sip config rdv-id :b-enc rq))))]
-    ;; dispatch requests to the corresponding functions:
-    (go-loop [request (<! sip-chan)]
-      (condp = (-> request :sip-rq (.readUInt8 0) to-cmd)
-        :register-to-mix (p-register request)
-        :extend          (p-extend request)
-        :invite          (p-relay-invite request)
-        (log/error "SIP DIR, received unknown command"))
-      (recur (<! sip-chan)))
-    sip-chan))
-
-(defn register-to-mix [config name circ-id]
-  "Register client's sip username to the mix so people can extend circuits to us.
-  Format:
-  - dest (tor dest thing)
-  - username"
-  (let [cmd    (-> :register-to-mix from-cmd b/new1)
-        dest   (b/new (conv/dest-to-tor-str {:host (:external-ip config) :port 0 :type :ip4 :proto :udp}))
-        name-b (b/new name)]
-    (log/debug "SIP: registering" name "on mix" circ-id)
-    (circ/relay-sip config circ-id :f-enc (b/cat cmd dest b/zero name-b b/zero (-> config :auth :srv-id) (-> config :auth :pub-B)))))
 
 
 

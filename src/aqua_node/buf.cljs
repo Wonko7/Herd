@@ -52,6 +52,13 @@
   "Divide the buffer: (cut b 55 88 99) will return a seq of slices from 0 to 55, 55 to 88, 88 to end of buf"
   (map #(.slice b %1 %2) (cons 0 xs) (concat xs [(.-length b)])))
 
+(defn cut-at-null-byte [msg]
+  "return data until null byte and remainder of the buffer"
+  (let [z (->> (range (.-length msg))
+               (map #(when (= 0 (.readUInt8 msg %)) %))
+               (some identity))]
+    [(.slice msg 0 z) (.slice msg (inc z))]))
+
 
 ;; low level io ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 

@@ -10,9 +10,9 @@
             [aqua-node.circ :as circ]
             [aqua-node.path :as path]
             [aqua-node.rate :as rate]
-            [aqua-node.rtpp :as rtp]
+            [aqua-node.geo :as geo]
             [aqua-node.sip :as sip]
-            [aqua-node.geo :as geo])
+            [aqua-node.sip-dir :as sip-dir])
   (:require-macros [cljs.core.async.macros :as m :refer [go-loop go]]))
 
 
@@ -107,8 +107,8 @@
             (log/info "Dir: sending register info")
             (register-to-dir config geo mix ds)))
         (when (or (is? :mix) (is? :rdv))
-          (let [sip-chan (sip/create-mix-dir config)
-                cfg      (merge config {:sip-chan sip-chan :aqua sip-dir})]
+          (let [sip-chan (sip-dir/create-mix-dir config)
+                cfg      (merge config {:sip-chan sip-chan :aqua sip-dir :sip-mix-dir sip-dir/mix-dir})]
             (conn/new :aqua :server aq cfg {:connect aqua-server-recv})
             (register-to-dir config (<! geo) nil ds)
             ;; for each mix in node info, extract ip & port and connect.
@@ -123,7 +123,7 @@
         (when (is? :dir)
           (conn/new :dir :server dir config {:connect aqua-dir-recv}))
         (when (is? :sip-dir)
-          (let [sip-chan (sip/create-dir config)
+          (let [sip-chan (sip-dir/create-dir config)
                 cfg      (merge config {:sip-chan sip-chan :aqua sip-dir})]
             (conn/new :aqua :server sip-dir cfg {:connect aqua-server-recv})
             (register-to-dir cfg (<! geo) nil ds))))))
