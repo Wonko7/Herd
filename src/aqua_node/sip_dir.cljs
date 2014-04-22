@@ -156,4 +156,4 @@
         dest   (b/new (conv/dest-to-tor-str {:host (:external-ip config) :port 0 :type :ip4 :proto :udp}))
         name-b (b/new name)]
     (log/debug "SIP: registering" name "on mix" circ-id)
-    (circ/relay-sip config circ-id :f-enc (b/cat cmd dest b/zero name-b b/zero (-> config :auth :aqua-id :srv) (-> config :auth :aqua-id :pub)))))
+    (circ/relay-sip config circ-id :f-enc (b/cat cmd dest b/zero name-b b/zero (-> config :auth :aqua-id :id) (-> config :auth :aqua-id :pub)))))
