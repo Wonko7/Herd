@@ -52,5 +52,4 @@
                              (map cons [:ip4 :ip6 :dns])
                              (filter second)
                              first)]
-      (println prot, ip, h p)
       [{:proto (condp = prot, "u" :udp, "t" :tcp, "r" :rtp) :type ip :host h :port (js/parseInt p)} (.slice buf (inc z))])))

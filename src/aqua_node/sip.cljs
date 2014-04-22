@@ -196,6 +196,7 @@
                                                             (b/print-x (-> callee-rdv :auth :srv-id))
                                                             (b/print-x (-> rdv-id circ/get-data :rdv :auth :srv-id))
                                                             ;; debug -->
+                                                            (update-data call-id [:peer-rdv] callee-rdv-id)
                                                             (.send sip (.makeResponse sip rq 100 "TRYING"))
                                                             (when (not= (-> callee-rdv :auth :srv-id) (-> out-rdv-id circ/get-data :rdv :auth :srv-id)) ;; if we are using the same RDV we don't extend to it, it would fail (can't reuse the same node in a circ)
                                                               (>! out-rdv-ctrl (merge callee-rdv {:dest callee-rdv}))
@@ -246,20 +247,18 @@
 
         ;; FIXME: sip-ch is general and dispatched according to callid to sub channels.
         (go-loop [query (<! from-rdv)]
-          (let [cmd (-> query :sip-rq (.readUInt8 0) to-cmd)]
-          (println :got-something-from-rdv! :lol cmd)
+          (let [cmd           (-> query :sip-rq (.readUInt8 0) to-cmd)
+                [call-id msg] (-> query :sip-rq get-call-id)]
+            (log/info "SIP: call-id:" call-id "-" cmd)
             (condp = cmd
-              :invite (let [[mix q] (conv/parse-addr (.slice (:sip-rq query) 5))
-                            caller  (.toString q)]
-                        ;; debug <--
-                        (println "got invited by" caller mix)
-                        ;(add-call )
-                        )
+              :invite (let [caller-rdv-id (.readUInt32BE msg 0)
+                            [mix caller]  (-> msg (.slice 4) conv/parse-addr)
+                            caller        (.toString caller)
+                            sip-ctrl      (chan)]
+                        (log/info "SIP: invited by" caller "- Call-ID:" call-id "Rdv" caller-rdv-id)
+                        (add-call call-id {:sip-ctrl sip-ctrl, :sip-call-id call-id, :state :ringing, :peer-rdv caller-rdv-id}))
               ;; If it's not an invite, try to dispatch to an exsiting call:
-              (let [_ (println 11)
-                    [call-id msg] (get-call-id (:sip-rq query))
-                    _ (println 22 call-id)
-                    call-ch       (-> call-id (@calls) :sip-ctrl)]
+              (let [call-ch       (-> call-id (@calls) :sip-ctrl)]
                 (if call-ch
                   (go (>! call-ch (merge query {:data msg :call-id call-id})))
                   (log/info "SIP: incoming message with unknown call id:" call-id "-- dropping.")))))
@@ -329,9 +328,6 @@
                      (let [[call-id name] (get-call-id rq)
                            name           (.toString name)
                            reply          (mk-query-reply name dir call-id)]
-                       ;; debug <--
-                       (println :to circ :cid call-id)
-                       ;; debug -->
                        (if reply
                          (do (log/debug "SIP DIR, query for" name)
                              (circ/relay-sip config circ :b-enc reply))
@@ -380,7 +376,6 @@
                          (let [[call-id name] (get-call-id rq)
                                name           (.toString name)
                                reply (mk-query-reply name mix-dir call-id)]
-                           (println :to circ :cid call-id)
                            (if reply
                              (do (log/debug "SIP DIR, query for" name)
                                  (circ/relay-sip config circ :b-enc reply))
@@ -391,14 +386,10 @@
         p-relay-invite (fn [{rq :sip-rq}]
                          (let [[_ data] (get-call-id rq)
                                rdv-id   (.readUInt32BE data 0)]
-                           (println :forwardinginvite rdv-id (nil? (circ/get-data rdv-id)))
                            (when (circ/get-data rdv-id)
-                             (println (circ/get-data rdv-id))
-                             (println :conn (c/get-data (:backward-hop (circ/get-data rdv-id))))
                              (circ/relay-sip config rdv-id :b-enc rq))))]
     ;; dispatch requests to the corresponding functions:
     (go-loop [request (<! sip-chan)]
-             (println :hello "its a " (-> request :sip-rq (.readUInt8 0) to-cmd))
       (condp = (-> request :sip-rq (.readUInt8 0) to-cmd)
         :register-to-mix (p-register request)
         :extend          (p-extend request)

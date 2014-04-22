@@ -473,11 +473,9 @@
 
         p-sip       #(if-let [sip-ch (or (:sip-chan circ) (:sip-chan config))] ;; sip dir servers use a global chan so it is stored in config, clients use a per circ chan.
                        (go (>! sip-ch {:circ circ :circ-id circ-id :sip-rq r-payload}))
-                       (do (log/error "SIP uninitialised, dropping request on circuit:" circ-id)
-                           (println (keys config) (keys circ))))]
+                       (log/error "SIP uninitialised, dropping request on circuit:" circ-id))]
 
     ;; dispatch the relay command to appropriate function.
-    (println (:relay-cmd relay-data))
     (condp = (:relay-cmd relay-data)
       0  :drop-padding
       1  (p-begin)
@@ -528,10 +526,6 @@
                          :relay-len  (r2 9)
                          :payload    (when recognised? (.slice msg 11))}] ;; FIXME check how aes padding is handled.
 
-        (do 
-          (println :recog (:recognised relay-data) :else (nil? (-> circ :forward-hop c/get-data :rate :queue))
-                   (keys (-> circ :forward-hop c/get-data :rate)) (keys (-> circ :forward-hop c/get-data)) (keys circ ))
-          (println direction))
         (cond (:recognised relay-data)        (process-relay config socket circ-id relay-data)
               (and mux? (-> circ :mux :bhop)) (forward config circ-id (-> circ :mux :bhop) msg)
               :else                           ((-> circ :forward-hop c/get-data :rate :queue) #(cell-send config (:forward-hop circ) circ-id :relay (b/copycat2 iv msg))))))))
