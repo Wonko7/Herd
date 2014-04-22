@@ -289,7 +289,7 @@
         socket        (:forward-hop data)
         [auth create] (mk-create config nh-auth circ-id)]
     (add-path-auth circ-id data auth)
-    (relay config socket circ-id :extend2 :f-enc (b/cat (b/new name) b/zero create))))
+    (relay config socket circ-id :sip-extend :f-enc (b/cat (b/new name) b/zero create))))
 
 (defn forward [config circ-id dest-str cell]
   "Part of the multipath prototype"
@@ -473,8 +473,8 @@
 
         p-extend-sip (fn []
                        (let [[name create] (b/cut-at-null-byte r-payload)
-                             dest          (@(:sip-mix-dir config) name)
-                             sock          (c/find-by-dest dest)]
+                             dest          (@(:sip-mix-dir config) (.toString name))
+                             sock          (c/find-by-dest (:dest dest))]
                          (assert sock "could not find destination")
                          (update-data circ-id [:forward-hop] sock)
                          (update-data circ-id [:roles] (add-role :mix))
@@ -512,8 +512,8 @@
       15 (p-extended)
       ;; aqua specific:
       16 (p-sip)
-      17 (p-rdv)
-      18 (p-extend-sip)
+      17 (p-extend-sip)
+      18 (p-rdv)
       (log/error "unsupported relay command"))))
 
 ;; see tor spec 6.
@@ -594,7 +594,8 @@
    :extended2  15
    ;; extended 
    :sip        16
-   :rdv        17})
+   :sip-extend 17
+   :rdv        18})
 
 (def wait-buffer (atom nil)) ;; FIXME we need one per socket
 

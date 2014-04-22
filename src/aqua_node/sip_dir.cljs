@@ -110,6 +110,7 @@
         p-register     (fn [{rq :sip-rq}]
                          (let [[client-dest rq] (conv/parse-addr (.slice rq 1))
                                [name rq]        (b/cut-at-null-byte rq)
+                               name             (.toString name)
                                [id pub]         (b/cut rq (-> config :ntor-values :node-id-len))
                                timeout-id       (js/setTimeout #(do (log/debug "SIP DIR: timeout for" name)
                                                                     (rm name))

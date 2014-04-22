@@ -91,35 +91,32 @@
 (defn create-rt [config socket mix]
   "Creates a real time path. Assumes a connection to the first node exists."
   ;; Find the first mix's (will be our assigned mix/SP) socket & send a create.
-  (let [id     (circ/create config socket (:auth mix))
-        ctrl   (chan)
-        dest   (chan)]
+  (let [id                 (circ/create config socket (:auth mix))
+        [ctrl dest notify] (repeatedly chan) ]
     (circ/update-data id [:roles] [:origin])
     (circ/update-data id [:ctrl] ctrl)
+    (circ/update-data id [:notify] notify)
     (circ/update-data id [:dest-ctrl] dest)
     (circ/update-data id [:mk-path-fn] #(go (>! ctrl :next)))
     (go (<! ctrl)
         (log/debug "RT Circuit" id "waiting for destination")
-        ;; query our dir for the host's mix (will be rdv)
-        (let [rt-dest        (<! dest)
-              [ap-dest mix2] (<! (dir/query config (:host rt-dest)))]
-          (circ/update-data id [:path-dest] rt-dest)
-          (if-not mix2
-            (>! (-> id circ/get-data :state-ch) :error) ;; no rdv = error.
-            ;; extend circuit from our mix to the rdv (mix2, callee's mix)
-            (do (circ/relay-extend config id (merge mix2 {:dest mix2}))
-                (<! ctrl)
-                ;; extend to the callee's AP.
-                (circ/relay-extend config id (merge ap-dest {:dest ap-dest}))
-                (<! ctrl)
-                ;; we are done, update state info & notify we are ready.
-                (let [circ (circ/get-data id)]
-                  (circ/relay-begin config id rt-dest) ;; ask exit (callee's ap) to begin relaying data.
-                  (circ/update-data id [:state] :relay)
-                  (<! ctrl)                            ;; relay begin was acknowledged.
-                  (>! (-> circ :state-ch) :done)       ;; notify we can start relaying data.
-                  (log/info "RT Circuit" id "is ready for relay"))))))
+        ;; wait until we are given a destination: the peer's mix, and the peer's name.
+        (let [[mix2 ap]    (<! dest)]
+          (circ/relay-extend config id (merge mix2 {:dest mix2}))
+          (<! ctrl)
+          (println :rt 1)
+          ;; extend to the callee's AP.
+          (circ/relay-extend-sip-user config id ap)
+          (<! ctrl)
+          (println :rt 2)
+          ;; we are done, update state info & notify we are ready.
+          ;; (circ/relay-begin config id rt-dest) ;; ask exit (callee's ap) to begin relaying data. --> FIXME done by relay sip? don't know yet.
+          ;; (circ/update-data id [:state] :relay)
+          ;; (<! ctrl)                            ;; relay begin was acknowledged.
+          (>! notify :done)       ;; notify we can start relaying data.
+          (log/info "RT Circuit" id "is ready for relay")))
     id))
+;(circ/update-data id [:path-dest] rt-dest)
 
 (defn create-one-hop [config socket mix]
   "Creates a one hop path. Assumes a connection to the first & only node exists. used for SIP dir signaling. See sip.cljs."

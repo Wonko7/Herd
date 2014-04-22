@@ -56,7 +56,7 @@
                  :call-id          (mk-call-id) ;; FIXME that will be given as arg.
                  :via              (-> headers :via)
                  :contact          [{"uri" (str "sip:from@" ipfrom)}]
-                 :cseq             {:seq (rand-int 888888) , :method "INVITE"}} ;; FIXME find real cseq max
+                 :cseq             {:seq (rand-int 888888) , :method "INVITE"}} ;; FIXME (rand-int 0xFFFFFFFF) is what we'd want.
        :content (apply str (interleave ["v=0"
                                         (str "o=- 3606192961 3606192961 IN IP4 " ipfrom)
                                         "s=pjmedia"
@@ -237,7 +237,8 @@
                             (log/info "SIP: invited by" caller "- Call-ID:" call-id "Rdv" caller-rdv-id)
                             (add-call call-id {:sip-ctrl sip-ctrl, :sip-call-id call-id, :state :ringing, :peer-rdv caller-rdv-id})
                             (>! rtp-ctrl [(net-info [(:host mix) (:port mix)]) {:auth {:pub-B pub :srv-id id} :name caller}])   ;; connect to callee's mix & then to callee.
-                            (<! rtp-notify)))
+                            (<! rtp-notify)
+                            (log/info "SIP: RT circuit ready for call" call-id)))
               ;; If it's not an invite, try to dispatch to an exsiting call:
               (let [call-ch       (-> call-id (@calls) :sip-ctrl)]
                 (if call-ch
