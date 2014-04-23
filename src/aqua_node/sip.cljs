@@ -198,9 +198,10 @@
                                                             (println :lol5)
                                                             (log/info "SIP: sent ackack, ready for relay on" call-id)
                                                             ;; debug <--
-                                                            (js/console.log (mk-invite @headers uri-to "172.17.42.1"))
-                                                            (.send sip (mk-invite @headers uri-to "172.17.42.1") ;; FIXME this will become mk-sdp, and be sent as an ack here.
-                                                                   (fn [rs] (go (println (-> rs cljs/js->clj walk/keywordize-keys)) (.-status rs)))))))))))
+                                                            ;(js/console.log (mk-invite @headers uri-to "172.17.42.1"))
+                                                            ;(.send sip (mk-invite @headers uri-to "172.17.42.1") ;; FIXME this will become mk-sdp, and be sent as an ack here.
+                                                            ;       (fn [rs] (go (println (-> rs cljs/js->clj walk/keywordize-keys)) (.-status rs))))
+                                                            )))))))
 
                                 nil)))]
           (>! rdv-ctrl :rdv)
