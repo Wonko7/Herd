@@ -178,24 +178,24 @@
                                                                                                         (-> config :auth :aqua-id :pub)))
                                                         (println :lol2)
                                                         (let [reply                  (<! sip-ctrl)] ;; and now we wait for ack
-                                                          (println :lol3)
                                                           (assert (= (:cmd reply) :ack) (str "Something went wrong with call" call-id))
+                                                        (println :lol3)
                                                           (.send sip (.makeResponse sip rq 180 "RINGING"))
-                                                          (let [[mix reply-data]     (-> reply :data (.slice 4) conv/parse-addr)
-                                                                [caller reply-data]  (b/cut-at-null-byte reply-data)
+                                                          (let [[mix reply-data]     (-> reply :data conv/parse-addr)
                                                                 [id pub]             (b/cut reply-data (-> config :ntor-values :node-id-len))
                                                                 rtp-circ             (<! (path/get-path :rt))
                                                                 rtp-data             (circ/get-data rtp-circ)
                                                                 rtp-ctrl             (:dest-ctrl rtp-data)
                                                                 rtp-notify           (:notify rtp-data)]
-                                                            (>! rtp-ctrl [(net-info [(:host mix) (:port mix)]) {:auth {:pub-B pub :srv-id id} :name caller}])   ;; connect to callee's mix & then to callee.
+                                                            (println :lol4)
+                                                            (>! rtp-ctrl [(net-info [(:host mix) (:port mix)]) {:auth {:pub-B pub :srv-id id} :name callee-name}])   ;; connect to callee's mix & then to callee.
                                                             (<! rtp-notify)
                                                             (log/info "SIP: RT circuit ready for outgoing data on:" call-id)
                                                             (update-data call-id [:rt] {:in (:circ-id reply) :out rtp-circ}) ;; FIXME if needed add chans.
                                                             (circ/relay-sip config rtp-circ :f-enc (b/cat (-> :ackack s/from-cmd b/new1)
                                                                                                           (b/new call-id)
                                                                                                           b/zero))
-                                                            (println :lol2)
+                                                            (println :lol5)
                                                             (log/info "SIP: sent ackack, ready for relay on" call-id)
                                                             ;; debug <--
                                                             (js/console.log (mk-invite @headers uri-to "172.17.42.1"))
@@ -208,7 +208,7 @@
           (circ/update-data rdv-id [:sip-chan] incoming-sip)
           (circ/update-data out-rdv-id [:sip-chan] incoming-sip)
           (.start sip (cljs/clj->js {:protocol "UDP"}) process)
-          
+
           ;; FIXME: sip-ch is general and dispatched according to callid to sub channels.
           (go-loop [query (<! incoming-sip)]
                    (let [cmd           (-> query :sip-rq (.readUInt8 0) s/to-cmd)
@@ -247,7 +247,7 @@
                            (go (>! call-ch (merge query {:data msg :call-id call-id :cmd cmd})))
                            (log/info "SIP: incoming message with unknown call id:" call-id "-- dropping.")))))
                    (recur (<! incoming-sip)))
-          
+
           (log/info "SIP proxy listening on default UDP SIP port")))
     incoming-sip))
 
