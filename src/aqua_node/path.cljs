@@ -104,11 +104,9 @@
         (let [[mix2 ap]    (<! dest)]
           (circ/relay-extend config id (merge mix2 {:dest mix2}))
           (<! ctrl)
-          (println :rt 1)
           ;; extend to the callee's AP.
           (circ/relay-extend-sip-user config id ap)
           (<! ctrl)
-          (println :rt 2)
           ;; we are done, update state info & notify we are ready.
           ;; (circ/relay-begin config id rt-dest) ;; ask exit (callee's ap) to begin relaying data. --> FIXME done by relay sip? don't know yet.
           ;; (circ/update-data id [:state] :relay)

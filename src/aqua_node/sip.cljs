@@ -67,186 +67,189 @@
 
 ;; Manage local SIP client requests ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
-(defn create-server [{sip-dir :remote-sip-dir :as config} net-info things]
+(defn create-server [{sip-dir :remote-sip-dir :as config} net-info]
   "Creates the listening service that will process the connected SIP client's requests.
   Application Proxies start this service."
   ;; assuming only one client
-  (go (let [sip             (node/require "sip")
-            headers         (atom {})
-            uri-to          (atom "")
-            ;; Prepare RDV:
-            rdv-id          (<! (path/get-path :single)) ;; FIXME we should specify what zone we want our rdv in.
-            rdv-data        (circ/get-data rdv-id)
-            rdv-ctrl        (:dest-ctrl rdv-data)
-            rdv-notify      (:notify rdv-data)
-            incoming-sip    (chan)
-            ;; Outgoinp RDV:
-            out-rdv-id      (<! (path/get-path :single)) ;; FIXME we should specify what zone we want our rdv in.
-            out-rdv-data    (circ/get-data out-rdv-id)
-            out-rdv-ctrl    (:dest-ctrl out-rdv-data)
-            out-rdv-notify  (:notify out-rdv-data)
-            ;; Prepare MIX SIG:
-            mix-id          (<! (path/get-path :one-hop))
+  (let [incoming-sip          (chan)]
+    (go (let [sip             (node/require "sip")
+              headers         (atom {})
+              uri-to          (atom "")
+              ;; Prepare RDV:
+              rdv-id          (<! (path/get-path :single)) ;; FIXME we should specify what zone we want our rdv in.
+              rdv-data        (circ/get-data rdv-id)
+              rdv-ctrl        (:dest-ctrl rdv-data)
+              rdv-notify      (:notify rdv-data)
+              ;; Outgoinp RDV:
+              out-rdv-id      (<! (path/get-path :single)) ;; FIXME we should specify what zone we want our rdv in.
+              out-rdv-data    (circ/get-data out-rdv-id)
+              out-rdv-ctrl    (:dest-ctrl out-rdv-data)
+              out-rdv-notify  (:notify out-rdv-data)
+              ;; Prepare MIX SIG:
+              mix-id          (<! (path/get-path :one-hop))
 
-            ;; Process SIP logic:
-            process     (fn [rq]
-                          (let [nrq       (-> rq cljs/js->clj walk/keywordize-keys)
-                                contact   (-> nrq :headers :contact first)
-                                name      (or (-> contact :name)
-                                              (->> contact :uri (re-find #"sip:(.*)@") second))]
-                            ;; debug <--
-                            (println)
-                            (println :nrq nrq)
-                            ;; debug -->
-                            (condp = (:method nrq)
+              ;; Process SIP logic:
+              process     (fn [rq]
+                            (let [nrq       (-> rq cljs/js->clj walk/keywordize-keys)
+                                  contact   (-> nrq :headers :contact first)
+                                  name      (or (-> contact :name)
+                                                (->> contact :uri (re-find #"sip:(.*)@") second))]
+                              ;; debug <--
+                              (println)
+                              (println :nrq nrq)
+                              ;; debug -->
+                              (condp = (:method nrq)
 
-                              "REGISTER"  (let [rdv-data     (circ/get-data out-rdv-id)
-                                                sip-dir-dest (net-info [(:host sip-dir) (:port sip-dir)])     ;; find sip dir from config for now. will change that.
-                                                sip-dir-dest (merge sip-dir-dest {:dest sip-dir-dest})        ;; FIXME will get rid of :dest someday.
-                                                ack          (.makeResponse sip rq 200 "OK")]                 ;; prepare sip successful answer
-                                            (if (:auth sip-dir-dest)
-                                              (go (>! out-rdv-ctrl sip-dir-dest)                              ;; --- RDV: connect to sip dir to send register
-                                                  (<! out-rdv-notify)                                         ;; wait until connected to send
-                                                  (sd/register config name out-rdv-id rdv-id (:rdv rdv-data))    ;; send register to dir, ack to sip client:
-                                                  (sd/register-to-mix config name mix-id)                        ;; register our sip user name (needed for last step of incoming rt circs, without giving our ip to caller)
-                                                  (.send sip ack)                                             ;; --- SIP: answer sip client, successfully registered.
-                                                  (reset! uri-to  (-> contact :uri))                          ;; save uri & headers for building invite later:
-                                                  (reset! headers (-> ack cljs/js->clj walk/keywordize-keys :headers)))
-                                              (do (log/error "Could not find SIP DIR" sip-dir)
-                                                  ;; debug <--
-                                                  (doall (->> net-info seq (map second) (map #(dissoc % :auth)) (map println)))
-                                                  ;; debug -->
-                                                  (.send sip (.makeResponse sip rq "404" "NOT FOUND")))))
+                                "REGISTER"  (let [rdv-data     (circ/get-data out-rdv-id)
+                                                  sip-dir-dest (net-info [(:host sip-dir) (:port sip-dir)])     ;; find sip dir from config for now. will change that.
+                                                  sip-dir-dest (merge sip-dir-dest {:dest sip-dir-dest})        ;; FIXME will get rid of :dest someday.
+                                                  ack          (.makeResponse sip rq 200 "OK")]                 ;; prepare sip successful answer
+                                              (if (:auth sip-dir-dest)
+                                                (go (>! out-rdv-ctrl sip-dir-dest)                              ;; --- RDV: connect to sip dir to send register
+                                                    (<! out-rdv-notify)                                         ;; wait until connected to send
+                                                    (sd/register config name out-rdv-id rdv-id (:rdv rdv-data))    ;; send register to dir, ack to sip client:
+                                                    (sd/register-to-mix config name mix-id)                        ;; register our sip user name (needed for last step of incoming rt circs, without giving our ip to caller)
+                                                    (.send sip ack)                                             ;; --- SIP: answer sip client, successfully registered.
+                                                    (reset! uri-to  (-> contact :uri))                          ;; save uri & headers for building invite later:
+                                                    (reset! headers (-> ack cljs/js->clj walk/keywordize-keys :headers)))
+                                                (do (log/error "Could not find SIP DIR" sip-dir)
+                                                    ;; debug <--
+                                                    (doall (->> net-info seq (map second) (map #(dissoc % :auth)) (map println)))
+                                                    ;; debug -->
+                                                    (.send sip (.makeResponse sip rq "404" "NOT FOUND")))))
 
-                              "SUBSCRIBE" (condp = (-> nrq :headers :event)
-                                            "presence.winfo"  (do (println (:event nrq))
-                                                                  ;; and register the gringo.
-                                                                  (.send sip (.makeResponse sip rq 200 "OK")))
-                                            "message-summary" (do (println :200 :OK) (.send sip (.makeResponse sip rq 200 "OK")))
-                                            (.send sip (.makeResponse sip rq 501 "Not Implemented")))
+                                "SUBSCRIBE" (condp = (-> nrq :headers :event)
+                                              "presence.winfo"  (do (println (:event nrq))
+                                                                    ;; and register the gringo.
+                                                                    (.send sip (.makeResponse sip rq 200 "OK")))
+                                              "message-summary" (do (println :200 :OK) (.send sip (.makeResponse sip rq 200 "OK")))
+                                              (.send sip (.makeResponse sip rq 501 "Not Implemented")))
 
-                              "PUBLISH"   (go (if (= "presence" (-> nrq :headers :event))
-                                                (let [parse-xml (-> (node/require "xml2js") .-parseString)
-                                                      xml       (chan)]
-                                                  ;; debug <--
-                                                  (parse-xml (:content nrq) #(go (println %2) (>! xml %2)))
-                                                  (println (-> (<! xml) cljs/js->clj walk/keywordize-keys))
-                                                  ;; debug -->
-                                                  (.send sip (.makeResponse sip rq 200 "OK")))
-                                                (do (log/error "SIP: Unsupported PUBLISH event:" (-> nrq :headers :event))
-                                                    (.send sip (.makeResponse sip rq 501 "Not Implemented")))))
+                                "PUBLISH"   (go (if (= "presence" (-> nrq :headers :event))
+                                                  (let [parse-xml (-> (node/require "xml2js") .-parseString)
+                                                        xml       (chan)]
+                                                    ;; debug <--
+                                                    (parse-xml (:content nrq) #(go (println %2) (>! xml %2)))
+                                                    (println (-> (<! xml) cljs/js->clj walk/keywordize-keys))
+                                                    ;; debug -->
+                                                    (.send sip (.makeResponse sip rq 200 "OK")))
+                                                  (do (log/error "SIP: Unsupported PUBLISH event:" (-> nrq :headers :event))
+                                                      (.send sip (.makeResponse sip rq 501 "Not Implemented")))))
 
-                              "OPTIONS"   (.send sip (.makeResponse sip rq 200 "OK"))
+                                "OPTIONS"   (.send sip (.makeResponse sip rq 200 "OK"))
 
-                              "INVITE"    (go (let [sip-call-id      (-> nrq :headers :call-id)
-                                                    call-id          (mk-call-id)
-                                                    sip-ctrl         (chan)
-                                                    callee-name      (second (re-find #"sip:(.*)@" (:uri nrq)))]                    ;; get callee name
-                                                (add-call call-id {:sip-ctrl sip-ctrl :sip-call-id sip-call-id :state :ringing})
-                                                (sd/query config callee-name out-rdv-id call-id)                                       ;; query for callee's rdv
-                                                (log/info "SIP:" "intiating call" call-id "to" callee-name)
-                                                (let [query-reply-rdv      (<! sip-ctrl)]                                           ;; get query reply
-                                                  (if (= :error (-> query-reply-rdv :sip-rq (.readUInt8 0) s/to-cmd))
-                                                    (do (log/error "Query for" callee-name "failed.")
-                                                        (.send sip (.makeResponse sip rq "404")))
-                                                    (let [callee-rdv       (:data query-reply-rdv)
-                                                          callee-rdv-id    (.readUInt32BE callee-rdv 0)
-                                                          callee-rdv-dst   (->  callee-rdv (.slice 4) conv/parse-addr first)
-                                                          callee-rdv       (net-info [(:host callee-rdv-dst) (:port callee-rdv-dst)])] ;; FIXME: this is fine for PoC, but in the future net-info will be a atom and will be updated regularly.
-                                                      (assert callee-rdv (str "SIP: Could not find callee's mix:" name))
-                                                      do ;; debug <--
-                                                      (println :rcvd callee-rdv-dst)
-                                                      (println :callee callee-name :caller name :got callee-rdv-id callee-rdv-dst)
-                                                      ;; debug -->
-                                                      (update-data call-id [:peer-rdv] callee-rdv-id)
-                                                      (.send sip (.makeResponse sip rq 100 "TRYING"))
-                                                      (when (not= (-> callee-rdv :auth :srv-id) (-> out-rdv-id circ/get-data :rdv :auth :srv-id)) ;; if we are using the same RDV we don't extend to it, it would fail (can't reuse the same node in a circ)
-                                                        (>! out-rdv-ctrl (merge callee-rdv {:dest callee-rdv}))
-                                                        (<! out-rdv-notify)
-                                                        (log/debug "Extended to callee's RDV"))
-                                                      ;; FIXME: once this works we'll add relay-sip extend to callee so rdv can't read demand,
-                                                      ;; and client can match our HS against the keys he has for his contacts.
-                                                      (circ/relay-sip config out-rdv-id :f-enc (b/cat (-> :invite s/from-cmd b/new1)  ;; Send invite to callee. include our rdv-id so callee can send sig to us.
-                                                                                                      (b/new call-id)
-                                                                                                      b/zero
-                                                                                                      (b/new4 callee-rdv-id)
-                                                                                                      (b/new (conv/dest-to-tor-str @path/chosen-mix))
-                                                                                                      b/zero
-                                                                                                      (b/new name)
-                                                                                                      b/zero
-                                                                                                      (-> config :auth :aqua-id :id)
-                                                                                                      (-> config :auth :aqua-id :pub)))
-                                                      (let [reply                  (<! sip-ctrl)] ;; and now we wait for ack
-                                                        (assert (= (:cmd reply) :ack) (str "Something went wrong with call" call-id))
-                                                        (.send sip (.makeResponse sip rq 180 "RINGING"))
-                                                        (let [[mix reply-data]     (-> reply :data (.slice 4) conv/parse-addr)
-                                                              [caller reply-data]  (b/cut-at-null-byte reply-data)
-                                                              [id pub]             (b/cut reply-data (-> config :ntor-values :node-id-len))
-                                                              rtp-circ             (<! (path/get-path :rt))
-                                                              rtp-data             (circ/get-data rtp-circ)
-                                                              rtp-ctrl             (:dest-ctrl rtp-data)
-                                                              rtp-notify           (:notify rtp-data)]
-                                                          (>! rtp-ctrl [(net-info [(:host mix) (:port mix)]) {:auth {:pub-B pub :srv-id id} :name caller}])   ;; connect to callee's mix & then to callee.
-                                                          (<! rtp-notify)
-                                                          (log/info "SIP: RT circuit ready for outgoing data on:" call-id)
-                                                          (update-data call-id [:rt] {:in (:circ-id reply) :out rtp-circ}) ;; FIXME if needed add chans.
-                                                          (circ/relay-sip config rtp-circ :f-enc (b/cat (-> :ackack s/from-cmd b/new1)
+                                "INVITE"    (go (let [sip-call-id      (-> nrq :headers :call-id)
+                                                      call-id          (mk-call-id)
+                                                      sip-ctrl         (chan)
+                                                      callee-name      (second (re-find #"sip:(.*)@" (:uri nrq)))]                    ;; get callee name
+                                                  (add-call call-id {:sip-ctrl sip-ctrl :sip-call-id sip-call-id :state :ringing})
+                                                  (sd/query config callee-name out-rdv-id call-id)                                       ;; query for callee's rdv
+                                                  (log/info "SIP:" "intiating call" call-id "to" callee-name)
+                                                  (let [query-reply-rdv      (<! sip-ctrl)]                                           ;; get query reply
+                                                    (if (= :error (-> query-reply-rdv :sip-rq (.readUInt8 0) s/to-cmd))
+                                                      (do (log/error "Query for" callee-name "failed.")
+                                                          (.send sip (.makeResponse sip rq "404")))
+                                                      (let [callee-rdv       (:data query-reply-rdv)
+                                                            callee-rdv-id    (.readUInt32BE callee-rdv 0)
+                                                            callee-rdv-dst   (->  callee-rdv (.slice 4) conv/parse-addr first)
+                                                            callee-rdv       (net-info [(:host callee-rdv-dst) (:port callee-rdv-dst)])] ;; FIXME: this is fine for PoC, but in the future net-info will be a atom and will be updated regularly.
+                                                        (assert callee-rdv (str "SIP: Could not find callee's mix:" name))
+                                                        ;; debug <--
+                                                        (println :rcvd callee-rdv-dst)
+                                                        (println :callee callee-name :caller name :got callee-rdv-id callee-rdv-dst)
+                                                        ;; debug -->
+                                                        (update-data call-id [:peer-rdv] callee-rdv-id)
+                                                        (.send sip (.makeResponse sip rq 100 "TRYING"))
+                                                        (when (not= (-> callee-rdv :auth :srv-id) (-> out-rdv-id circ/get-data :rdv :auth :srv-id)) ;; if we are using the same RDV we don't extend to it, it would fail (can't reuse the same node in a circ)
+                                                          (>! out-rdv-ctrl (merge callee-rdv {:dest callee-rdv}))
+                                                          (<! out-rdv-notify)
+                                                          (log/debug "Extended to callee's RDV"))
+                                                        ;; FIXME: once this works we'll add relay-sip extend to callee so rdv can't read demand,
+                                                        ;; and client can match our HS against the keys he has for his contacts.
+                                                        (circ/relay-sip config out-rdv-id :f-enc (b/cat (-> :invite s/from-cmd b/new1)  ;; Send invite to callee. include our rdv-id so callee can send sig to us.
                                                                                                         (b/new call-id)
-                                                                                                        b/zero))
-                                                          (log/info "SIP: sent ackack, ready for relay on" call-id)
-                                                          ;; debug <--
-                                                          (js/console.log (mk-invite @headers uri-to "172.17.42.1"))
-                                                          (.send sip (mk-invite @headers uri-to "172.17.42.1") ;; FIXME this will become mk-sdp, and be sent as an ack here.
-                                                                 (fn [rs] (go (println (-> rs cljs/js->clj walk/keywordize-keys)) (.-status rs)))))))))))
+                                                                                                        b/zero
+                                                                                                        (b/new4 callee-rdv-id)
+                                                                                                        (b/new (conv/dest-to-tor-str @path/chosen-mix))
+                                                                                                        b/zero
+                                                                                                        (b/new name)
+                                                                                                        b/zero
+                                                                                                        (-> config :auth :aqua-id :id)
+                                                                                                        (-> config :auth :aqua-id :pub)))
+                                                        (println :lol2)
+                                                        (let [reply                  (<! sip-ctrl)] ;; and now we wait for ack
+                                                          (println :lol3)
+                                                          (assert (= (:cmd reply) :ack) (str "Something went wrong with call" call-id))
+                                                          (.send sip (.makeResponse sip rq 180 "RINGING"))
+                                                          (let [[mix reply-data]     (-> reply :data (.slice 4) conv/parse-addr)
+                                                                [caller reply-data]  (b/cut-at-null-byte reply-data)
+                                                                [id pub]             (b/cut reply-data (-> config :ntor-values :node-id-len))
+                                                                rtp-circ             (<! (path/get-path :rt))
+                                                                rtp-data             (circ/get-data rtp-circ)
+                                                                rtp-ctrl             (:dest-ctrl rtp-data)
+                                                                rtp-notify           (:notify rtp-data)]
+                                                            (>! rtp-ctrl [(net-info [(:host mix) (:port mix)]) {:auth {:pub-B pub :srv-id id} :name caller}])   ;; connect to callee's mix & then to callee.
+                                                            (<! rtp-notify)
+                                                            (log/info "SIP: RT circuit ready for outgoing data on:" call-id)
+                                                            (update-data call-id [:rt] {:in (:circ-id reply) :out rtp-circ}) ;; FIXME if needed add chans.
+                                                            (circ/relay-sip config rtp-circ :f-enc (b/cat (-> :ackack s/from-cmd b/new1)
+                                                                                                          (b/new call-id)
+                                                                                                          b/zero))
+                                                            (println :lol2)
+                                                            (log/info "SIP: sent ackack, ready for relay on" call-id)
+                                                            ;; debug <--
+                                                            (js/console.log (mk-invite @headers uri-to "172.17.42.1"))
+                                                            (.send sip (mk-invite @headers uri-to "172.17.42.1") ;; FIXME this will become mk-sdp, and be sent as an ack here.
+                                                                   (fn [rs] (go (println (-> rs cljs/js->clj walk/keywordize-keys)) (.-status rs)))))))))))
 
-                              nil)))]
-        (>! rdv-ctrl :rdv)
-        (>! out-rdv-ctrl :rdv)
-        (circ/update-data rdv-id [:sip-chan] incoming-sip)
-        (circ/update-data out-rdv-id [:sip-chan] incoming-sip)
-        (.start sip (cljs/clj->js {:protocol "UDP"}) process)
-
-        ;; FIXME: sip-ch is general and dispatched according to callid to sub channels.
-        (go-loop [query (<! incoming-sip)]
-          (let [cmd           (-> query :sip-rq (.readUInt8 0) s/to-cmd)
-                [call-id msg] (-> query :sip-rq s/get-call-id)]
-            (log/info "SIP: call-id:" call-id "-" cmd)
-            (condp = cmd
-              :invite (go (let [caller-rdv-id (.readUInt32BE msg 0)
-                                [mix msg]     (-> msg (.slice 4) conv/parse-addr)
-                                [caller msg]  (b/cut-at-null-byte msg)
-                                [id pub]      (b/cut msg (-> config :ntor-values :node-id-len))
-                                caller        (.toString caller)
-                                sip-ctrl      (chan)
-                                rtp-circ      (<! (path/get-path :rt))
-                                rtp-data      (circ/get-data rtp-circ)
-                                rtp-ctrl      (:dest-ctrl rtp-data)
-                                rtp-notify    (:notify rtp-data)]
-                            (log/info "SIP: invited by" caller "- Call-ID:" call-id "Rdv" caller-rdv-id)
-                            (add-call call-id {:sip-ctrl sip-ctrl, :sip-call-id call-id, :state :ringing, :peer-rdv caller-rdv-id}) ;; FIXME add rtp rt
-                            (>! rtp-ctrl [(net-info [(:host mix) (:port mix)]) {:auth {:pub-B pub :srv-id id} :name caller}])   ;; connect to caller's mix & then to caller.
-                            (<! rtp-notify)
-                            ;; attach local. use those ports to make SDP media. add this as forward-hop to the incoming rt circ from caller.
-                            (log/info "SIP: RT circuit ready for call" call-id)
-                            (circ/relay-sip config rtp-circ :f-enc (b/cat (-> :ack s/from-cmd b/new1)
-                                                                          (b/new call-id)
-                                                                          b/zero
-                                                                          (b/new (conv/dest-to-tor-str @path/chosen-mix))
-                                                                          b/zero
-                                                                          (-> config :auth :aqua-id :id)
-                                                                          (-> config :auth :aqua-id :pub)))
-                            (assert (= :ackack (:cmd (<! sip-ctrl))))
-                            (log/info "SIP: got ackack, ready for relay on" call-id)))
-              ;; If it's not an invite, try to dispatch to an exsiting call:
-              (let [call-ch       (-> call-id (@calls) :sip-ctrl)]
-                (if call-ch
-                  (go (>! call-ch (merge query {:data msg :call-id call-id :cmd cmd})))
-                  (log/info "SIP: incoming message with unknown call id:" call-id "-- dropping.")))))
-          (recur (<! incoming-sip)))
-
-        (log/info "SIP proxy listening on default UDP SIP port")
-        incoming-sip)))
-
+                                nil)))]
+          (>! rdv-ctrl :rdv)
+          (>! out-rdv-ctrl :rdv)
+          (circ/update-data rdv-id [:sip-chan] incoming-sip)
+          (circ/update-data out-rdv-id [:sip-chan] incoming-sip)
+          (.start sip (cljs/clj->js {:protocol "UDP"}) process)
+          
+          ;; FIXME: sip-ch is general and dispatched according to callid to sub channels.
+          (go-loop [query (<! incoming-sip)]
+                   (let [cmd           (-> query :sip-rq (.readUInt8 0) s/to-cmd)
+                         [call-id msg] (-> query :sip-rq s/get-call-id)]
+                     (log/info "SIP: call-id:" call-id "-" cmd)
+                     (condp = cmd
+                       :invite (go (let [caller-rdv-id (.readUInt32BE msg 0)
+                                         [mix msg]     (-> msg (.slice 4) conv/parse-addr)
+                                         [caller msg]  (b/cut-at-null-byte msg)
+                                         [id pub]      (b/cut msg (-> config :ntor-values :node-id-len))
+                                         caller        (.toString caller)
+                                         sip-ctrl      (chan)
+                                         rtp-circ      (<! (path/get-path :rt))
+                                         rtp-data      (circ/get-data rtp-circ)
+                                         rtp-ctrl      (:dest-ctrl rtp-data)
+                                         rtp-notify    (:notify rtp-data)]
+                                     (log/info "SIP: invited by" caller "- Call-ID:" call-id "Rdv" caller-rdv-id)
+                                     (add-call call-id {:sip-ctrl sip-ctrl, :sip-call-id call-id, :state :ringing, :peer-rdv caller-rdv-id}) ;; FIXME add rtp rt
+                                     (>! rtp-ctrl [(net-info [(:host mix) (:port mix)]) {:auth {:pub-B pub :srv-id id} :name caller}])   ;; connect to caller's mix & then to caller.
+                                     (<! rtp-notify)
+                                     ;; attach local. use those ports to make SDP media. add this as forward-hop to the incoming rt circ from caller.
+                                     (log/info "SIP: RT circuit ready for call" call-id)
+                                     (circ/relay-sip config rtp-circ :f-enc (b/cat (-> :ack s/from-cmd b/new1)
+                                                                                   (b/new call-id)
+                                                                                   b/zero
+                                                                                   (b/new (conv/dest-to-tor-str @path/chosen-mix))
+                                                                                   b/zero
+                                                                                   (-> config :auth :aqua-id :id)
+                                                                                   (-> config :auth :aqua-id :pub)))
+                                     (println :lol1)
+                                     (assert (= :ackack (:cmd (<! sip-ctrl))))
+                                     (log/info "SIP: got ackack, ready for relay on" call-id)))
+                       ;; If it's not an invite, try to dispatch to an exsiting call:
+                       (let [call-ch       (-> call-id (@calls) :sip-ctrl)]
+                         (if call-ch
+                           (go (>! call-ch (merge query {:data msg :call-id call-id :cmd cmd})))
+                           (log/info "SIP: incoming message with unknown call id:" call-id "-- dropping.")))))
+                   (recur (<! incoming-sip)))
+          
+          (log/info "SIP proxy listening on default UDP SIP port")))
+    incoming-sip))
 
 
 ;; replace all uris, tags, ports by hc defaults.
