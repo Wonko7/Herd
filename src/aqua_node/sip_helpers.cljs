@@ -22,6 +22,8 @@
                :register-to-mix 3
                :mix-query       4
                :invite          5
+               :ack             6
+               :ackack          7
                :error           9})
 
 (def to-cmd
@@ -35,3 +37,14 @@
   "First byte is command identifier. Then Call id null terminated. return call id and remainder of the buffer"
   (let [[id rest] (b/cut-at-null-byte (.slice msg 1))]
     [(.toString id) rest]))
+
+
+;; Converting ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+(defn to-clj [js-map]
+  "Convert a js map to a clojure hashmap with keywords as keys"
+  (-> js-map cljs/js->clj walk/keywordize-keys))
+
+(defn to-js [clj-map]
+  "Convert a clj map to a js hashmap with strings as keys"
+  (-> walk/stringify-keys cljs/clj->js))
