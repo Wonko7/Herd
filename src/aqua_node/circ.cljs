@@ -393,6 +393,7 @@
         r-payload    (:payload relay-data)
         add-role     #(->> circ :roles (cons %) distinct)
 
+        ;; FIXME begin & data are bad and I should feel bad. everything that was "temporary".
         ;; process data packet: forward payload as rtp, udp to destination socket.
         p-data       (fn []
                        (let [[fhop bhop :as hops] (map circ [:forward-hop :backward-hop])

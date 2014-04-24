@@ -175,13 +175,13 @@
             (circ/relay-data config circ-id b))))
       (log/info "TCP: not ready for data, dropping on circuit" circ-id))))
 
-(defn attach-local-udp4 [config circ-id forward-to forwarder & [bind-port]] ;; FIXME: forward-to changed meaning, it is now only used for what ip we're binding to.
+(defn attach-local-udp [config circ-id forward-to forwarder & [bind-port]] ;; FIXME: forward-to changed meaning, it is now only used for what ip we're binding to.
   "Unused right now, except by hardcoded rtp benchmarks."
   (go (let [ctrl      (chan)
-            udp-sock  (.createSocket (node/require "dgram") "udp4") ;; FIXME should not be hardcoded to ip4
+            udp-sock  (.createSocket (node/require "dgram") "udp6")
             port      (do (.bind udp-sock (or bind-port 0) (:host forward-to) #(go (>! ctrl (-> udp-sock .address .-port))))
                           (<! ctrl))
-            dest      {:type :ip4 :proto :udp :host "0.0.0.0" :port 0}]
+            dest      {:type :ip4 :proto :udp :host "0.0.0.0" :port 0}] ;; FIXME should not be hardcoded to ip4.
         (-> udp-sock
             (c/add {:ctype :udp :ctrl ctrl :type :udp-ap :circuit circ-id :local-dest forward-to}) ;; FIXME circ data is messy... need to separate and harmonise things.
             (c/add-listeners {:message (partial forwarder config udp-sock)}))
@@ -189,6 +189,32 @@
         (circ/update-data circ-id [:backward-hop] udp-sock)
         (circ/update-data circ-id [:local-dest] forward-to)
         [udp-sock port])))
+
+(defn attach-local-udp-to-simplex-circs [config in-circ-id-chan out-circ-id-chan forward-to forwarder]
+  "Create a socket that will redirect incoming traffic to out-circ-id (outgoing traffic) and receive
+  traffic from in-circ-id (incoming traffic).
+  forward-to is the destination of local traffic (outside world [eg callee] -> in-circ -> forward-to [local sip client, caller])."
+  (let [ctrl       (chan)
+        udp-sock   (.createSocket (node/require "dgram") "udp6")
+        dest       {:type :ip4 :proto :udp :host "0.0.0.0" :port 0}] ;; FIXME should not be hardcoded to ip4.
+    (.bind udp-sock (or bind-port 0) (:host forward-to) #(go (>! ctrl (-> udp-sock .address .-port))))
+    (println 11)
+    (-> udp-sock
+        (c/add {:ctype :udp :type :udp-ap :circuit circ-id :local-dest forward-to}) ;; FIXME circ data is messy... need to separate and harmonise things.
+        (c/add-listeners {:message (partial forwarder config udp-sock)}))
+    (println 12)
+    ;; out:
+    (go (let [out-circ-id (<! out-circ-id-chan)]
+          (circ/update-data out-circ-id [:ap-dest] forward-to) ;; check
+          (circ/update-data out-circ-id [:backward-hop] udp-sock)))
+    (println 13)
+    ;; out:
+    ;; in:
+    (go (let [in-circ-id (<! in-circ-id-chan)]
+          (circ/update-data in-circ-id [:ap-dest] dest)
+          (circ/update-data in-circ-id [:forward-hop] udp-sock)))
+    (println 14)
+    (go [udp-sock (<! ctrl)])))
 
 
 ;; path pool ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;

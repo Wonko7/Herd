@@ -47,4 +47,4 @@
 
 (defn to-js [clj-map]
   "Convert a clj map to a js hashmap with strings as keys"
-  (-> walk/stringify-keys cljs/clj->js))
+  (-> clj-map walk/stringify-keys cljs/clj->js))
