@@ -395,7 +395,7 @@
 
         ;; FIXME begin & data are bad and I should feel bad. everything that was "temporary".
         ;; process data packet: forward payload as rtp, udp to destination socket.
-        p-data       (fn []
+        p-data       (fn [] ;; this has accumulated complexity as we experimented. only rtp-exit is used today.
                        (let [[fhop bhop :as hops] (map circ [:forward-hop :backward-hop])
                              dest                 (if (= socket fhop) bhop fhop)
                              dest-data            (c/get-data dest)]
