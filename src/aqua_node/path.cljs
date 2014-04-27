@@ -190,31 +190,31 @@
         (circ/update-data circ-id [:local-dest] forward-to)
         [udp-sock port])))
 
-(defn attach-local-udp-to-simplex-circs [config in-circ-id-chan out-circ-id-chan forward-to forwarder]
+(defn attach-local-udp-to-simplex-circs [config in-circ-id-chan out-circ-id-chan forward-to-port forwarder]
   "Create a socket that will redirect incoming traffic to out-circ-id (outgoing traffic) and receive
   traffic from in-circ-id (incoming traffic).
   forward-to is the destination of local traffic (outside world [eg callee] -> in-circ -> forward-to [local sip client, caller])."
-  (let [ctrl       (chan)
+  (let [port       (chan)
         udp-sock   (.createSocket (node/require "dgram") "udp6")
         dest       {:type :ip4 :proto :udp :host "0.0.0.0" :port 0}] ;; FIXME should not be hardcoded to ip4.
-    (.bind udp-sock (or bind-port 0) (:host forward-to) #(go (>! ctrl (-> udp-sock .address .-port))))
+    (.bind udp-sock 0 (:host "0.0.0.0") #(go (>! port (-> udp-sock .address .-port))))
     (println 11)
     (-> udp-sock
-        (c/add {:ctype :udp :type :udp-ap :circuit circ-id :local-dest forward-to}) ;; FIXME circ data is messy... need to separate and harmonise things.
+        (c/add {:ctype :udp :type :udp-ap }) ;; FIXME circ data is messy... need to separate and harmonise things.
         (c/add-listeners {:message (partial forwarder config udp-sock)}))
-    (println 12)
     ;; out:
     (go (let [out-circ-id (<! out-circ-id-chan)]
-          (circ/update-data out-circ-id [:ap-dest] forward-to) ;; check
+    (println :path-out)
+    (c/update-data udp-sock [:circuit] circ-id)
           (circ/update-data out-circ-id [:backward-hop] udp-sock)))
-    (println 13)
     ;; out:
     ;; in:
     (go (let [in-circ-id (<! in-circ-id-chan)]
-          (circ/update-data in-circ-id [:ap-dest] dest)
+    (println :path-in)
+          (circ/update-data in-circ-id [:ap-dest] (<! forward-to-port))
           (circ/update-data in-circ-id [:forward-hop] udp-sock)))
     (println 14)
-    (go [udp-sock (<! ctrl)])))
+    (go [udp-sock (<! port)])))
 
 
 ;; path pool ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;

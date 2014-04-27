@@ -27,8 +27,8 @@
     (if f
       (do (f)                                         ;; f is called and sends a packet.
           (c/update-data c [:rate :fs] fs))           ;; update queue
-      (when (.-writable c)
-        (comment (js/setImmediate #(circ/padding config c)))))  ;; send a padding packet instead.
+      (when (and (.-writable c) (not (:debug config)))
+        (js/setImmediate #(circ/padding config c))))  ;; send a padding packet instead.
     (c/update-data c [:rate :tokens] tot)))           ;; -> also useless.
 
 (defn init [{{p :period} :rate :as config} c]
