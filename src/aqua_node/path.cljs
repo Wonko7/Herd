@@ -205,6 +205,7 @@
     ;; out:
     (go (let [out-circ-id (<! out-circ-id-chan)]
           (c/update-data udp-sock [:circuit] out-circ-id)
+          (circ/update-data out-circ-id [:state] :relay)
           (circ/update-data out-circ-id [:backward-hop] udp-sock)))
     ;; in:
     (go (let [in-circ-id (<! in-circ-id-chan)]
