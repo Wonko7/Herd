@@ -419,7 +419,7 @@
                                                            (assert false "bad socks5 header"))]
                                           (.send dest data 0 (.-length data) p h)))
                            :udp-ap    (.send dest r-payload 0 (.-length r-payload) (-> dest-data :from :port) (-> dest-data :from :host))
-                           :rtp-exit  (.send dest r-payload 0 (.-length r-payload) (-> dest-data :from :port) (-> dest-data :from :host)) ;; FIXME unused for now, going through udp-exit for now
+                           :rtp-exit  (.send dest r-payload 0 (.-length r-payload) (-> dest-data :rtp-dest :port) (-> dest-data :rtp-dest :host)) ;; FIXME unused for now, going through udp-exit for now
                            :rtp-ap    (.send dest r-payload 0 (.-length r-payload) (-> circ :local-dest :port) (-> circ :local-dest :host)) ;; FIXME quick and diiiirty
                            (.write dest r-payload))))
 

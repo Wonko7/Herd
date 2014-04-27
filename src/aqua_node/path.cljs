@@ -190,7 +190,7 @@
         (circ/update-data circ-id [:local-dest] forward-to)
         [udp-sock port])))
 
-(defn attach-local-udp-to-simplex-circs [config in-circ-id-chan out-circ-id-chan forward-to-port forwarder]
+(defn attach-local-udp-to-simplex-circs [config in-circ-id-chan out-circ-id-chan forward-to-dest]
   "Create a socket that will redirect incoming traffic to out-circ-id (outgoing traffic) and receive
   traffic from in-circ-id (incoming traffic).
   forward-to is the destination of local traffic (outside world [eg callee] -> in-circ -> forward-to [local sip client, caller])."
@@ -200,20 +200,17 @@
     (.bind udp-sock 0 (:host "0.0.0.0") #(go (>! port (-> udp-sock .address .-port))))
     (println 11)
     (-> udp-sock
-        (c/add {:ctype :udp :type :udp-ap }) ;; FIXME circ data is messy... need to separate and harmonise things.
-        (c/add-listeners {:message (partial forwarder config udp-sock)}))
+        (c/add {:ctype :udp :type :rtp-exit})
+        (c/add-listeners {:message (partial app-proxy-forward-udp config udp-sock)}))
     ;; out:
     (go (let [out-circ-id (<! out-circ-id-chan)]
-    (println :path-out)
-    (c/update-data udp-sock [:circuit] circ-id)
+          (c/update-data udp-sock [:circuit] out-circ-id)
           (circ/update-data out-circ-id [:backward-hop] udp-sock)))
-    ;; out:
     ;; in:
     (go (let [in-circ-id (<! in-circ-id-chan)]
-    (println :path-in)
-          (circ/update-data in-circ-id [:ap-dest] (<! forward-to-port))
+          (c/update-data udp-sock [:rtp-dest] (<! forward-to-dest))
+          (c/update-data udp-sock [:forward-hop] udp-sock)
           (circ/update-data in-circ-id [:forward-hop] udp-sock)))
-    (println 14)
     (go [udp-sock (<! port)])))
 
 
