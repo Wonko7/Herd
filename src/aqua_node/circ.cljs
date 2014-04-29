@@ -463,14 +463,18 @@
                              dest       (condp = ls-type
                                           3 {:type :ip4 :host (conv/ip4-to-str (.slice r-payload 3 7))  :port (r2 7)  :create (.slice r-payload 9)}
                                           4 {:type :ip6 :host (conv/ip6-to-str (.slice r-payload 3 19)) :port (r2 19) :create (.slice r-payload 21)})
+                             ctrl       (chan)
                              sock       (c/find-by-dest dest)
                              fhop       (:forward-hop circ)]
-                         (assert sock "could not find destination")
-                         (when (and (is? :rdv circ) fhop)
-                           (send-destroy config fhop circ-id (b/new "because reasons")))
-                         (update-data circ-id [:forward-hop] sock)
-                         (update-data circ-id [:roles] (add-role :mix))
-                         (cell-send config sock circ-id :create2 (:create dest))))
+                         (when-not sock
+                           ((:aqua-connect config) config dest ctrl))
+                         (go (let [sock (or sock (<! ctrl))]
+                               (assert sock (str "could not find destination" dest))
+                               (when (and (is? :rdv circ) fhop)
+                                 (send-destroy config fhop circ-id (b/new "because reasons")))
+                               (update-data circ-id [:forward-hop] sock)
+                               (update-data circ-id [:roles] (add-role :mix))
+                               (cell-send config sock circ-id :create2 (:create dest))))))
 
         p-extend-sip (fn []
                        (let [[name create] (b/cut-at-null-byte r-payload)

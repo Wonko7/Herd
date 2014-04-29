@@ -198,7 +198,6 @@
         udp-sock   (.createSocket (node/require "dgram") "udp6")
         dest       {:type :ip4 :proto :udp :host "0.0.0.0" :port 0}] ;; FIXME should not be hardcoded to ip4.
     (.bind udp-sock 0 (:host "0.0.0.0") #(go (>! port (-> udp-sock .address .-port))))
-    (println 11)
     (-> udp-sock
         (c/add {:ctype :udp :type :rtp-exit})
         (c/add-listeners {:message (partial app-proxy-forward-udp config udp-sock)}))
@@ -252,7 +251,7 @@
     (reset! chosen-mix mix)
     ;; init channel pools:
     (reset! pool {:one-hop (chan N) :rt (chan N) :single (chan N)})
-    ;; wait until connected to the chosen mix before sending requests
+   ;; wait until connected to the chosen mix before sending requests
     (go (<! connected)
         (rate/init config soc)
         (c/add-listeners soc {:data #(circ/process config soc %)})

@@ -41,7 +41,8 @@
           ip  (-> config :external-ip conv/ip4-to-bin (.readUInt32BE 0))]
       (if (:geo-info config)
         ;; region is specified in config
-        (go (:geo-info config))
+        (go (log/info "Geo: We are in" (-> config :geo-info :reg))
+            (:geo-info config))
         ;; parse geo db, downloaded from http://software77.net/geo-ip/
         (do (.readFile fs (-> config :geo-db) #(go (>! geo %2)))
             (go (first (for [l (str/split (<! geo) #"\n")

@@ -84,6 +84,15 @@
                   [_ local-port] (<! (path/attach-local-udp4 config cid {:host "127.0.0.1"} path/app-proxy-forward-udp port))]
               (log/info "Hardcoded RTP: listening on:" local-port "forwarding to:" (:host dest) (:port dest) "using circ:" cid))))))
 
+(defn aqua-connect [config dest & [ctrl]]
+  (let [con (chan)
+        soc (conn/new :aqua :client dest config {:connect #(go (>! con :done))})]
+    (log/debug "Aqua: Connecting to" dest)
+    (c/add-listeners soc {:data #(circ/process config soc %)})
+    (go (<! con)
+        (rate/init config soc)
+        (when ctrl (>! ctrl soc)))))
+
 (defn is? [role roles]
   "Tests if a role is part of the given roles"
   (some #(= role %) roles))
@@ -94,7 +103,7 @@
             geo         (go (<! (geo/parse config)))          ;; match our ip against database, unless already specified in config:
             net-info    (go (when-not (is? :dir)              ;; request net-info if we're not a dir. FIXME -> get-net-info will be called periodically.
                               (<! (get-net-info config ds))))]
-        (log/info "Bootstrapping as" roles)
+        (log/info "Bootstrapping as" roles "in")
         (when (is? :app-proxy)
           (let [geo      (<! geo)
                 net-info (<! net-info)
@@ -109,18 +118,14 @@
             (register-to-dir config geo mix ds)))
         (when (or (is? :mix) (is? :rdv))
           (let [sip-chan (sip-dir/create-mix-dir config)
-                cfg      (merge config {:sip-chan sip-chan :aqua sip-dir :sip-mix-dir sip-dir/mix-dir})]
+                cfg      (merge config {:sip-chan sip-chan :aqua sip-dir :sip-mix-dir sip-dir/mix-dir :aqua-connect aqua-connect})]
             (conn/new :aqua :server aq cfg {:connect aqua-server-recv})
             (register-to-dir config (<! geo) nil ds)
             ;; for each mix in node info, extract ip & port and connect.
             (doseq [[[ip port] mix] (seq (<! net-info))
                     :when (or (not= (:host aq) ip)
-                              (not= (:port aq) port))
-                    :let [con (chan)
-                          soc (conn/new :aqua :client mix cfg {:connect #(go (>! con :done))})]]
-              (c/add-listeners soc {:data #(circ/process cfg soc %)})
-              (go (<! con)
-                  (rate/init config soc)))))
+                              (not= (:port aq) port))]
+              (aqua-connect cfg mix))))
         (when (is? :dir)
           (conn/new :dir :server dir config {:connect aqua-dir-recv}))
         (when (is? :sip-dir)
