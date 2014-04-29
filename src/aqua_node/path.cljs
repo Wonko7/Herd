@@ -75,7 +75,7 @@
                            ;; if rdv had a next hop, remove it from the encryption node list.
                            (when (> (count enc-path) (count all-nodes))
                              (circ/update-data id [:path] (drop-last enc-path)))
-                           (log/debug "Extending RDV" id)
+                           (log/debug "Extending RDV" id "to" (select-keys next-hop [:host :port]))
                            ;; send extend, then wait for extended before notifying upstream.
                            (circ/relay-extend config id next-hop)
                            (<! ctrl) ;; FIXME add timeout in case things go wrong.

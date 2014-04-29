@@ -1,7 +1,8 @@
 (ns aqua-node.conns
   (:require [cljs.core :as cljs]
             [cljs.nodejs :as node]
-            [aqua-node.log :as log]))
+            [aqua-node.log :as log]
+            [aqua-node.buf :as b]))
 
 (declare destroy find-by-dest)
 
@@ -50,6 +51,16 @@
 
 (defn get-data [conn]
   (@connections conn))
+
+(defn find-by-id [id]
+  "Find an open socket for the given host.
+  Might also add a filter to match a type of connections (aqua, dir, etc)."
+  (first (keep (fn [[s d]]
+                 (println (keys d))
+                 (b/print-x id)
+                 (when (and (-> d :auth :srv-id) (b/b= id (-> d :auth :srv-id)))
+                   s))
+               (seq @connections))))
 
 (defn find-by-dest [{host :host}] ;; FIXME make a map to link to sockets.
   "Find an open socket for the given host.

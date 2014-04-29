@@ -83,7 +83,9 @@
                              (circ/relay-sip config circ :b-enc
                                              (b/cat (-> :error s/from-cmd b/new1) (b/new call-id) b/zero (b/new "404")))))))]
     ;; dispatch requests to the corresponding functions:
+    (println "OK ready")
     (go-loop [request (<! sip-chan)]
+    (println "OK got smthng" request)
       (condp = (-> request :sip-rq (.readUInt8 0) s/to-cmd)
         :register (p-register request)
         :query    (p-query request)

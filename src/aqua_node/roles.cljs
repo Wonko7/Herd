@@ -87,10 +87,12 @@
 (defn aqua-connect [config dest & [ctrl]]
   (let [con (chan)
         soc (conn/new :aqua :client dest config {:connect #(go (>! con :done))})]
-    (log/debug "Aqua: Connecting to" dest)
+    (log/debug "Aqua: Connecting to" (select-keys dest [:host :port :role]))
     (c/add-listeners soc {:data #(circ/process config soc %)})
+    (c/update-data soc [:auth] (:auth dest))
     (go (<! con)
         (rate/init config soc)
+        (circ/send-id config soc)
         (when ctrl (>! ctrl soc)))))
 
 (defn is? [role roles]
@@ -131,5 +133,6 @@
         (when (is? :sip-dir)
           (let [sip-chan (sip-dir/create-dir config)
                 cfg      (merge config {:sip-chan sip-chan :aqua sip-dir})]
+            ;(conn/new :aqua :server sip-dir cfg {:connect aqua-server-recv})
             (conn/new :aqua :server sip-dir cfg {:connect aqua-server-recv})
             (register-to-dir cfg (<! geo) nil ds))))))

@@ -100,7 +100,7 @@
 
 ;; Manage local SIP client requests ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
-(defn create-server [{sip-dir :remote-sip-dir :as config} net-info]
+(defn create-server [config net-info]
   "Creates the listening service that will process the connected SIP client's requests.
   Application Proxies start this service."
   ;; assuming only one client
@@ -147,7 +147,8 @@
 
                                 (= (:method nrq) "REGISTER")
                                 (let [rdv-data     (circ/get-data out-rdv-id)
-                                      sip-dir-dest (net-info [(:host sip-dir) (:port sip-dir)])     ;; find sip dir from config for now. will change that.
+                                      select       #(->> net-info seq (map second) (filter %) shuffle) ;; FIXME -> this should be shared by path.
+                                      sip-dir-dest (first (select #(= (:role %) :sip-dir)))
                                       sip-dir-dest (merge sip-dir-dest {:dest sip-dir-dest})        ;; FIXME will get rid of :dest someday.
                                       ack          (.makeResponse sip rq 200 "OK")]                 ;; prepare sip successful answer
                                   (if (:auth sip-dir-dest)
@@ -158,7 +159,7 @@
                                         (.send sip ack)                                             ;; --- SIP: answer sip client, successfully registered.
                                         (reset! uri-to  (-> contact :uri))                          ;; save uri & headers for building invite later:
                                         (reset! headers (-> ack cljs/js->clj walk/keywordize-keys :headers)))
-                                    (do (log/error "Could not find SIP DIR" sip-dir)
+                                    (do (log/error "Could not find SIP DIR in aqua network")
                                         ;; debug <--
                                         (doall (->> net-info seq (map second) (map #(dissoc % :auth)) (map println)))
                                         ;; debug -->
