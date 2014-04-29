@@ -14,8 +14,6 @@
 (def connections (atom {}))
 
 (defn add [conn & [data]]
-  (when (and (= :aqua (:type data)) (:host data))
-    (destroy (find-by-dest data)))
   (swap! connections merge {conn data})
   conn)
 
@@ -56,8 +54,8 @@
   "Find an open socket for the given host.
   Might also add a filter to match a type of connections (aqua, dir, etc)."
   (first (keep (fn [[s d]]
-                 (println (keys d))
-                 (b/print-x id)
+                 (println :compareto (keys (:auth d)))
+                 (b/print-x id :looking-for)
                  (when (and (-> d :auth :srv-id) (b/b= id (-> d :auth :srv-id)))
                    s))
                (seq @connections))))

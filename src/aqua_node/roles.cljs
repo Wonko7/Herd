@@ -90,10 +90,23 @@
     (log/debug "Aqua: Connecting to" (select-keys dest [:host :port :role]))
     (c/add-listeners soc {:data #(circ/process config soc %)})
     (c/update-data soc [:auth] (:auth dest))
+    (println :reg-id)
+    (if (-> dest :auth :srv-id)
+      (b/print-x (-> dest :auth :srv-id))
+      (println :wtf (keys dest) (keys (:auth dest))))
     (go (<! con)
+        (println (count (keep identity (map #(-> second :rate) (seq (c/get-all))))))
+        (println :helloplsexplain)
         (rate/init config soc)
-        (circ/send-id config soc)
+        ;(circ/send-id config soc)
+        (rate/queue soc #(circ/send-id config soc))
         (when ctrl (>! ctrl soc)))))
+
+(defn aqua-connect-from-id [config net-info id ctrl]
+  (let  [mixes (for [[[ip port] mix] (seq (<! net-info))
+                     :when (= id (-> mix :auth :srv-id))]
+                 mix)]
+    (aqua-connect config (first mixes) ctrl)))
 
 (defn is? [role roles]
   "Tests if a role is part of the given roles"
@@ -120,14 +133,19 @@
             (register-to-dir config geo mix ds)))
         (when (or (is? :mix) (is? :rdv))
           (let [sip-chan (sip-dir/create-mix-dir config)
-                cfg      (merge config {:sip-chan sip-chan :aqua sip-dir :sip-mix-dir sip-dir/mix-dir :aqua-connect aqua-connect})]
+                cfg      (merge config {:sip-chan sip-chan :aqua sip-dir :sip-mix-dir sip-dir/mix-dir})
+                ;aq-conn  (partial aqua-connect-from-id cfg net-info)
+                ;cfg      (merge cfg {:aqua-connect aq-conn})
+                ctrl     (chan)
+                ]
             (conn/new :aqua :server aq cfg {:connect aqua-server-recv})
             (register-to-dir config (<! geo) nil ds)
             ;; for each mix in node info, extract ip & port and connect.
             (doseq [[[ip port] mix] (seq (<! net-info))
                     :when (or (not= (:host aq) ip)
                               (not= (:port aq) port))]
-              (aqua-connect cfg mix))))
+              (aqua-connect cfg mix ctrl)
+              (<! ctrl))))
         (when (is? :dir)
           (conn/new :dir :server dir config {:connect aqua-dir-recv}))
         (when (is? :sip-dir)

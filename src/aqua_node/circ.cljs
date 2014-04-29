@@ -151,8 +151,6 @@
   (let [len          (or len (.-length payload))
         buf          (b/new (+ 9 len)) ;; add len to cells -> fixme
         [w8 w16 w32] (b/mk-writers buf)]
-    (println len)
-    (b/print-x payload)
     (w32 (+ 9 len) 0)
     (w32 circ-id 4)
     (w8 (from-cmd cmd) 8)
@@ -278,10 +276,13 @@
   (let [data          (@circuits circ-id)
         socket        (:forward-hop data)
         [auth create] (mk-create config nh-auth circ-id) ;; FIXME id should be changed at each hop. keeping it this way for debugging for now.
-        nspec         (condp = (:type nh-dest)
-                        :ip4 (b/cat (b/new (cljs/clj->js [1 3 6]))  (conv/ip4-to-bin (:host nh-dest)) (conv/port-to-bin (:port nh-dest)))
-                        :ip6 (b/cat (b/new (cljs/clj->js [1 4 16])) (conv/ip6-to-bin (:host nh-dest)) (conv/port-to-bin (:port nh-dest)))
-                        (assert nil "unsupported next hop address type"))]
+        ;; nspec         (condp = (:type nh-dest)
+        ;;                 :ip4 (b/cat (b/new (cljs/clj->js [1 3 6]))  (conv/ip4-to-bin (:host nh-dest)) (conv/port-to-bin (:port nh-dest)))
+        ;;                 :ip6 (b/cat (b/new (cljs/clj->js [1 4 16])) (conv/ip6-to-bin (:host nh-dest)) (conv/port-to-bin (:port nh-dest)))
+        ;;                 (assert nil "unsupported next hop address type"))
+        nspec         (b/cat (-> [1 6 (-> config :ntor-values :node-id-len)] cljs/clj->js b/new) (:srv-id nh-auth))]
+    (println :extending-to)
+    (b/print-x (:srv-id nh-auth) :ext-to)
     (add-path-auth circ-id data auth) ;; FIXME: PATH: mk pluggable
     (relay config socket circ-id :extend2 :f-enc (b/cat nspec create))))
 
@@ -308,13 +309,17 @@
 
 (defn send-id [config socket]
   "Send id to next hop."
+  (println :sending-id )
+  (b/print-x (-> config :auth :aqua-id :id))
   (cell-send config socket 0 :id (-> config :auth :aqua-id :id)))
 
 ;; process recv ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
 (defn recv-id [config socket circ-id payload]
   "Recv client's public ID & attach to socket"
-  (c/update-data socket [:auth] {:srv-id payload }))
+  (println :recv-id )
+  (b/print-x payload)
+  (c/update-data socket [:auth] {:srv-id payload}))
 
 
 (defn recv-create2 [config socket circ-id payload]
@@ -471,15 +476,16 @@
                              ls-type    (r1 1)
                              ls-len     (r1 2)
                              dest       (condp = ls-type
+                                          6 {:id (.slice r-payload 3 (+ 3 (-> config :ntor-values :node-id-len))) :create (.slice r-payload (+ 3 (-> config :ntor-values :node-id-len)))}
                                           3 {:type :ip4 :host (conv/ip4-to-str (.slice r-payload 3 7))  :port (r2 7)  :create (.slice r-payload 9)}
                                           4 {:type :ip6 :host (conv/ip6-to-str (.slice r-payload 3 19)) :port (r2 19) :create (.slice r-payload 21)})
-                             id-dest    (-> dest :create (.slice 4 (-> config :enc :key-len (+ 4))))
                              ctrl       (chan)
-                             sock       (c/find-by-id id-dest)
+                             sock       (c/find-by-id (:id dest))
                              fhop       (:forward-hop circ)]
                          (when-not sock
-                           (println :neeeeeeeeeeeeeeeew (select-keys dest [:host :port :role]))
-                           ((:aqua-connect config) config dest ctrl))
+                           (println "Could not find aqua node id")
+                           ;((:aqua-connect config) id ctrl)
+                           (b/print-x (:id dest)))
                          (go (let [sock (or sock (<! ctrl))]
                                (assert sock (str "could not find destination" dest))
                                (when (and (is? :rdv circ) fhop)
