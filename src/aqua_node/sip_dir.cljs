@@ -33,7 +33,7 @@
   (let [cmd         (-> :register s/from-cmd b/new1)
         rdv-b       (b/new4 rdv-cid)
         name-b      (b/new name)]
-    (log/debug "SIP: registering" name "on RDV circ:" rdv-cid "RDV ID:" rdv-id)
+    (log/debug "SIP: registering" name "on RDV circ:" rdv-cid "RDV ID:" (b/hx rdv-id))
     (circ/relay-sip config out-rdv-id :f-enc (b/cat cmd rdv-b rdv-id name-b))))
 
 (defn query [config name rdv-id call-id]
@@ -63,7 +63,7 @@
                             timeout-id    (js/setTimeout #(do (log/debug "SIP DIR: timeout for" name)
                                                               (rm name))
                                                          (:sip-register-interval config))]
-                        (log/debug "SIP DIR, registering" name "on RDV circ-id:" rdv-cid "RDV ID:" rdv-id)
+                        (log/debug "SIP DIR, registering" name "on RDV circ-id:" rdv-cid "RDV ID:" (b/hx rdv-id))
                         ;; if the user is renewing his registration, remove rm timeout:
                         (when (@dir name)
                           (js/clearTimeout (:timeout (@dir name))))

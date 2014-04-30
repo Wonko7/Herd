@@ -32,6 +32,12 @@
 ;;            :role    its role
 ;;            :auth    its pub key & id}
 
+(defn find-by-id [id]
+  (first (keep (fn [[_ m]]
+                 (when (and (-> m :auth :srv-id) (b/b= id (-> m :auth :srv-id)))
+                   m))
+               (seq @mix-dir))))
+
 (defn get-net-info []
   "Return our local mix topology, obtained from a dir."
   @mix-dir)

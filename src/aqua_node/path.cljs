@@ -102,7 +102,7 @@
         (log/debug "RT Circuit" id "waiting for destination")
         ;; wait until we are given a destination: the peer's mix, and the peer's name.
         (let [[mix2 ap]    (<! dest)]
-          (circ/relay-extend config id {:auth {:srv-id mix2}}) ;; FIXME test.
+          (circ/relay-extend config id mix2) ;; FIXME test.
           (<! ctrl)
           ;; extend to the callee's AP.
           (circ/relay-extend config id ap)
@@ -255,6 +255,7 @@
     (c/update-data soc [:auth] (:auth mix))
     (go (<! connected)
         (rate/init config soc)
+        (rate/queue soc #(circ/send-id config soc))
         (c/add-listeners soc {:data #(circ/process config soc %)})
         (init-pool config soc :rt mix)
         (init-pool config soc :single #(concat (mk-path) (->> rdvs shuffle (take 1) fixme-path))) ;; for now all single circuits are for rdvs, if this changes this'll have to change too.

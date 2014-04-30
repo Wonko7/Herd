@@ -213,7 +213,9 @@
                                             (update-data call-id [:peer-rdv] callee-rdv-cid)
                                             (.send sip (.makeResponse sip rq 100 "TRYING"))                                             ;; inform the SIP client we have initiated the call.
                                             (when (not= callee-rdv-id (-> out-rdv-id circ/get-data :rdv :auth :srv-id)) ;; if we are using the same RDV we don't extend to it, it would fail (can't reuse the same node in a circ)
-                                              (>! out-rdv-ctrl callee-rdv-id)
+                                              (println :extending! (b/hx callee-rdv-id))
+                                              (>! out-rdv-ctrl (dir/find-by-id callee-rdv-id))
+                                              (println :here?)
                                               (<! out-rdv-notify)
                                               (log/debug "Extended to callee's RDV"))
                                             ;; FIXME: once this works we'll add relay-sip extend to callee so rdv can't read demand,
@@ -239,7 +241,7 @@
                                                                                                                      (go (:circ-id reply))
                                                                                                                      (go rtp-circ)
                                                                                                                      (go sdp-dest)))]
-                                                (>! rtp-ctrl [mix-id {:auth {:pub-B pub :srv-id id} :name callee-name}])   ;; connect to callee's mix & then to callee.
+                                                (>! rtp-ctrl [(dir/find-by-id mix-id) {:auth {:pub-B pub :srv-id id}}])   ;; connect to callee's mix & then to callee.
                                                 (<! rtp-notify)                                                                                          ;; wait until ready.
                                                 (log/info "SIP: RT circuit ready for outgoing data on:" call-id)
                                                 (update-data call-id [:rt] {:in (:circ-id reply) :out rtp-circ}) ;; FIXME if needed add chans.
@@ -297,6 +299,8 @@
                           rtp-notify     (:notify rtp-data)
                           rtp-incoming   (chan)
                           sdp-dest       (chan)
+                          mix-dest       (dir/find-by-id mix-id)
+                          mix-dest       (merge mix-dest {:dest mix-dest})
                           [_ local-port] (<! (path/attach-local-udp-to-simplex-circs config                  ;; our local udp socket for exchanging RTP with local sip client. rtp-incoming is caller's RTP which we'll route to the @/port which will be given in 200/OK after sending invite to it.
                                                                                      rtp-incoming
                                                                                      (go rtp-circ)           ;; The invite we'll send will have our local sockets @/port as media, so sip client sends us RTP, we'll route it through rtp-circ.
@@ -313,8 +317,9 @@
                           (recur (<! sip-ctrl)) ;; FIXME should only loop if status < 200, and destroy session if >.
                           (go (>! sdp-dest (get-sdp-dest user-answer)))))
                       (println :out-of-loop)
-                      (>! rtp-ctrl [mix-id {:auth {:pub-B pub :srv-id id} :name caller}])   ;; connect to caller's mix & then to caller.
-                      (println 1)
+                      (>! rtp-ctrl [(dir/find-by-id mix-id) {:auth {:pub-B pub :srv-id id}}])   ;; connect to caller's mix & then to caller.
+                      (println 1 (keys (dir/find-by-id mix-id)))
+                      (println 1 (dir/find-by-id mix-id))
                       (<! rtp-notify)                                                                                     ;; wait for answer.
                       (println 2)
                       (log/info "SIP: RT circuit ready for call" call-id)

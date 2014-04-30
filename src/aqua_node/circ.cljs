@@ -315,6 +315,7 @@
 
 (defn recv-id [config socket circ-id payload]
   "Recv client's public ID & attach to socket"
+  (println :recvd {:srv-id (b/hx payload)})
   (c/update-data socket [:auth] {:srv-id payload}))
 
 
@@ -478,7 +479,7 @@
                              ctrl       (chan)
                              sock       (c/find-by-id (:id dest))
                              fhop       (:forward-hop circ)]
-                         (assert sock (str "Could not find destination" (:id dest)))
+                         (assert sock (str "Could not find destination " (b/hx (or (:id dest) "0"))))
                          (when (and (is? :rdv circ) fhop)
                            (send-destroy config fhop circ-id (b/new "because reasons")))
                          (log/debug "Relay extend to:" (-> dest :id b/hx) "at:" (select-keys (c/get-data sock) [:host :port :role]) "on circ:" circ-id)
