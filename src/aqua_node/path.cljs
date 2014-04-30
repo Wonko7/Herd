@@ -50,7 +50,7 @@
     (go (loop [cmd (<! ctrl), [n & nodes] nodes]
           (when n
             (circ/relay-extend config id n)
-            (log/debug "Single Circuit:" id "extended, remaining =" (count nodes))
+            (log/debug "Single Circuit:" id "extending to;" (-> n :auth :srv-id b/hx) "-- remaining =" (count nodes))
             (recur (<! ctrl) nodes)))
         ;; the circuit is built, waiting on dest-ctrl for a destination before sending relay begin,
         ;; or a :rdv command to make the last node a rdv.
@@ -75,7 +75,7 @@
                            ;; if rdv had a next hop, remove it from the encryption node list.
                            (when (> (count enc-path) (count all-nodes))
                              (circ/update-data id [:path] (drop-last enc-path)))
-                           (log/debug "Extending RDV" id "to" (select-keys next-hop [:host :port]))
+                           (log/debug "Extending RDV" id "to" (-> id :role) (-> id :auth :srv-id b/hx))
                            ;; send extend, then wait for extended before notifying upstream.
                            (circ/relay-extend config id next-hop)
                            (<! ctrl) ;; FIXME add timeout in case things go wrong.
@@ -84,7 +84,7 @@
                            (log/info "RDV" id "is ready for relay")
                            (go (>! notify :extended))
                            (recur (<! dest)))))
-            :else  (log/error "Single: Did not understand command" cmd "on circ" id))))
+            (log/error "Single: Did not understand command" cmd "on circ" id))))
     id))
 
 ;; create a realtime path for RTP. This version connects to the callee's ap.

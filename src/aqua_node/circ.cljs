@@ -281,11 +281,10 @@
         ;;                 :ip6 (b/cat (b/new (cljs/clj->js [1 4 16])) (conv/ip6-to-bin (:host nh-dest)) (conv/port-to-bin (:port nh-dest)))
         ;;                 (assert nil "unsupported next hop address type"))
         nspec         (b/cat (-> [1 6 (-> config :ntor-values :node-id-len)] cljs/clj->js b/new) (:srv-id nh-auth))]
-    (println :extending-to)
-    (b/print-x (:srv-id nh-auth) :ext-to)
     (add-path-auth circ-id data auth) ;; FIXME: PATH: mk pluggable
     (relay config socket circ-id :extend2 :f-enc (b/cat nspec create))))
 
+;; FIXME merge with relay-extend
 (defn relay-extend-sip-user [config circ-id {nh-auth :auth name :name}]
   "Send a relay extend message to given next hop."
   (let [data          (@circuits circ-id)
@@ -309,16 +308,12 @@
 
 (defn send-id [config socket]
   "Send id to next hop."
-  (println :sending-id )
-  (b/print-x (-> config :auth :aqua-id :id))
   (cell-send config socket 0 :id (-> config :auth :aqua-id :id)))
 
 ;; process recv ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
 (defn recv-id [config socket circ-id payload]
   "Recv client's public ID & attach to socket"
-  (println :recv-id )
-  (b/print-x payload)
   (c/update-data socket [:auth] {:srv-id payload}))
 
 
@@ -482,18 +477,13 @@
                              ctrl       (chan)
                              sock       (c/find-by-id (:id dest))
                              fhop       (:forward-hop circ)]
-                         (when-not sock
-                           (println "Could not find aqua node id")
-                           ;((:aqua-connect config) id ctrl)
-                           (b/print-x (:id dest)))
-                         (go (let [sock (or sock (<! ctrl))]
-                               (assert sock (str "could not find destination" dest))
-                               (when (and (is? :rdv circ) fhop)
-                                 (send-destroy config fhop circ-id (b/new "because reasons")))
-                               (println "send extend to:" circ-id (select-keys dest [:host :port :role]))
-                               (update-data circ-id [:forward-hop] sock)
-                               (update-data circ-id [:roles] (add-role :mix))
-                               (cell-send config sock circ-id :create2 (:create dest))))))
+                         (assert sock (str "Could not find destination" (:id dest)))
+                         (go (when (and (is? :rdv circ) fhop)
+                               (send-destroy config fhop circ-id (b/new "because reasons")))
+                             (log/debug "Relay extend to:" (-> dest :id b/hx) "at:" (select-keys (c/get-data sock) [:host :port :role]) "on circ:" circ-id)
+                             (update-data circ-id [:forward-hop] sock)
+                             (update-data circ-id [:roles] (add-role :mix))
+                             (cell-send config sock circ-id :create2 (:create dest)))))
 
         p-extend-sip (fn []
                        (let [[name create] (b/cut-at-null-byte r-payload)

@@ -26,7 +26,6 @@
   (let [{t :tokens tot :total [f & fs] :fs} (:rate (c/get-data c))]
     (if (and f (.-writable c))
       (do (f)                                         ;; f is called and sends a packet.
-          (println :RATE)
           (c/update-data c [:rate :fs] fs))           ;; update queue
       ;; Disable chaffing when debugging to help with wiresharking.
       (when (and (.-writable c) (not (:debug config)))

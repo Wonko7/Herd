@@ -90,15 +90,8 @@
     (log/debug "Aqua: Connecting to" (select-keys dest [:host :port :role]))
     (c/add-listeners soc {:data #(circ/process config soc %)})
     (c/update-data soc [:auth] (:auth dest))
-    (println :reg-id)
-    (if (-> dest :auth :srv-id)
-      (b/print-x (-> dest :auth :srv-id))
-      (println :wtf (keys dest) (keys (:auth dest))))
     (go (<! con)
-        (println (count (keep identity (map #(-> second :rate) (seq (c/get-all))))))
-        (println :helloplsexplain)
         (rate/init config soc)
-        ;(circ/send-id config soc)
         (rate/queue soc #(circ/send-id config soc))
         (when ctrl (>! ctrl soc)))))
 
@@ -118,7 +111,8 @@
             geo         (go (<! (geo/parse config)))          ;; match our ip against database, unless already specified in config:
             net-info    (go (when-not (is? :dir)              ;; request net-info if we're not a dir. FIXME -> get-net-info will be called periodically.
                               (<! (get-net-info config ds))))]
-        (log/info "Bootstrapping as" roles "in")
+        (log/info "Aqua node ID:" (-> config :auth :aqua-id :id b/hx))
+        (log/info "Bootstrapping as" roles)
         (when (is? :app-proxy)
           (let [geo      (<! geo)
                 net-info (<! net-info)
