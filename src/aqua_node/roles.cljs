@@ -128,10 +128,7 @@
         (when (or (is? :mix) (is? :rdv))
           (let [sip-chan (sip-dir/create-mix-dir config)
                 cfg      (merge config {:sip-chan sip-chan :aqua sip-dir :sip-mix-dir sip-dir/mix-dir})
-                ;aq-conn  (partial aqua-connect-from-id cfg net-info)
-                ;cfg      (merge cfg {:aqua-connect aq-conn})
-                ctrl     (chan)
-                ]
+                ctrl     (chan)]
             (conn/new :aqua :server aq cfg {:connect aqua-server-recv})
             (register-to-dir config (<! geo) nil ds)
             ;; for each mix in node info, extract ip & port and connect.
@@ -145,6 +142,5 @@
         (when (is? :sip-dir)
           (let [sip-chan (sip-dir/create-dir config)
                 cfg      (merge config {:sip-chan sip-chan :aqua sip-dir})]
-            ;(conn/new :aqua :server sip-dir cfg {:connect aqua-server-recv})
             (conn/new :aqua :server sip-dir cfg {:connect aqua-server-recv})
             (register-to-dir cfg (<! geo) nil ds))))))
