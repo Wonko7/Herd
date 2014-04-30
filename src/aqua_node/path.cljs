@@ -92,7 +92,7 @@
   "Creates a real time path. Assumes a connection to the first node exists."
   ;; Find the first mix's (will be our assigned mix/SP) socket & send a create.
   (let [id                 (circ/create config socket (:auth mix))
-        [ctrl dest notify] (repeatedly chan) ]
+        [ctrl dest notify] (repeatedly chan)]
     (circ/update-data id [:roles] [:origin])
     (circ/update-data id [:ctrl] ctrl)
     (circ/update-data id [:notify] notify)
@@ -102,10 +102,10 @@
         (log/debug "RT Circuit" id "waiting for destination")
         ;; wait until we are given a destination: the peer's mix, and the peer's name.
         (let [[mix2 ap]    (<! dest)]
-          (circ/relay-extend config id (merge mix2 {:dest mix2}))
+          (circ/relay-extend config id {:auth {:srv-id mix2}}) ;; FIXME test.
           (<! ctrl)
           ;; extend to the callee's AP.
-          (circ/relay-extend-sip-user config id ap)
+          (circ/relay-extend config id ap)
           (<! ctrl)
           ;; we are done, update state info & notify we are ready.
           ;; (circ/relay-begin config id rt-dest) ;; ask exit (callee's ap) to begin relaying data. --> FIXME done by relay sip? don't know yet.
@@ -251,7 +251,8 @@
     (reset! chosen-mix mix)
     ;; init channel pools:
     (reset! pool {:one-hop (chan N) :rt (chan N) :single (chan N)})
-   ;; wait until connected to the chosen mix before sending requests
+    ;; wait until connected to the chosen mix before sending requests
+    (c/update-data soc [:auth] (:auth mix))
     (go (<! connected)
         (rate/init config soc)
         (c/add-listeners soc {:data #(circ/process config soc %)})

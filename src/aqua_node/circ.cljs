@@ -281,6 +281,7 @@
         ;;                 :ip6 (b/cat (b/new (cljs/clj->js [1 4 16])) (conv/ip6-to-bin (:host nh-dest)) (conv/port-to-bin (:port nh-dest)))
         ;;                 (assert nil "unsupported next hop address type"))
         nspec         (b/cat (-> [1 6 (-> config :ntor-values :node-id-len)] cljs/clj->js b/new) (:srv-id nh-auth))]
+    (log/debug "Sending extend to:" (-> nh-auth :srv-id b/hx) "at:" (select-keys (c/get-data socket) [:host :port :role]) "id:" (b/hx (or (-> socket c/get-data :auth :srv-id) "0")) "on circ:" circ-id)
     (add-path-auth circ-id data auth) ;; FIXME: PATH: mk pluggable
     (relay config socket circ-id :extend2 :f-enc (b/cat nspec create))))
 
@@ -478,12 +479,12 @@
                              sock       (c/find-by-id (:id dest))
                              fhop       (:forward-hop circ)]
                          (assert sock (str "Could not find destination" (:id dest)))
-                         (go (when (and (is? :rdv circ) fhop)
-                               (send-destroy config fhop circ-id (b/new "because reasons")))
-                             (log/debug "Relay extend to:" (-> dest :id b/hx) "at:" (select-keys (c/get-data sock) [:host :port :role]) "on circ:" circ-id)
-                             (update-data circ-id [:forward-hop] sock)
-                             (update-data circ-id [:roles] (add-role :mix))
-                             (cell-send config sock circ-id :create2 (:create dest)))))
+                         (when (and (is? :rdv circ) fhop)
+                           (send-destroy config fhop circ-id (b/new "because reasons")))
+                         (log/debug "Relay extend to:" (-> dest :id b/hx) "at:" (select-keys (c/get-data sock) [:host :port :role]) "on circ:" circ-id)
+                         (update-data circ-id [:forward-hop] sock)
+                         (update-data circ-id [:roles] (add-role :mix))
+                         (cell-send config sock circ-id :create2 (:create dest))))
 
         p-extend-sip (fn []
                        (let [[name create] (b/cut-at-null-byte r-payload)

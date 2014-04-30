@@ -27,8 +27,7 @@
     (if (and f (.-writable c))
       (do (f)                                         ;; f is called and sends a packet.
           (c/update-data c [:rate :fs] fs))           ;; update queue
-      ;; Disable chaffing when debugging to help with wiresharking.
-      (when (and (.-writable c) (not (:debug config)))
+      (when (and (.-writable c))
         (js/setImmediate #(circ/padding config c))))  ;; send a padding packet instead.
     (c/update-data c [:rate :tokens] tot)))           ;; -> also useless.
 

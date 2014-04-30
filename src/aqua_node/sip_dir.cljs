@@ -23,19 +23,18 @@
   "Remove name from dir"
   (swap! dir dissoc name))
 
-(defn register [config name out-rdv-id rdv-id rdv-data]
+(defn register [config name out-rdv-id rdv-cid rdv-id]
   "Send a register to a sip dir. Format of message:
   - cmd: 0 = register
   - rdv's circuit id
-  - rdv ip @ & port
+  - rdv ntor ID.
   - sip name.
   Used by application proxies to register the SIP username of a client & its RDV to a SIP DIR."
   (let [cmd         (-> :register s/from-cmd b/new1)
-        rdv-b       (b/new4 rdv-id)
-        name-b      (b/new name)
-        rdv-dest    (b/new (conv/dest-to-tor-str {:host (:host rdv-data) :port (:port rdv-data) :type :ip4 :proto :udp}))]
-    (log/debug "SIP: registering" name "on RDV" rdv-id)
-    (circ/relay-sip config out-rdv-id :f-enc (b/cat cmd rdv-b rdv-dest b/zero name-b))))
+        rdv-b       (b/new4 rdv-cid)
+        name-b      (b/new name)]
+    (log/debug "SIP: registering" name "on RDV circ:" rdv-cid "RDV ID:" rdv-id)
+    (circ/relay-sip config out-rdv-id :f-enc (b/cat cmd rdv-b rdv-id name-b))))
 
 (defn query [config name rdv-id call-id]
   "Query for the RDV that is used for the given name.
@@ -47,41 +46,40 @@
 
 (defn mk-query-reply [name dir call-id]
   (when-let [entry   (@dir name)]
-    (let [cmd      (-> :query-reply s/from-cmd b/new1)
-          rdv-dest (b/new (conv/dest-to-tor-str (merge {:type :ip4 :proto :udp} (:rdv entry))))
-          rdv-id   (b/new4 (:rdv-id entry))]
-      (b/cat cmd (b/new call-id) b/zero rdv-id rdv-dest b/zero))))
+    (let [cmd      (-> :query-reply s/from-cmd b/new1)]
+      (b/cat cmd (b/new call-id) b/zero (b/new4 (:rdv-cid entry)) (:rdv-id entry)))))
 
 (defn create-dir [config]
   "Wait for sip requests on the sip channel and process them.
   Returns the SIP channel it is listening on.
   SIP directories start this service."
-  (let [sip-chan   (chan)
+  (let [sip-chan    (chan)
+        node-id-len (-> config :ntor-values :node-id-len)
         ;; process register:
-        p-register (fn [{rq :sip-rq}]
-                     (let [rdv-id        (.readUInt32BE rq 1)
-                           [rdv-dest rq] (conv/parse-addr (.slice rq 5))
-                           name          (.toString rq)
-                           timeout-id    (js/setTimeout #(do (log/debug "SIP DIR: timeout for" name)
-                                                             (rm name))
-                                                        (:sip-register-interval config))]
-                       (log/debug "SIP DIR, registering" name "on RDV:" rdv-id "RDV dest:" rdv-dest)
-                       ;; if the user is renewing his registration, remove rm timeout:
-                       (when (@dir name)
-                         (js/clearTimeout (:timeout (@dir name))))
-                       ;; update the global directory:
-                       (swap! dir merge {name {:rdv rdv-dest :rdv-id rdv-id :timeout timeout-id}})))
+        p-register  (fn [{rq :sip-rq}]
+                      (let [rdv-cid       (.readUInt32BE rq 1)
+                            rdv-id        (.slice rq 5 (+ node-id-len 5))
+                            name          (-> rq (.slice (+ node-id-len 5)) .toString)
+                            timeout-id    (js/setTimeout #(do (log/debug "SIP DIR: timeout for" name)
+                                                              (rm name))
+                                                         (:sip-register-interval config))]
+                        (log/debug "SIP DIR, registering" name "on RDV circ-id:" rdv-cid "RDV ID:" rdv-id)
+                        ;; if the user is renewing his registration, remove rm timeout:
+                        (when (@dir name)
+                          (js/clearTimeout (:timeout (@dir name))))
+                        ;; update the global directory:
+                        (swap! dir merge {name {:rdv-cid rdv-cid :rdv-id rdv-id :timeout timeout-id}})))
         ;; process query:
-        p-query    (fn [{circ :circ-id rq :sip-rq}]
-                     (let [[call-id name] (s/get-call-id rq)
-                           name           (.toString name)
-                           reply          (mk-query-reply name dir call-id)]
-                       (if reply
-                         (do (log/debug "SIP DIR, query for" name)
-                             (circ/relay-sip config circ :b-enc reply))
-                         (do (log/debug "SIP DIR, could not find" name)
-                             (circ/relay-sip config circ :b-enc
-                                             (b/cat (-> :error s/from-cmd b/new1) (b/new call-id) b/zero (b/new "404")))))))]
+        p-query     (fn [{circ :circ-id rq :sip-rq}]
+                      (let [[call-id name] (s/get-call-id rq)
+                            name           (.toString name)
+                            reply          (mk-query-reply name dir call-id)]
+                        (if reply
+                          (do (log/debug "SIP DIR, query for" name)
+                              (circ/relay-sip config circ :b-enc reply))
+                          (do (log/debug "SIP DIR, could not find" name)
+                              (circ/relay-sip config circ :b-enc
+                                              (b/cat (-> :error s/from-cmd b/new1) (b/new call-id) b/zero (b/new "404")))))))]
     ;; dispatch requests to the corresponding functions:
     (go-loop [request (<! sip-chan)]
       (condp = (-> request :sip-rq (.readUInt8 0) s/to-cmd)
@@ -123,9 +121,10 @@
                            (swap! mix-dir merge {name {:dest client-dest :state :inactive :auth {:pub-B pub :srv-id id}}})))
         ;; process extend:
         p-extend       (fn [{circ :circ-id rq :sip-rq}]
+                         (log/error "This shouldn't be called any more. what are you doing?")
                          (let [[call-id name] (s/get-call-id rq)
                                name           (.toString name)
-                               reply (mk-query-reply name mix-dir call-id)]
+                               reply          (mk-query-reply name mix-dir call-id)]
                            (if reply
                              (do (log/debug "SIP DIR, query for" name)
                                  (circ/relay-sip config circ :b-enc reply))
