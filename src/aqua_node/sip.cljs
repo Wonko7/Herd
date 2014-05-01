@@ -342,16 +342,15 @@
                                                                                        :params {}}])
                                                                 (mk-sdp {:host (:local-ip config) :port local-port} {:port loc-rtcp-port} :ack sdp)))
                                                 ;; debug -->
-                                                (js/setTimeout #(.send sip (s/to-js (merge (assoc-in (assoc-in (s/to-clj (.makeResponse sip rq 200 "OK"))                          ;; Send our client a 200 OK, with out-circ's listening udp as "callee's" dest (what caller thinks is the callee actually is aqua).
-                                                                                                               [:headers :content-type]
-                                                                                                               "application/sdp") ;; inelegant, testing.
-                                                                                                     [:headers :contact]
-                                                                                                     [{:name nil
-                                                                                                       :uri (str "sip:" callee-name "@" (:local-ip config) ":5060;transport=UDP;ob")
-                                                                                                       :params {}}])
-                                                                                           (mk-sdp {:host (:local-ip config) :port local-port} {:port loc-rtcp-port} :ack sdp)))
-                                                                       process)
-                                                               100)
+                                                (.send sip (s/to-js (merge (assoc-in (assoc-in (s/to-clj (.makeResponse sip rq 200 "OK"))                          ;; Send our client a 200 OK, with out-circ's listening udp as "callee's" dest (what caller thinks is the callee actually is aqua).
+                                                                                               [:headers :content-type]
+                                                                                               "application/sdp") ;; inelegant, testing.
+                                                                                     [:headers :contact]
+                                                                                     [{:name nil
+                                                                                       :uri (str "sip:" callee-name "@" (:local-ip config) ":5060;transport=UDP;ob")
+                                                                                       :params {}}])
+                                                                           (mk-sdp {:host (:local-ip config) :port local-port} {:port loc-rtcp-port} :ack sdp)))
+                                                       process)
                                                 (loop [{nrq :nrq rq :rq}  (<! sip-ctrl)]                                                                 ;; loop on sip messages with this call-id until we receive a BYE.
                                                   (cond (= "ACK" (:method nrq)) (println "request ack, ok, cool")
                                                         (= "BYE" (:method nrq)) (println "bye bye.") ;; and tear down. and 200 OK. and don't recur.
@@ -439,14 +438,26 @@
                                                                     (-> config :auth :aqua-id :pub)))
                       (circ/relay-sip config rtcp-circ :f-enc (b/cat (-> :ack-rtcp s/from-cmd b/new1)               ;; Send ack to caller, with our mix's coordinates so he can create an rt-path to us to send rtp.
                                                                      (b/new call-id)
-                                                                     b/zero))
-                      (let [reply1             (<! sip-ctrl)
-                            reply2             (<! sip-ctrl)
+                                b/zero))
+                      (println 11)
+                      (let [reply1             (loop (r (<! sip-ctrl))
+                                                 (println 22)
+                                                 (if (:circ-id r)
+                                                   r
+                                                   (recur (<! sip-ctrl))))
+                        _ (println 12)
+                            reply2             (loop (r (<! sip-ctrl))
+                                                 (println 23)
+                                                 (if (:circ-id r)
+                                                   r
+                                                   (recur (<! sip-ctrl))))
                             [rtp-id rtcp-id]   (map :circ-id (if (= (:cmd reply1) :ackack-rtcp) [reply2 reply1] [reply1 reply2]))]                                     ;; Wait for caller's rt path's first message.
+                        (println 11 rtp-id rtcp-id )
                         (>! rtp-incoming  rtp-id)                                                              ;; inform attach-local-udp-to-simplex-circs that we have incoming-rtp to attach to socket.
                         (>! rtcp-incoming rtcp-id)                                                             ;; inform attach-local-udp-to-simplex-circs that we have incoming-rtp to attach to socket.
                         (update-data call-id [:rt :in] rtp-id)
                         (update-data call-id [:rt :in] rtcp-id))
+                        (println 10)
 
                       (let [nrq   (s/to-clj @fixme-hdrs)
                             h     (:headers nrq)
