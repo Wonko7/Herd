@@ -58,13 +58,13 @@
     {:uri     (str furi trans)
      :method  method
      :headers {:to               {:uri furi}
-               :from             {:uri turi :name caller-name}
+               :from             {:uri turi, :name caller-name}
                :call-id          call-id
                ;:via             ; thankfully, sip.js takes care of this one.
                :contact [{:name nil
                           :uri (str "sip:" caller-name "@" ip ":5060;transport=UDP;ob")
                           :params {}}]
-               :cseq             {:seq (rand-int 888888), :method method}}
+               :cseq             {:seq 1, :method method}}
      :content ""}))
 
 
@@ -186,10 +186,10 @@
               mix-id          (<! (path/get-path :one-hop))
               ;; SDP parsing:
               get-sdp-dest    (fn [rq]
-                                {:port (->> (:content rq) (re-seq #"(?m)m\=(\w+)\s+(\d+)") first last)
+                                {:port (->> (:content rq) (re-seq #"(?m)m\=(audio)\s+(\d+)") first last)
                                  :host (second (re-find #"(?m)c\=IN IP4 ((\d+\.){3}\d+)" (:content rq)))})
               get-sdp-rtcp    (fn [rq]
-                                {:port (->> (:content rq) (re-seq #"(?m)a\=(rtcp):\s*(\d+)") first last)
+                                {:port (->> (:content rq) (re-seq #"(?m)m\=(video)\s*(\d+)") first last)
                                  :host (second (re-find #"(?m)c\=IN IP4 ((\d+\.){3}\d+)" (:content rq)))})
               ;; Process SIP logic:
               process     (fn process [rq]
@@ -410,7 +410,8 @@
                           [_ loc-rtcp-port] (<! (path/attach-local-udp-to-simplex-circs config                  ;; our local udp socket for exchanging RTP with local sip client. rtp-incoming is caller's RTP which we'll route to the @/port which will be given in 200/OK after sending invite to it.
                                                                                         rtcp-incoming
                                                                                         (go rtcp-circ)          ;; The invite we'll send will have our local sockets @/port as media, so sip client sends us RTP, we'll route it through rtp-circ.
-                                                                                        rtcp-dest))]
+                                                                                        rtcp-dest))
+                          fixme-hdrs (atom "")]
                       (log/info "SIP: invited by" caller "- Call-ID:" call-id "Rdv" caller-rdv-id)
                       (add-call call-id {:sip-ctrl sip-ctrl, :sip-call-id call-id, :state :ringing, :peer-rdv caller-rdv-id :rt {:out rtp-circ}}) ;; FIXME add rtp rt, add rtcp
                       (.send sip (s/to-js (merge (mk-headers call-id caller @headers @uri-to local-dest)     ;; Send our crafted invite with local udp port as "caller's" media session
@@ -421,7 +422,9 @@
                           (recur (<! sip-ctrl)) ;; FIXME should only loop if status < 200, and destroy session if >.
                           (do (println :sdp (get-sdp-dest user-answer) :rtcp (get-sdp-rtcp user-answer))
                               (go (>! sdp-dest  (get-sdp-dest user-answer))) ;; FIXME one go should do, test
-                              (go (>! rtcp-dest (get-sdp-rtcp user-answer))))))
+                              (go (>! rtcp-dest (get-sdp-rtcp user-answer)))
+                              (reset! fixme-hdrs rq)
+                              )))
                       (>! rtp-ctrl [(dir/find-by-id mix-id) {:auth {:pub-B pub :srv-id id}}])   ;; connect to caller's mix & then to caller.
                       (<! rtp-notify)                                                                                     ;; wait for answer.
                       (>! rtcp-ctrl [(dir/find-by-id mix-id) {:auth {:pub-B pub :srv-id id}}])   ;; connect to caller's mix & then to caller.
@@ -443,8 +446,22 @@
                         (>! rtcp-incoming rtcp-id)                                                             ;; inform attach-local-udp-to-simplex-circs that we have incoming-rtp to attach to socket.
                         (update-data call-id [:rt :in] rtp-id)
                         (update-data call-id [:rt :in] rtcp-id))
+
+                      (let [nrq   (s/to-clj @fixme-hdrs)
+                            h     (:headers nrq)
+                            ack {:method "ACK"
+                                 :uri   (-> nrq :headers :contact first :uri)
+                                 :headers {:to (-> h :to)
+                                           :from (-> h :from)
+                                           :call-id call-id
+                                           :cseq {:method "ACK"
+                                                  :seq (-> h :cseq :seq)}
+                                           :via []
+                                           }}]
+                        (.send sip (s/to-js ack) process)
+                        )
                       (println :feeeeeeeeeeeeeeeeee (mk-ack call-id caller @my-name (:local-ip config)))
-                      (.send sip (s/to-js (mk-ack call-id caller @my-name (:local-ip config))) process)
+                      ;(.send sip (s/to-js (mk-ack call-id caller @my-name (:local-ip config))) process)
                       (log/info "SIP: got ackack, ready for relay on" call-id)
                       ;; loop waiting for bye.
                       ))
