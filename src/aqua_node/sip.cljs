@@ -102,7 +102,7 @@
                             (str "c=IN IP4 " ip)
                             "t=0 0"
                             "a=X-nat:0"
-                            (str "m=audio " port " RTP/AVP 9")
+                            (str "m=audio " port " RTP/AVP 96 97 98 9 100 102 0 8 103 3 104 101")
                             ;(str "a=rtcp:" rtcp-port " IN IP4 " ip) ;; FIXME nothing open for that yet.
                             "a=rtpmap:96 opus/48000/2"
                             "a=fmtp:96 usedtx=1"
@@ -342,15 +342,16 @@
                                                                                        :params {}}])
                                                                 (mk-sdp {:host (:local-ip config) :port local-port} {:port loc-rtcp-port} :ack sdp)))
                                                 ;; debug -->
-                                                (.send sip (s/to-js (merge (assoc-in (assoc-in (s/to-clj (.makeResponse sip rq 200 "OK"))                          ;; Send our client a 200 OK, with out-circ's listening udp as "callee's" dest (what caller thinks is the callee actually is aqua).
-                                                                                               [:headers :content-type]
-                                                                                               "application/sdp") ;; inelegant, testing.
-                                                                                     [:headers :contact]
-                                                                                     [{:name nil
-                                                                                       :uri (str "sip:" callee-name "@" (:local-ip config) ":5060;transport=UDP;ob")
-                                                                                       :params {}}])
-                                                                           (mk-sdp {:host (:local-ip config) :port local-port} {:port loc-rtcp-port} :ack sdp)))
-                                                       process)
+                                                (js/setTimeout #(.send sip (s/to-js (merge (assoc-in (assoc-in (s/to-clj (.makeResponse sip rq 200 "OK"))                          ;; Send our client a 200 OK, with out-circ's listening udp as "callee's" dest (what caller thinks is the callee actually is aqua).
+                                                                                                               [:headers :content-type]
+                                                                                                               "application/sdp") ;; inelegant, testing.
+                                                                                                     [:headers :contact]
+                                                                                                     [{:name nil
+                                                                                                       :uri (str "sip:" callee-name "@" (:local-ip config) ":5060;transport=UDP;ob")
+                                                                                                       :params {}}])
+                                                                                           (mk-sdp {:host (:local-ip config) :port local-port} {:port loc-rtcp-port} :ack sdp)))
+                                                                       process)
+                                                               100)
                                                 (loop [{nrq :nrq rq :rq}  (<! sip-ctrl)]                                                                 ;; loop on sip messages with this call-id until we receive a BYE.
                                                   (cond (= "ACK" (:method nrq)) (println "request ack, ok, cool")
                                                         (= "BYE" (:method nrq)) (println "bye bye.") ;; and tear down. and 200 OK. and don't recur.
@@ -449,7 +450,7 @@
 
                       (let [nrq   (s/to-clj @fixme-hdrs)
                             h     (:headers nrq)
-                            ack {:method "ACK"
+                            ack {:method "ACK" ;; FIXME  -> this will be mk-ack
                                  :uri   (-> nrq :headers :contact first :uri)
                                  :headers {:to (-> h :to)
                                            :from (-> h :from)
@@ -458,9 +459,8 @@
                                                   :seq (-> h :cseq :seq)}
                                            :via []
                                            }}]
-                        (.send sip (s/to-js ack) process)
-                        )
-                      (println :feeeeeeeeeeeeeeeeee (mk-ack call-id caller @my-name (:local-ip config)))
+                        (.send sip (s/to-js ack) process))
+                      ;;(println :feeeeeeeeeeeeeeeeee (mk-ack call-id caller @my-name (:local-ip config)))
                       ;(.send sip (s/to-js (mk-ack call-id caller @my-name (:local-ip config))) process)
                       (log/info "SIP: got ackack, ready for relay on" call-id)
                       ;; loop waiting for bye.
