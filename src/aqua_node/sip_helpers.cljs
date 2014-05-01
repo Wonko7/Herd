@@ -24,7 +24,9 @@
                :invite          5
                :ack             6
                :ackack          7
-               :error           9})
+               :ack-rtcp        8
+               :ackack-rtcp     9
+               :error           10})
 
 (def to-cmd
   (apply merge (for [k (keys from-cmd)]

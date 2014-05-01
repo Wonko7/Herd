@@ -412,28 +412,33 @@
                              dest                 (if (= socket fhop) bhop fhop)
                              dest-data            (c/get-data dest)]
                          (assert (some (partial = socket) hops) "relay data came from neither forward or backward hop.")
-                         (assert dest "no destination, illegal state")
-                         (condp = (:type dest-data)
-                           :udp-exit  (if (:send-udp circ) ;; FIXME this is tmp, for rtp only, single path would crash things
-                                        (let [real-sz (.readUInt16BE r-payload 0)
-                                              msg     (.slice r-payload 2 (+ real-sz 2))]
-                                          ((:send-udp circ) msg))
-                                        (let [[r1 r2]    (b/mk-readers r-payload)
-                                              type       (r1 3)
-                                              [h p data] (condp = type
-                                                           1 [(conv/ip4-to-str (.slice r-payload 4 8)) (r2 8) (.slice r-payload 10)]
-                                                           4 [(conv/ip6-to-str (.slice r-payload 4 20)) (r2 20) (.slice r-payload 22)]
-                                                           3 (let [len  (.-length r-payload)
-                                                                   ml?  (>= len 5)
-                                                                   alen (when ml? (r1 4))
-                                                                   aend (when ml? (+ alen 5))]
-                                                               [(.toString r-payload "utf8" 5 aend) (r2 aend) (.slice r-payload (inc aend))])
-                                                           (assert false "bad socks5 header"))]
-                                          (.send dest data 0 (.-length data) p h)))
-                           :udp-ap    (.send dest r-payload 0 (.-length r-payload) (-> dest-data :from :port) (-> dest-data :from :host))
-                           :rtp-exit  (.send dest r-payload 0 (.-length r-payload) (-> dest-data :rtp-dest :port) (-> dest-data :rtp-dest :host)) ;; FIXME unused for now, going through udp-exit for now
-                           :rtp-ap    (.send dest r-payload 0 (.-length r-payload) (-> circ :local-dest :port) (-> circ :local-dest :host)) ;; FIXME quick and diiiirty
-                           (.write dest r-payload))))
+                         (if-not dest
+                           (do (println (nil? bhop) (nil? fhop) (-> bhop c/get-data :rtp-dest) (-> fhop c/get-data :rtp-dest))
+                             (log/error "No destination, dropping on circuit" circ-id))
+                           (condp = (:type dest-data)
+                             :udp-exit  (if (:send-udp circ) ;; FIXME this is tmp, for rtp only, single path would crash things
+                                          (let [real-sz (.readUInt16BE r-payload 0)
+                                                msg     (.slice r-payload 2 (+ real-sz 2))]
+                                            ((:send-udp circ) msg))
+                                          (let [[r1 r2]    (b/mk-readers r-payload)
+                                                type       (r1 3)
+                                                [h p data] (condp = type
+                                                             1 [(conv/ip4-to-str (.slice r-payload 4 8)) (r2 8) (.slice r-payload 10)]
+                                                             4 [(conv/ip6-to-str (.slice r-payload 4 20)) (r2 20) (.slice r-payload 22)]
+                                                             3 (let [len  (.-length r-payload)
+                                                                     ml?  (>= len 5)
+                                                                     alen (when ml? (r1 4))
+                                                                     aend (when ml? (+ alen 5))]
+                                                                 [(.toString r-payload "utf8" 5 aend) (r2 aend) (.slice r-payload (inc aend))])
+                                                             (assert false "bad socks5 header"))]
+                                            (.send dest data 0 (.-length data) p h)))
+                             :udp-ap    (.send dest r-payload 0 (.-length r-payload) (-> dest-data :from :port) (-> dest-data :from :host))
+                             :rtp-exit  (let [real-len (.readUInt16BE r-payload 0)
+                                              msg      (.slice r-payload 2 (+ real-len 2))]
+                                          (println :rtp-exit (-> dest-data :rtp-dest :host) (-> dest-data :rtp-dest :port) real-len (.-length msg) (.-length r-payload))
+                                          (.send dest msg 0 (.-length msg) (-> circ :rtp-dest :port) (-> circ :rtp-dest :host)))
+                             :rtp-ap    (.send dest r-payload 0 (.-length r-payload) (-> circ :local-dest :port) (-> circ :local-dest :host)) ;; FIXME quick and diiiirty
+                             (.write dest r-payload)))))
 
         ;; we are being asked to begin relaying data -> we are the exit mix.
         p-begin      (fn []
@@ -487,15 +492,6 @@
                          (update-data circ-id [:roles] (add-role :mix))
                          (cell-send config sock circ-id :create2 (:create dest))))
 
-        p-extend-sip (fn []
-                       (let [[name create] (b/cut-at-null-byte r-payload)
-                             dest          (@(:sip-mix-dir config) (.toString name))
-                             sock          (c/find-by-dest (:dest dest))]
-                         (assert sock "could not find destination")
-                         (update-data circ-id [:forward-hop] sock)
-                         (update-data circ-id [:roles] (add-role :mix))
-                         (cell-send config sock circ-id :create2 create)))
-
         ;; our relay extend has been acknowledged. Process as a created2 message.
         p-extended   #(recv-created2 config socket circ-id r-payload)
 
@@ -528,7 +524,7 @@
       15 (p-extended)
       ;; aqua specific:
       16 (p-sip)
-      17 (p-extend-sip)
+      ;; 17 (p-extend-sip)
       18 (p-rdv)
       (log/error "unsupported relay command"))))
 
