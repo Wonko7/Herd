@@ -49,6 +49,25 @@
 
 ;; SIP sdp creation ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
+(defn mk-ack [call-id caller-name name ip]
+  (let [method "ACK"
+        furi   (str "sip:" name "@" ip)
+        turi   (str "sip:" caller-name "@" ip)
+        trans  ":5060;transport=UDP;ob"
+        ]
+    {:uri     (str furi trans)
+     :method  method
+     :headers {:to               {:uri furi}
+               :from             {:uri turi :name caller-name}
+               :call-id          call-id
+               ;:via             ; thankfully, sip.js takes care of this one.
+               :contact [{:name nil
+                          :uri (str "sip:" caller-name "@" ip ":5060;transport=UDP;ob")
+                          :params {}}]
+               :cseq             {:seq (rand-int 888888), :method method}}
+     :content ""}))
+
+
 (defn mk-headers [call-id caller headers uri-to {ip :host}]
   "create headers for generating an invite. Uses the headers that we saved during register."
   (let [method "INVITE"]
@@ -71,32 +90,75 @@
       (let [[owner-sess-id owner-sess-version] (next (re-find #"o=.*\b(\d+) (\d+) IN IP" sdp))
             sdp         (str/replace sdp #"o=.*" (str "o=- " owner-sess-id " " (inc (js/parseInt owner-sess-version)) " IN IP4 " ip)) ;; should completely generate these, inc of that thing is only needed on re-offer/re-negotiation.
             sdp         (str/replace sdp #"c=.*" (str "c=IN IP4 " ip))
-            sdp         (str/replace sdp #"(a=rtcp:).*" (str "$1 " rtcp-port " IN IP4 " ip))
-            sdp         (str/replace sdp #"m=audio \d+ .*" (str "m=audio " port " RTP/AVP 98"))
-            sdp         (->> sdp str/split-lines (filter #(or (not= "a" (first %))
-                                                              (re-find #"X-nat|sendrecv|rtpmap:98|rtcp" %))))]
-        {:content (to-string sdp)})
+            sdp         (str/replace sdp #"(m=video).*" (str "$1 " rtcp-port " RTP/AVP 105 99"))
+            sdp         (str/replace sdp #"m=audio \d+ .*" (str "m=audio " port " RTP/AVP 96 97 98 9 100 102 0 8 103 3 104 101"))
+            ;sdp         (->> sdp str/split-lines (filter #(or (not= "a" (first %))
+            ;                                                  (re-find #"X-nat|sendrecv|rtpmap:9 |rtcp" %))))
+            ]
+        {:content sdp})
       {:content (to-string ["v=0"
                             (str "o=- 3607434973 3607434973 IN IP4 " ip)
-                            "s=pjmedia"
+                            "s=-"
                             (str "c=IN IP4 " ip)
                             "t=0 0"
                             "a=X-nat:0"
-                            (str "m=audio " port " RTP/AVP 98 97 99 104 3 0 8 9 96")
-                            (str "a=rtcp:" rtcp-port " IN IP4 " ip) ;; FIXME nothing open for that yet.
-                            "a=rtpmap:98 speex/16000"
-                            "a=rtpmap:97 speex/8000"
-                            "a=rtpmap:99 speex/32000"
-                            "a=rtpmap:104 iLBC/8000"
-                            "a=fmtp:104 mode=30"
-                            "a=rtpmap:3 GSM/8000"
+                            (str "m=audio " port " RTP/AVP 9")
+                            ;(str "a=rtcp:" rtcp-port " IN IP4 " ip) ;; FIXME nothing open for that yet.
+                            "a=rtpmap:96 opus/48000/2"
+                            "a=fmtp:96 usedtx=1"
+                            "a=rtpmap:97 SILK/24000"
+                            "a=rtpmap:98 SILK/16000"
+                            "a=rtpmap:9 G722/8000"
+                            "a=rtpmap:100 speex/32000"
+                            "a=rtpmap:102 speex/16000"
                             "a=rtpmap:0 PCMU/8000"
                             "a=rtpmap:8 PCMA/8000"
-                            "a=rtpmap:9 G722/8000"
-                            "a=sendrecv"
-                            "a=rtpmap:96 telephone-event/8000"
-                            "a=fmtp:96 0-15"])})))
+                            "a=rtpmap:103 iLBC/8000"
+                            "a=rtpmap:3 GSM/8000"
+                            "a=rtpmap:104 speex/8000"
+                            "a=rtpmap:101 telephone-event/8000"
+                            "a=extmap:1 urn:ietf:params:rtp-hdrext:csrc-audio-level"
+                            (str "m=video " rtcp-port " RTP/AVP 105 99")
+                            "a=recvonly"
+                            "a=rtpmap:105 H264/90000"
+                            "a=fmtp:105 profile-level-id=4DE01f;packetization-mode=1"
+                            "a=imageattr:105 send * recv [x=[0-1366],y=[0-768]]"
+                            "a=rtpmap:99 H264/90000"
+                            "a=fmtp:99 profile-level-id=4DE01f"
+                            "a=imageattr:99 send * recv [x=[0-1366],y=[0-768]]"
+                            ])})))
 
+;; [
+;;  "v=0
+;;  o=william 0 0 IN IP4 139.19.186.120
+;;  s=-
+;;  c=IN IP4 139.19.186.120
+;;  t=0 0
+;;  m=audio 5024 RTP/AVP 96 97 98 9 100 102 0 8 103 3 104 101
+;;  a=rtpmap:96 opus/48000/2
+;;  a=fmtp:96 usedtx=1
+;;  a=rtpmap:97 SILK/24000
+;;  a=rtpmap:98 SILK/16000
+;;  a=rtpmap:9 G722/8000
+;;  a=rtpmap:100 speex/32000
+;;  a=rtpmap:102 speex/16000
+;;  a=rtpmap:0 PCMU/8000
+;;  a=rtpmap:8 PCMA/8000
+;;  a=rtpmap:103 iLBC/8000
+;;  a=rtpmap:3 GSM/8000
+;;  a=rtpmap:104 speex/8000
+;;  a=rtpmap:101 telephone-event/8000
+;;  a=extmap:1 urn:ietf:params:rtp-hdrext:csrc-audio-level
+;;  m=video 5026 RTP/AVP 105 99
+;;  a=recvonly
+;;  a=rtpmap:105 H264/90000
+;;  a=fmtp:105 profile-level-id=4DE01f;packetization-mode=1
+;;  a=imageattr:105 send * recv [x=[0-1366],y=[0-768]]
+;;  a=rtpmap:99 H264/90000
+;;  a=fmtp:99 profile-level-id=4DE01f
+;;  a=imageattr:99 send * recv [x=[0-1366],y=[0-768]]
+;;  "
+;;  ]
 
 ;; Manage local SIP client requests ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
@@ -109,6 +171,7 @@
     (go (let [sip             (node/require "sip")
               headers         (atom {})
               uri-to          (atom "")
+              my-name         (atom "")
               ;; Prepare RDV:
               rdv-id          (<! (path/get-path :single)) ;; FIXME we should specify what zone we want our rdv in.
               rdv-data        (circ/get-data rdv-id)
@@ -132,13 +195,15 @@
               process     (fn process [rq]
                             (let [nrq          (-> rq cljs/js->clj walk/keywordize-keys)
                                   contact      (-> nrq :headers :contact first)
-                                  name         (or (-> contact :name)
-                                                   (->> contact :uri (re-find #"sip:(.*)@") second))]
+                                  name         (str/replace (or (-> contact :name)
+                                                                (->> contact :uri (re-find #"sip:(.*)@") second))
+                                                            #"\"" "")]
                               ;; debug <--
                               (println)
                               (println :nrq nrq)
                               (println :cid (-> nrq :headers :call-id (@sip-to-call-id) (@calls)))
                               (println :cid @sip-to-call-id (-> nrq :headers :call-id ))
+                              (println :name name (.-length name))
                               ;; debug -->
 
                               (cond
@@ -160,6 +225,7 @@
                                         (sd/register config name out-rdv-id rdv-id (-> rdv-data :rdv :auth :srv-id))  ;; send register to dir, ack to sip client:
                                         (sd/register-to-mix config name mix-id)                                       ;; register our sip user name (needed for last step of incoming rt circs, without giving our ip to caller)
                                         (.send sip ack)                                                               ;; --- SIP: answer sip client, successfully registered.
+                                        (reset! my-name name)
                                         (reset! uri-to  (-> contact :uri))                                            ;; save uri & headers for building invite later:
                                         (reset! headers (-> ack cljs/js->clj walk/keywordize-keys :headers)))
                                     (do (log/error "Could not find SIP DIR in aqua network")
@@ -177,16 +243,16 @@
                                   (.send sip (.makeResponse sip rq 501 "Not Implemented")))
 
                                 (= (:method nrq) "PUBLISH")
-                                (go (if (= "presence" (-> nrq :headers :event))
-                                      (let [parse-xml (-> (node/require "xml2js") .-parseString)
-                                            xml       (chan)]
-                                        ;; debug <--
-                                        (parse-xml (:content nrq) #(go (println %2) (>! xml %2)))
-                                        (println (-> (<! xml) cljs/js->clj walk/keywordize-keys))
-                                        ;; debug -->
-                                        (.send sip (.makeResponse sip rq 200 "OK")))
-                                      (do (log/error "SIP: Unsupported PUBLISH event:" (-> nrq :headers :event))
-                                          (.send sip (.makeResponse sip rq 501 "Not Implemented")))))
+                                (when false (go (if (= "presence" (-> nrq :headers :event))
+                                                  (let [parse-xml (-> (node/require "xml2js") .-parseString)
+                                                        xml       (chan)]
+                                                    ;; debug <--
+                                                    (parse-xml (:content nrq) #(go (println %2) (>! xml %2)))
+                                                    (println (-> (<! xml) cljs/js->clj walk/keywordize-keys))
+                                                    ;; debug -->
+                                                    (.send sip (.makeResponse sip rq 200 "OK")))
+                                                  (do (log/error "SIP: Unsupported PUBLISH event:" (-> nrq :headers :event))
+                                                      (.send sip (.makeResponse sip rq 501 "Not Implemented"))))))
 
                                 (= (:method nrq) "OPTIONS")
                                 (.send sip (.makeResponse sip rq 200 "OK"))
@@ -267,12 +333,22 @@
                                                                                                b/zero))
                                                 (log/info "SIP: sent ackack, ready for relay on" call-id)
                                                 ;; debug <--
-                                                (println (merge (assoc-in (s/to-clj (.makeResponse sip rq 200 "OK")) [:headers :content-type] "application/sdp")
+                                                (println (merge (assoc-in (assoc-in (s/to-clj (.makeResponse sip rq 200 "OK"))                          ;; Send our client a 200 OK, with out-circ's listening udp as "callee's" dest (what caller thinks is the callee actually is aqua).
+                                                                                               [:headers :content-type]
+                                                                                               "application/sdp") ;; inelegant, testing.
+                                                                                     [:headers :contact]
+                                                                                     [{:name nil
+                                                                                       :uri (str "sip:" callee-name "@" (:local-ip config) ":5060;transport=UDP;ob")
+                                                                                       :params {}}])
                                                                 (mk-sdp {:host (:local-ip config) :port local-port} {:port loc-rtcp-port} :ack sdp)))
                                                 ;; debug -->
-                                                (.send sip (s/to-js (merge (assoc-in (s/to-clj (.makeResponse sip rq 200 "OK"))                          ;; Send our client a 200 OK, with out-circ's listening udp as "callee's" dest (what caller thinks is the callee actually is aqua).
-                                                                                     [:headers :content-type]
-                                                                                     "application/sdp") ;; inelegant, testing.
+                                                (.send sip (s/to-js (merge (assoc-in (assoc-in (s/to-clj (.makeResponse sip rq 200 "OK"))                          ;; Send our client a 200 OK, with out-circ's listening udp as "callee's" dest (what caller thinks is the callee actually is aqua).
+                                                                                               [:headers :content-type]
+                                                                                               "application/sdp") ;; inelegant, testing.
+                                                                                     [:headers :contact]
+                                                                                     [{:name nil
+                                                                                       :uri (str "sip:" callee-name "@" (:local-ip config) ":5060;transport=UDP;ob")
+                                                                                       :params {}}])
                                                                            (mk-sdp {:host (:local-ip config) :port local-port} {:port loc-rtcp-port} :ack sdp)))
                                                        process)
                                                 (loop [{nrq :nrq rq :rq}  (<! sip-ctrl)]                                                                 ;; loop on sip messages with this call-id until we receive a BYE.
@@ -367,6 +443,8 @@
                         (>! rtcp-incoming rtcp-id)                                                             ;; inform attach-local-udp-to-simplex-circs that we have incoming-rtp to attach to socket.
                         (update-data call-id [:rt :in] rtp-id)
                         (update-data call-id [:rt :in] rtcp-id))
+                      (println :feeeeeeeeeeeeeeeeee (mk-ack call-id caller @my-name (:local-ip config)))
+                      (.send sip (s/to-js (mk-ack call-id caller @my-name (:local-ip config))) process)
                       (log/info "SIP: got ackack, ready for relay on" call-id)
                       ;; loop waiting for bye.
                       ))
