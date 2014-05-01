@@ -71,7 +71,7 @@
       (let [[owner-sess-id owner-sess-version] (next (re-find #"o=.*\b(\d+) (\d+) IN IP" sdp))
             sdp         (str/replace sdp #"o=.*" (str "o=- " owner-sess-id " " (inc (js/parseInt owner-sess-version)) " IN IP4 " ip)) ;; should completely generate these, inc of that thing is only needed on re-offer/re-negotiation.
             sdp         (str/replace sdp #"c=.*" (str "c=IN IP4 " ip))
-            sdp         (str/replace sdp #"(a=rtcp:.* IN IP4).*" (str "$1 " ip))
+            sdp         (str/replace sdp #"(a=rtcp:).*" (str "$1 " rtcp-port " IN IP4 " ip))
             sdp         (str/replace sdp #"m=audio \d+ .*" (str "m=audio " port " RTP/AVP 98"))
             sdp         (->> sdp str/split-lines (filter #(or (not= "a" (first %))
                                                               (re-find #"X-nat|sendrecv|rtpmap:98|rtcp" %))))]
@@ -83,7 +83,7 @@
                             "t=0 0"
                             "a=X-nat:0"
                             (str "m=audio " port " RTP/AVP 98 97 99 104 3 0 8 9 96")
-                            (str "a=rtcp: " rtcp-port " IN IP4 " ip) ;; FIXME nothing open for that yet.
+                            (str "a=rtcp:" rtcp-port " IN IP4 " ip) ;; FIXME nothing open for that yet.
                             "a=rtpmap:98 speex/16000"
                             "a=rtpmap:97 speex/8000"
                             "a=rtpmap:99 speex/32000"
@@ -126,9 +126,8 @@
                                 {:port (->> (:content rq) (re-seq #"(?m)m\=(\w+)\s+(\d+)") first last)
                                  :host (second (re-find #"(?m)c\=IN IP4 ((\d+\.){3}\d+)" (:content rq)))})
               get-sdp-rtcp    (fn [rq]
-                                {:port (->> (:content rq) (re-seq #"(?m)a\=(rtcp):\s+(\d+)") first last)
+                                {:port (->> (:content rq) (re-seq #"(?m)a\=(rtcp):\s*(\d+)") first last)
                                  :host (second (re-find #"(?m)c\=IN IP4 ((\d+\.){3}\d+)" (:content rq)))})
-
               ;; Process SIP logic:
               process     (fn process [rq]
                             (let [nrq          (-> rq cljs/js->clj walk/keywordize-keys)
@@ -335,7 +334,7 @@
                           [_ loc-rtcp-port] (<! (path/attach-local-udp-to-simplex-circs config                  ;; our local udp socket for exchanging RTP with local sip client. rtp-incoming is caller's RTP which we'll route to the @/port which will be given in 200/OK after sending invite to it.
                                                                                         rtcp-incoming
                                                                                         (go rtcp-circ)          ;; The invite we'll send will have our local sockets @/port as media, so sip client sends us RTP, we'll route it through rtp-circ.
-                                                                                        sdp-dest))]
+                                                                                        rtcp-dest))]
                       (log/info "SIP: invited by" caller "- Call-ID:" call-id "Rdv" caller-rdv-id)
                       (add-call call-id {:sip-ctrl sip-ctrl, :sip-call-id call-id, :state :ringing, :peer-rdv caller-rdv-id :rt {:out rtp-circ}}) ;; FIXME add rtp rt, add rtcp
                       (.send sip (s/to-js (merge (mk-headers call-id caller @headers @uri-to local-dest)     ;; Send our crafted invite with local udp port as "caller's" media session
@@ -344,8 +343,9 @@
                       (loop [{user-answer :nrq rq :rq}  (<! sip-ctrl)]                                       ;; loop until we receive a 200/OK with SDP
                         (if (not= (:status user-answer) 200)
                           (recur (<! sip-ctrl)) ;; FIXME should only loop if status < 200, and destroy session if >.
-                          (go (>! sdp-dest  (get-sdp-rtcp user-answer))
-                              (>! rtcp-dest (get-sdp-dest user-answer)))))
+                          (do (println :sdp (get-sdp-dest user-answer) :rtcp (get-sdp-rtcp user-answer))
+                              (go (>! sdp-dest  (get-sdp-dest user-answer))) ;; FIXME one go should do, test
+                              (go (>! rtcp-dest (get-sdp-rtcp user-answer))))))
                       (>! rtp-ctrl [(dir/find-by-id mix-id) {:auth {:pub-B pub :srv-id id}}])   ;; connect to caller's mix & then to caller.
                       (<! rtp-notify)                                                                                     ;; wait for answer.
                       (>! rtcp-ctrl [(dir/find-by-id mix-id) {:auth {:pub-B pub :srv-id id}}])   ;; connect to caller's mix & then to caller.

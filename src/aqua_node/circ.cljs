@@ -436,7 +436,7 @@
                              :rtp-exit  (let [real-len (.readUInt16BE r-payload 0)
                                               msg      (.slice r-payload 2 (+ real-len 2))]
                                           (println :rtp-exit (-> dest-data :rtp-dest :host) (-> dest-data :rtp-dest :port) real-len (.-length msg) (.-length r-payload))
-                                          (.send dest msg 0 (.-length msg) (-> circ :rtp-dest :port) (-> circ :rtp-dest :host)))
+                                          (.send dest msg 0 real-len (-> dest-data :rtp-dest :port) (-> dest-data :rtp-dest :host)))
                              :rtp-ap    (.send dest r-payload 0 (.-length r-payload) (-> circ :local-dest :port) (-> circ :local-dest :host)) ;; FIXME quick and diiiirty
                              (.write dest r-payload)))))
 

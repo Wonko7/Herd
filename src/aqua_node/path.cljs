@@ -178,7 +178,7 @@
 (defn attach-local-udp [config circ-id forward-to forwarder & [bind-port]] ;; FIXME: forward-to changed meaning, it is now only used for what ip we're binding to.
   "Unused right now, except by hardcoded rtp benchmarks."
   (go (let [ctrl      (chan)
-            udp-sock  (.createSocket (node/require "dgram") "udp6")
+            udp-sock  (.createSocket (node/require "dgram") "udp4")
             port      (do (.bind udp-sock (or bind-port 0) (:host forward-to) #(go (>! ctrl (-> udp-sock .address .-port))))
                           (<! ctrl))
             dest      {:type :ip4 :proto :udp :host "0.0.0.0" :port 0}] ;; FIXME should not be hardcoded to ip4.
@@ -195,7 +195,7 @@
   traffic from in-circ-id (incoming traffic).
   forward-to is the destination of local traffic (outside world [eg callee] -> in-circ -> forward-to [local sip client, caller])."
   (let [port       (chan)
-        udp-sock   (.createSocket (node/require "dgram") "udp6")
+        udp-sock   (.createSocket (node/require "dgram") "udp4")
         dest       {:type :ip4 :proto :udp :host "0.0.0.0" :port 0}] ;; FIXME should not be hardcoded to ip4.
     (.bind udp-sock 0 (:host "0.0.0.0") #(go (>! port (-> udp-sock .address .-port))))
     (-> udp-sock
@@ -214,7 +214,7 @@
           (c/update-data udp-sock [:forward-hop] udp-sock)
           (circ/update-data in-circ-id [:forward-hop] udp-sock)
           (circ/update-data in-circ-id [:state] :relay)
-          (println :fhop (= (-> in-circ-id circ/get-data :forward-hop) udp-sock) (-> in-circ-id circ/get-data keys ))
+          (println :fhop (= (-> in-circ-id circ/get-data :forward-hop) udp-sock) (-> udp-sock c/get-data :rtp-dest ))
           ))
     (go [udp-sock (<! port)])))
 
