@@ -203,19 +203,15 @@
         (c/add-listeners {:message (partial app-proxy-forward-udp config udp-sock)}))
     ;; out:
     (go (let [out-circ-id (<! out-circ-id-chan)]
-          (println :out out-circ-id)
           (c/update-data udp-sock [:circuit] out-circ-id)
           (circ/update-data out-circ-id [:state] :relay)
           (circ/update-data out-circ-id [:backward-hop] udp-sock)))
     ;; in:
     (go (let [in-circ-id (<! in-circ-id-chan)]
-          (println :in in-circ-id)
           (c/update-data udp-sock [:rtp-dest] (<! forward-to-dest))
           (c/update-data udp-sock [:forward-hop] udp-sock)
           (circ/update-data in-circ-id [:forward-hop] udp-sock)
-          (circ/update-data in-circ-id [:state] :relay)
-          (println :fhop (= (-> in-circ-id circ/get-data :forward-hop) udp-sock) (-> udp-sock c/get-data :rtp-dest ))
-          ))
+          (circ/update-data in-circ-id [:state] :relay)))
     (go [udp-sock (<! port)])))
 
 

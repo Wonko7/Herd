@@ -315,7 +315,6 @@
 
 (defn recv-id [config socket circ-id payload]
   "Recv client's public ID & attach to socket"
-  (println :recvd {:srv-id (b/hx payload)})
   (c/update-data socket [:auth] {:srv-id payload}))
 
 
@@ -413,8 +412,7 @@
                              dest-data            (c/get-data dest)]
                          (assert (some (partial = socket) hops) "relay data came from neither forward or backward hop.")
                          (if-not dest
-                           (do (println (nil? bhop) (nil? fhop) (-> bhop c/get-data :rtp-dest) (-> fhop c/get-data :rtp-dest))
-                             (log/error "No destination, dropping on circuit" circ-id))
+                           (log/error "No destination, dropping on circuit" circ-id)
                            (condp = (:type dest-data)
                              :udp-exit  (if (:send-udp circ) ;; FIXME this is tmp, for rtp only, single path would crash things
                                           (let [real-sz (.readUInt16BE r-payload 0)
@@ -435,7 +433,6 @@
                              :udp-ap    (.send dest r-payload 0 (.-length r-payload) (-> dest-data :from :port) (-> dest-data :from :host))
                              :rtp-exit  (let [real-len (.readUInt16BE r-payload 0)
                                               msg      (.slice r-payload 2 (+ real-len 2))]
-                                          (println :rtp-exit (-> dest-data :rtp-dest :host) (-> dest-data :rtp-dest :port) real-len (.-length msg) (.-length r-payload))
                                           (.send dest msg 0 real-len (-> dest-data :rtp-dest :port) (-> dest-data :rtp-dest :host)))
                              :rtp-ap    (.send dest r-payload 0 (.-length r-payload) (-> circ :local-dest :port) (-> circ :local-dest :host)) ;; FIXME quick and diiiirty
                              (.write dest r-payload)))))
