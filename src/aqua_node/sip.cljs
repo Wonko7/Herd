@@ -50,15 +50,16 @@
 ;; SIP sdp creation ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
 (defn mk-ack [ok-200 call-id]
-  (let [h     (:headers ok-200)]
-    (s/to-js {:method "ACK"
-              :uri   (-> ok-200 :headers :contact first :uri)
-              :headers {:to (-> h :to)
-                        :from (-> h :from)
-                        :call-id call-id
-                        :cseq {:method "ACK"
-                               :seq (-> h :cseq :seq)}
-                        :via []}})))
+  "Creates an ACK based on the 200 ok headers."
+  (let [h    (:headers ok-200)]
+    (s/to-js {:method  "ACK"
+              :uri     (-> ok-200 :headers :contact first :uri)
+              :headers {:to       (-> h :to)
+                        :from     (-> h :from)
+                        :call-id  call-id
+                        :cseq     {:method "ACK"
+                                   :seq (-> h :cseq :seq)}
+                        :via      []}})))
 
 
 (defn mk-headers [call-id caller headers uri-to {ip :host}]
