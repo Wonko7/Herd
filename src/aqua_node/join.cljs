@@ -28,7 +28,6 @@
 
 (defn init [config]
   (condp #(m/is? % (:roles config))
-    :super-peer (let [nb-channels (-> config :mix :nb-channels)  ;; FIXME: this might change, not sure where that config will be yet
-                      ]
+    :super-peer (let [nb-channels (-> config :super-peer :nb-channels)]
                   (doseq [i (range nb-channels)]
                     (swap! channels merge {i {:state nil :nb-clients 0}})))))
