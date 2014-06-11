@@ -21,7 +21,7 @@
 
 (def mix-dir (atom {}))       ;; directory of mixes
 (def app-dir (atom {}))       ;; directory of application proxies
-;; (def sp-dir  (atom {}))       ;; directory of super-peers
+;; (def sp-dir  (atom {}))       ;; directory of super-peers ;; FIXME: for now everything goes in mix-dir.
 (def net-info-buf (atom nil)) ;; keep the mix topology in a buffer ready to be sent. This is updated when clients register.
 
 ;; The data is a map with [ip port] as key for each mix entry:
@@ -58,12 +58,7 @@
   - ip/host, port, connection type
   - if it's an app-proxy, parse the next entry as its rendez vous mix
   return the appropriate entry and the rest of the payload."
-  (let [role         (condp = (.readUInt8 msg 0)
-                       0 :app-proxy ;; FIXME: app-proxy will stop registering to dir, only to sip-dir.
-                       1 :mix
-                       2 :sip-dir
-                       3 :rdv
-                       4 :super-peer)
+  (let [role         (conv/int-to-role (.readUInt8 msg 0))
         reg          (.readUInt8 msg 1)
         id-len       (-> config :ntor-values :node-id-len)
         [id pub msg] (b/cut (.slice msg 2) id-len (+ id-len (-> config :ntor-values :h-len)))
@@ -76,12 +71,7 @@
 
 (defn mk-info-buf [info]
   "Create an entry from info, that parse-info can read."
-  (let [role  (condp = (:role info)
-                :app-proxy   0
-                :mix         1
-                :sip-dir     2
-                :rdv         3
-                :super-peer  4)
+  (let [role  (conv/role-to-int (:role info))
         msg   [(-> [role (-> info :reg geo/reg-to-int)] cljs/clj->js b/new)
                (-> info :auth :srv-id)
                (-> info :auth :pub-B)

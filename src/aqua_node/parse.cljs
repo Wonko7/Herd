@@ -53,3 +53,19 @@
                              (filter second)
                              first)]
       [{:proto (condp = prot, "u" :udp, "t" :tcp, "r" :rtp) :type ip :host h :port (js/parseInt p)} (.slice buf (inc z))])))
+
+(defn role-to-int [role]
+  (condp = role
+    :app-proxy   0
+    :mix         1
+    :sip-dir     2
+    :rdv         3
+    :super-peer  4) )
+
+(defn int-to-role [role]
+  (condp = role
+    0 :app-proxy ;; FIXME: app-proxy will stop registering to dir, only to sip-dir.
+    1 :mix
+    2 :sip-dir
+    3 :rdv
+    4 :super-peer))

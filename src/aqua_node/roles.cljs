@@ -3,6 +3,7 @@
             [cljs.nodejs :as node]
             [cljs.core.async :refer [chan <! >! filter< mult tap]]
             [aqua-node.log :as log]
+            [aqua-node.misc :as m]
             [aqua-node.buf :as b]
             [aqua-node.conns :as c]
             [aqua-node.conn-mgr :as conn]
@@ -101,13 +102,9 @@
                  mix)]
     (aqua-connect config (first mixes) ctrl)))
 
-(defn is? [role roles]
-  "Tests if a role is part of the given roles"
-  (some #(= role %) roles))
-
 (defn bootstrap [{roles :roles ap :app-proxy aq :aqua ds :remote-dir dir :dir sip-dir :sip-dir :as config}]
   "Setup the services needed by the given role."
-  (go (let [is?         #(is? % roles)                        ;; tests roles for our running instance
+  (go (let [is?         #(m/is? % roles)                        ;; tests roles for our running instance
             geo         (go (<! (geo/parse config)))          ;; match our ip against database, unless already specified in config:
             net-info    (go (when-not (is? :dir)              ;; request net-info if we're not a dir. FIXME -> get-net-info will be called periodically.
                               (<! (get-net-info config ds))))]
@@ -128,6 +125,10 @@
             (log/info "Dir: sending register info")
             (register-to-dir config geo mix ds)))
 
+        (when (is? :super-peer)
+          (register-to-dir config (<! geo) mix ds)
+          (conn/new :channel :server sp config {:connect identity}))
+
         (when (or (is? :mix) (is? :rdv))
           (let [sip-chan (sip-dir/create-mix-dir config)
                 cfg      (merge config {:sip-chan sip-chan :aqua sip-dir :sip-mix-dir sip-dir/mix-dir})
@@ -140,9 +141,6 @@
                               (not= (:port aq) port))]
               (aqua-connect cfg mix ctrl)
               (<! ctrl))))
-
-        (when (is? :super-peer)
-          (conn/new :channel :server sp config {:connect identity}))
 
         (when (is? :dir)
           (conn/new :dir :server dir config {:connect aqua-dir-recv}))
