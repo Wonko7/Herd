@@ -141,6 +141,9 @@
               (aqua-connect cfg mix ctrl)
               (<! ctrl))))
 
+        (when (is? :super-peer)
+          (conn/new :channel :server sp config {:connect identity}))
+
         (when (is? :dir)
           (conn/new :dir :server dir config {:connect aqua-dir-recv}))
 
