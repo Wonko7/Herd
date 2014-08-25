@@ -234,20 +234,20 @@
 (defn init-pools [config net-info loc N]
   "Initialise a pool of N of each type of circuits (rt and single for now)
   net-info is the list of mixes with their geo info."
-  (let [reg          (-> loc :reg)
+  (let [zone         (-> loc :zone)
         fixme-path   (fn [path] (map #(merge % {:dest %}) path)) ;; FIXME yes, get rid of this
         select-mixes #(->> net-info seq (map second) (filter %) shuffle)
         ;; entry mix, for :rt --> will be assigned by dir.
-        mix          (first (select-mixes #(and (= (:role %) :mix) (= (:reg %) reg))))
+        mix          (first (select-mixes #(and (= (:role %) :mix) (= (:zone %) zone))))
         ;; make path for :single, three hops, the first being mix chosen for :rt.
         mk-path      (fn [] ;; change (take n) for a path of n+1 nodes.
                        (->> (select-mixes #(and (= (:role %) :mix) (not= mix %))) (take 0) (cons mix) fixme-path)) ;; use same mix as entry point for single & rt. ; not= mix
         ;; rdvs in our zone:
-        rdvs         (select-mixes #(and (= (:role %) :rdv) (= (:reg %) reg)))
+        rdvs         (select-mixes #(and (= (:role %) :rdv) (= (:zone %) zone)))
         connected    (chan)
         soc          (conn/new :aqua :client mix config {:connect #(go (>! connected :done))})
         N            (dec N)] ;; an additional circ is created waiting for the channel to be ready to receive.
-    (log/info "Init Circuit pools: we are in" (:country loc) "/" (geo/reg-to-continent reg))
+    (log/info "Init Circuit pools: we are in" zone)
     (log/debug "Chosen mix:" (:host mix) (:port mix))
     (reset! chosen-mix mix)
     ;; init channel pools:

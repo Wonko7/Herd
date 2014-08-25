@@ -29,7 +29,7 @@
 ;;            :type    ip type
 ;;            :host    host address
 ;;            :port    port
-;;            :reg     geo location
+;;            :zone    geo location
 ;;            :role    its role
 ;;            :auth    its pub key & id}
 
@@ -53,13 +53,13 @@
 (defn parse-info [config msg]
   "Parse an entry consisting of:
   - role, int8 0 = app-proxy, 1 = mix, will add 2 = super peer
-  - geographical region, int8, see geo/int-to-reg
+  - geographical zone, int8, see geo/int-to-zone
   - nTor id & public key (sizes are in config/static-conf)
   - ip/host, port, connection type
   - if it's an app-proxy, parse the next entry as its rendez vous mix
   return the appropriate entry and the rest of the payload."
   (let [role         (conv/int-to-role (.readUInt8 msg 0))
-        reg          (.readUInt8 msg 1)
+        zone         (.readUInt8 msg 1)
         id-len       (-> config :ntor-values :node-id-len)
         [id pub msg] (b/cut (.slice msg 2) id-len (+ id-len (-> config :ntor-values :h-len)))
         [client msg] (conv/parse-addr msg)
@@ -67,12 +67,12 @@
         [mix msg]    (if (= role :app-proxy)
                        (conv/parse-addr msg)
                        [nil msg])]
-    [(merge client {:mix mix :reg (geo/int-to-reg reg) :role role :auth {:srv-id id :pub-B pub}}) msg]))
+    [(merge client {:mix mix :zone (geo/int-to-zone zone) :role role :auth {:srv-id id :pub-B pub}}) msg]))
 
 (defn mk-info-buf [info]
   "Create an entry from info, that parse-info can read."
   (let [role  (conv/role-to-int (:role info))
-        msg   [(-> [role (-> info :reg geo/reg-to-int)] cljs/clj->js b/new)
+        msg   [(-> [role (-> info :zone geo/zone-to-int)] cljs/clj->js b/new)
                (-> info :auth :srv-id)
                (-> info :auth :pub-B)
                (b/new (conv/dest-to-tor-str {:type :ip4 :proto :udp :host (:host info) :port (:port info)}))
@@ -105,7 +105,7 @@
                 :port (-> config :aqua :port)
                 :role (or (is? :super-peer) (is? :sip-dir) (is? :rdv) (is? :mix) (is? :app-proxy))
                 :mix  mix
-                :reg  (-> geo :reg)}]
+                :zone (-> geo :zone)}]
     (.write soc (b/copycat2 header (mk-info-buf info)) #(go (>! done-chan :done)))))
 
 (defn send-net-request [config soc done]

@@ -14,8 +14,7 @@
 (def to-cmd
   {0   :super-peer-register
    1   :client-register
-   2   :reply
-   })
+   2   :reply})
 
 
 (defn server-process [config buffer]
@@ -23,7 +22,6 @@
         [id pub b]  (b/cut buffer node-id-len (-> config :ntor-values :key-len (+ node-id-len)))
         cmd         (.readUInt8 b 0)
         role        (conv/int-to-role (.readUInt8 b 1))]
-
      ))
 
 (defn init [config]

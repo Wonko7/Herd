@@ -125,9 +125,9 @@
             (log/info "Dir: sending register info")
             (register-to-dir config geo mix ds)))
 
-        (when (is? :super-peer)
-          (register-to-dir config (<! geo) mix ds)
-          (conn/new :channel :server sp config {:connect identity}))
+        ;; (when (is? :super-peer)
+        ;;   (register-to-dir config (<! geo) mix ds)
+        ;;   (conn/new :channel :server sp config {:connect identity}))
 
         (when (or (is? :mix) (is? :rdv))
           (let [sip-chan (sip-dir/create-mix-dir config)
