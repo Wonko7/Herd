@@ -187,7 +187,7 @@
                                  :host (second (re-find #"(?m)c\=IN IP4 ((\d+\.){3}\d+)" (:content rq)))})
               ;; sip channel processing:
               skip-until      (fn [when-cond from]
-                                (loop [r (<! from)]
+                                (go-loop [r (<! from)]
                                   (or (when-cond r) (recur (<! from)))))
               ;; Process SIP logic:
               process     (fn process [rq]
