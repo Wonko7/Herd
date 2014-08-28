@@ -186,9 +186,11 @@
                                 {:port (->> (:content rq) (re-seq #"(?m)m\=(video)\s*(\d+)") first last)
                                  :host (second (re-find #"(?m)c\=IN IP4 ((\d+\.){3}\d+)" (:content rq)))})
               ;; sip channel processing:
-              skip-until      (fn [when-cond from]
+              skip-until      (fn [found-it? from]
                                 (go-loop [r (<! from)]
-                                  (or (when-cond r) (recur (<! from)))))
+                                  (if (found-it? r)
+                                    r
+                                    (recur (<! from)))))
               ;; Process SIP logic:
               process     (fn process [rq]
                             (let [nrq          (-> rq cljs/js->clj walk/keywordize-keys)
@@ -403,37 +405,37 @@
                       (.send sip (s/to-js (merge (mk-headers call-id caller @headers @uri-to local-dest)       ;; Send our crafted invite with local udp port as "caller's" media session
                                                  (mk-sdp local-dest {:port loc-rtcp-port} :invite)))
                              process)
-                      (skip-until #(let [status (-> % :nrq :status)
-                                         {user-answer :nrq} %]
-                                     (cond (> 200 status) false
-                                           (< 200 status) (assert nil "Hang up")
-                                           :else          (do (go (>! sdp-dest  (get-sdp-dest user-answer))) ;; FIXME one go should do, test
-                                                              (go (>! rtcp-dest (get-sdp-rtcp user-answer)))
-                                                              (reset! ok-200 user-answer))))
-                                  sip-ctrl)
-                    (>! rtp-ctrl [(dir/find-by-id mix-id) {:auth {:pub-B pub :srv-id id}}])                  ;; connect to caller's mix & then to caller.
-                    (<! rtp-notify)                                                                          ;; wait for answer.
-                    (>! rtcp-ctrl [(dir/find-by-id mix-id) {:auth {:pub-B pub :srv-id id}}])                 ;; connect to caller's mix & then to caller.
-                    (<! rtcp-notify)                                                                         ;; wait for answer.
-                    (log/info "SIP: RT circuit ready for call" call-id)
-                    (circ/relay-sip config rtp-circ :f-enc (b/cat (-> :ack s/from-cmd b/new1)                ;; Send ack to caller, with our mix's coordinates so he can create an rt-path to us to send rtp.
-                                                                  (b/new call-id)
-                                                                  b/zero
-                                                                  (-> @path/chosen-mix :auth :srv-id)
-                                                                  (-> config :auth :aqua-id :id)
-                                                                  (-> config :auth :aqua-id :pub)))
-                    (circ/relay-sip config rtcp-circ :f-enc (b/cat (-> :ack-rtcp s/from-cmd b/new1)          ;; Send ack to caller, with our mix's coordinates so he can create an rt-path to us to send rtp.
-                                                                   (b/new call-id)
-                                                                   b/zero))
-                    (let [reply1             (skip-until #(:circ-id %) sip-ctrl)
-                          reply2             (skip-until #(:circ-id %) sip-ctrl)
-                          [rtp-id rtcp-id]   (map :circ-id (if (= (:cmd reply1) :ackack-rtcp) [reply2 reply1] [reply1 reply2]))]                                     ;; Wait for caller's rt path's first message.
-                      (>! rtp-incoming  rtp-id)                                                              ;; inform attach-local-udp-to-simplex-circs that we have incoming-rtp to attach to socket.
-                      (>! rtcp-incoming rtcp-id)                                                             ;; inform attach-local-udp-to-simplex-circs that we have incoming-rtp to attach to socket.
-                      (update-data call-id [:rt :in] rtp-id)
-                      (update-data call-id [:rtcp :in] rtcp-id))
-                    (.send sip (mk-ack @ok-200 call-id) process)
-                    (log/info "SIP: got ackack, ready for relay on" call-id))) ;; loop waiting for bye.
+                      (<! (skip-until #(let [status (-> % :nrq :status)
+                                             {user-answer :nrq} %]
+                                         (cond (> 200 status) false
+                                               (< 200 status) (assert nil "Hang up")
+                                               :else          (do (go (>! sdp-dest  (get-sdp-dest user-answer))) ;; FIXME one go should do, test
+                                                                  (go (>! rtcp-dest (get-sdp-rtcp user-answer)))
+                                                                  (reset! ok-200 user-answer))))
+                                      sip-ctrl))
+                      (>! rtp-ctrl [(dir/find-by-id mix-id) {:auth {:pub-B pub :srv-id id}}])                  ;; connect to caller's mix & then to caller.
+                      (<! rtp-notify)                                                                          ;; wait for answer.
+                      (>! rtcp-ctrl [(dir/find-by-id mix-id) {:auth {:pub-B pub :srv-id id}}])                 ;; connect to caller's mix & then to caller.
+                      (<! rtcp-notify)                                                                         ;; wait for answer.
+                      (log/info "SIP: RT circuit ready for call" call-id)
+                      (circ/relay-sip config rtp-circ :f-enc (b/cat (-> :ack s/from-cmd b/new1)                ;; Send ack to caller, with our mix's coordinates so he can create an rt-path to us to send rtp.
+                                                                    (b/new call-id)
+                                                                    b/zero
+                                                                    (-> @path/chosen-mix :auth :srv-id)
+                                                                    (-> config :auth :aqua-id :id)
+                                                                    (-> config :auth :aqua-id :pub)))
+                      (circ/relay-sip config rtcp-circ :f-enc (b/cat (-> :ack-rtcp s/from-cmd b/new1)          ;; Send ack to caller, with our mix's coordinates so he can create an rt-path to us to send rtp.
+                                                                     (b/new call-id)
+                                                                     b/zero))
+                      (let [reply1             (<! (skip-until #(:circ-id %) sip-ctrl))
+                            reply2             (<! (skip-until #(:circ-id %) sip-ctrl))
+                            [rtp-id rtcp-id]   (map :circ-id (if (= (:cmd reply1) :ackack-rtcp) [reply2 reply1] [reply1 reply2]))]                                     ;; Wait for caller's rt path's first message.
+                        (>! rtp-incoming  rtp-id)                                                              ;; inform attach-local-udp-to-simplex-circs that we have incoming-rtp to attach to socket.
+                        (>! rtcp-incoming rtcp-id)                                                             ;; inform attach-local-udp-to-simplex-circs that we have incoming-rtp to attach to socket.
+                        (update-data call-id [:rt :in] rtp-id)
+                        (update-data call-id [:rtcp :in] rtcp-id))
+                      (.send sip (mk-ack @ok-200 call-id) process)
+                      (log/info "SIP: got ackack, ready for relay on" call-id))) ;; loop waiting for bye.
 
                 :else
                 (log/info "SIP: incoming message with unknown call id:" call-id "-- dropping."))
