@@ -10,29 +10,14 @@
 (defn int-to-zone [zone]
   "Return keyword from int coding of zone"
   (condp = zone
-    0 :apcnic
-    1 :arin
-    2 :lacnic
-    3 :ripencc
-    4 :afrinic))
+    0 :ireland
+    1 :north-america))
 
 (defn zone-to-int [zone]
   "Return int coding of region keyword. For sending over network."
   (condp = zone
-    :apcnic   0
-    :arin     1
-    :lacnic   2
-    :ripencc  3
-    :afrinic  4))
-
-(defn zone-to-continent [zone]
-  "Just for pretty printing."
-  (condp = zone
-    :apcnic  "asia-pacific"
-    :arin    "north-america"
-    :lacnic  "south-america"
-    :ripencc "europe"
-    :afrinic "africa"))
+    :ireland           0
+    :north-america     1))
 
 (defn parse [config]
   (try
