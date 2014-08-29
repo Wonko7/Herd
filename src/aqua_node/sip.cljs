@@ -40,7 +40,7 @@
 
 (defn rm-call [call-id]
   (when-let [sip-id (-> call-id (@calls) :sip-call-id)]
-    (swap! sip-to-call-id dissoc call-id))
+    (swap! sip-to-call-id dissoc sip-id))
   (swap! calls dissoc call-id))
 
 (defn kill-call [config call-id]
@@ -202,11 +202,11 @@
                                 (skip-until #(when (or (= "BYE" (-> % :nrq :method))
                                                        (< 200   (-> % :nrq :status))
                                                        (= :bye %))
-                                               (->> (mk-headers "BYE" call-id name @headers @uri-to local-dest)
+                                               (->> (mk-headers "BYE" (-> call-id (@calls) :sip-call-id) name @headers @uri-to local-dest)
                                                     (merge {:content ""})
                                                     s/to-js
                                                     (.send sip))
-                                               (println "::: sent : " (mk-headers "BYE" call-id name @headers @uri-to local-dest))
+                                               (println "::: sent : " (mk-headers "BYE" (-> call-id (@calls) :sip-call-id) name @headers @uri-to local-dest))
                                                (kill-call config call-id))
                                             sip-ctrl))
               add-sip-ctrl-to-rt-circs
@@ -289,7 +289,7 @@
                                           sdp              (:content nrq)]
                                       (add-call call-id {:sip-ctrl sip-ctrl :sip-call-id sip-call-id :state :ringing})
                                       (sd/query config callee-name out-rdv-id call-id)                                                  ;; query for callee's rdv
-                                      (log/info "SIP:" "intiating call" call-id "to" callee-name)
+                                      (log/info "SIP:" "initiating call" call-id "to" callee-name)
                                       (let [query-reply-rdv      (<! sip-ctrl)]                                                         ;; get query reply
                                         (if (= :error (-> query-reply-rdv :sip-rq (.readUInt8 0) s/to-cmd))                             ;; FIXME: assert this instead.
                                           (do (log/error "Query for" callee-name "failed.")
@@ -363,15 +363,10 @@
                                                                            (mk-sdp {:host (:local-ip config) :port local-port} {:port loc-rtcp-port} :ack sdp)))
                                                        process)
                                                 (add-sip-ctrl-to-rt-circs call-id sip-ctrl)
-                                                (wait-for-bye call-id sip-ctrl {:name callee-name
-                                                                                :dest {:host (:local-ip config)}})
-                                                ;; (loop [{nrq :nrq rq :rq}  (<! sip-ctrl)]                                                                  ;; loop on sip messages with this call-id until we receive a BYE.
-                                                ;;   (cond (= "ACK" (:method nrq)) (println "request ack, ok, cool")
-                                                ;;         (= "BYE" (:method nrq)) (kill-call config call-id) ;; and tear down. and 200 OK. and don't recur.
-                                                ;;         (< 200 (:status nrq))   (kill-call config call-id)
-                                                ;;         :else                   (kill-call config call-id))
-                                                ;;   (recur (<! sip-ctrl)))
-                                                )))))))
+                                                (wait-for-bye call-id
+                                                              sip-ctrl
+                                                              {:name callee-name
+                                                               :dest {:host (:local-ip config)}}))))))))
 
                                 :else (log/error "Unsupported sip method" (:method nrq)))))]
 
@@ -466,8 +461,10 @@
                       (.send sip (mk-ack @ok-200 call-id) process)
                       (log/info "SIP: got ackack, ready for relay on" call-id)
                       (add-sip-ctrl-to-rt-circs call-id sip-ctrl)
-                      (wait-for-bye call-id sip-ctrl {:name caller
-                                                      :dest {:host (:local-ip config)}}))) ;; loop waiting for bye.
+                      (wait-for-bye call-id
+                                    sip-ctrl
+                                    {:name caller
+                                     :dest {:host (:local-ip config)}}))) ;; loop waiting for bye.
 
                 :else
                 (log/info "SIP: incoming message with unknown call id:" call-id "-- dropping."))
