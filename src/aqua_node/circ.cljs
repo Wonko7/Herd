@@ -86,7 +86,7 @@
   circ)
 
 (defn destroy [config circ]
-  (when-let [c (@circuits circ)] ;; FIXME also send destroy cells to the path
+  (when-let [c   (@circuits circ)]
     (recv-destroy config nil circ (b/new "because reasons"))
     (log/info "destroying circuit" circ)
     (rm circ)))
@@ -157,7 +157,7 @@
     (.copy payload buf 9)
     (js/setImmediate (do (when (and (:data config) (zero? (dec-block)))
                            (.emit (:data config) "readable"))
-                         #(when socket
+                         #(when (and socket (.-writable socket))
                             (.write socket buf)))))) ;-> good perf, more drops --> socket can be killed before we send
 
 
@@ -194,7 +194,7 @@
 
 (defn- enc-send [config socket circ-id circ-cmd direction msg & [iv]]
   "Add all onion skins before sending the packet."
-  ;; (assert (@circuits circ-id) "cicuit does not exist") ;; FIXME this assert will probably be done elsewhere (process?)
+  ;; (assert (@circuits circ-id) "circuit does not exist") ;; FIXME this assert will probably be done elsewhere (process?)
   ;; FIXME assert state.
   (when-let [circ  (@circuits circ-id)]
     (let [c        (node/require "crypto")
@@ -205,7 +205,7 @@
 
 (defn- enc-noiv-send [config socket circ-id circ-cmd direction msg]
   "Add all onion skins before sending the packet."
-  (assert (@circuits circ-id) "cicuit does not exist") ;; FIXME this assert will probably be done elsewhere (process?)
+  (assert (@circuits circ-id) "circuit does not exist") ;; FIXME this assert will probably be done elsewhere (process?)
   ;; FIXME assert state.
   (let [circ     (@circuits circ-id)
         encs     (get-path-enc circ direction) ;; FIXME: PATH: mk pluggable
@@ -337,7 +337,7 @@
   "Process created2, add the resulting shared secret to the path, call
   the path's :mk-path-fn to proceed to the next step."
   (let [circ       (@circuits circ-id)]
-    (assert circ "cicuit does not exist") ;; FIXME this assert will probably be done elsewhere (process?)
+    (assert circ "circuit does not exist") ;; FIXME this assert will probably be done elsewhere (process?)
     (if (is? :mix circ)
       ;; we are a mix, so relay created2 as an extended2 message:
       (relay config (:backward-hop circ) circ-id :extended2 :b-enc payload)
@@ -385,7 +385,11 @@
   (when-let [circ              (@circuits circ-id)]
     (let [[fhop bhop :as hops] (map circ [:forward-hop :backward-hop])
           dest                 (if (= socket fhop) bhop fhop)
-          d                    #(send-destroy config % circ-id payload)]
+          d                    #(send-destroy config % circ-id payload)
+          sip                  (:sip-ctrl circ)]
+      (log/info "Recieved: destroy on circuit" circ-id)
+      (when sip
+        (go (>! sip :bye)))
       (when (or (nil? socket) (and (some (partial = socket) hops)))
         (cond (is? :origin circ) (do (c/destroy bhop)
                                      (when-not socket
@@ -395,7 +399,7 @@
                                        (d bhop)))
               :else              (do (if socket
                                        (d dest)
-                                       (map d hops))))
+                                       (doall (map d hops)))))
         (rm circ-id)))))
 
 (defn process-relay [config socket circ-id relay-data]
@@ -530,32 +534,33 @@
   "If relay message is going backward add an onion skin and send.
   Otherwise, take off the onion skins we can, process it if we can or forward."
 
-  (assert (@circuits circ-id) "cicuit does not exist")
-  (let [circ        (@circuits circ-id)
-        mux?        (is? :mux circ)
-        direction   (if (= (:forward-hop circ) socket) :b-enc :f-enc)
-        [iv msg]    (b/cut payload (-> config :enc :iv-len))]
+  (if (nil? (@circuits circ-id))
+    (when nil (send-destroy config socket circ-id (b/new "because reasons")))
+    (let [circ        (@circuits circ-id)
+          mux?        (is? :mux circ)
+          direction   (if (= (:forward-hop circ) socket) :b-enc :f-enc)
+          [iv msg]    (b/cut payload (-> config :enc :iv-len))]
 
-    (if (and (is-not? :origin circ) (= direction :b-enc))
-      ;; then message is going back to origin -> add enc & forwad
-      (if (and mux? (-> circ :mux :fhop))
-        (forward config circ-id (-> circ :mux :fhop) payload)
-        ((-> circ :backward-hop c/get-data :rate :queue) #(enc-send config (:backward-hop circ) circ-id :relay :b-enc msg iv)))
+      (if (and (is-not? :origin circ) (= direction :b-enc))
+        ;; then message is going back to origin -> add enc & forwad
+        (if (and mux? (-> circ :mux :fhop))
+          (forward config circ-id (-> circ :mux :fhop) payload)
+          ((-> circ :backward-hop c/get-data :rate :queue) #(enc-send config (:backward-hop circ) circ-id :relay :b-enc msg iv)))
 
-      ;; message going towards exit -> rm our enc layer. OR message @ origin, peel of all layers.
-      (let [msg         (reduce #(%2 iv %1) msg (get-path-enc circ direction))
-            [r1 r2 r4]  (b/mk-readers msg)
-            recognised? (and (= 101 (r2 3) (r4 5) (r2 9)) (zero? (r2 1))) ;; FIXME -> add digest
-            relay-data  {:relay-cmd  (r1 0)
-                         :recognised recognised?
-                         :stream-id  (r2 3)
-                         :digest     (r4 5)
-                         :relay-len  (r2 9)
-                         :payload    (when recognised? (.slice msg 11))}] ;; FIXME check how aes padding is handled.
+        ;; message going towards exit -> rm our enc layer. OR message @ origin, peel of all layers.
+        (let [msg         (reduce #(%2 iv %1) msg (get-path-enc circ direction))
+              [r1 r2 r4]  (b/mk-readers msg)
+              recognised? (and (= 101 (r2 3) (r4 5) (r2 9)) (zero? (r2 1))) ;; FIXME -> add digest
+              relay-data  {:relay-cmd  (r1 0)
+                           :recognised recognised?
+                           :stream-id  (r2 3)
+                           :digest     (r4 5)
+                           :relay-len  (r2 9)
+                           :payload    (when recognised? (.slice msg 11))}] ;; FIXME check how aes padding is handled.
 
-        (cond (:recognised relay-data)        (process-relay config socket circ-id relay-data)
-              (and mux? (-> circ :mux :bhop)) (forward config circ-id (-> circ :mux :bhop) msg)
-              :else                           ((-> circ :forward-hop c/get-data :rate :queue) #(cell-send config (:forward-hop circ) circ-id :relay (b/copycat2 iv msg))))))))
+          (cond (:recognised relay-data)        (process-relay config socket circ-id relay-data)
+                (and mux? (-> circ :mux :bhop)) (forward config circ-id (-> circ :mux :bhop) msg)
+                :else                           ((-> circ :forward-hop c/get-data :rate :queue) #(cell-send config (:forward-hop circ) circ-id :relay (b/copycat2 iv msg)))))))))
 
 
 ;; cell management (no state logic here) ;;;;;;;;;;;;;;;;;;;;;;;;;
@@ -622,8 +627,8 @@
         circ-id      (r32 4)           ;; circuit id
         command      (to-cmd (r8 8))   ;; what kind of packet command (relay, extend, etc)
         payload      (.slice data 9)]
-    (when (not= :padding (:name command)) ;; only print debug if the message isn't padding
-      (log/debug "recv cell: id:" circ-id "cmd:" (:name command) "len:" len))
+    ;(when (not= :padding (:name command)) ;; only print debug if the message isn't padding
+    ;  (log/debug "recv cell: id:" circ-id "cmd:" (:name command) "len:" len))
     (cond (> len cell-len) (let [[f r] (b/cut data cell-len)] ;; more than one cell in our data, cut it up accordingly:
                              (reset! wait-buffer nil)
                              (process config socket f)

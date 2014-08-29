@@ -43,6 +43,14 @@
     (swap! sip-to-call-id dissoc call-id))
   (swap! calls dissoc call-id))
 
+(defn kill-call [config call-id]
+  (let [call      (@calls call-id)
+        flat-sel  #(map second (select-keys %1 %2))]
+    (println "killing:" call-id call)
+    (doseq [r [:rt :rtcp] i [:in :out]]
+      (->> call r i (circ/destroy config)))
+    (rm-call call-id)))
+
 (defn mk-call-id []
   (-> (node/require "crypto") (.randomBytes 16) (.toString "hex")))
 
@@ -62,20 +70,19 @@
                         :via      []}})))
 
 
-(defn mk-headers [call-id caller headers uri-to {ip :host}]
+(defn mk-headers [method call-id caller headers uri-to {ip :host}]
   "create headers for generating an invite. Uses the headers that we saved during register."
-  (let [method "INVITE"]
-    {:uri     uri-to
-     :method  method
-     :headers {:to               {:uri uri-to}
-               :from             {:uri (str/replace (-> headers :from :uri) #"sip:\w+@" (str "sip:" caller "@")) :name caller}
-               :call-id          call-id
-               ;:via             ; thankfully, sip.js takes care of this one.
-               :contact [{:name nil
-                          :uri (str "sip:" caller "@" ip ":5060;transport=UDP;ob")
-                          :params {}}]
-               :content-type     "application/sdp"
-               :cseq             {:seq (rand-int 888888), :method method}}})) ;; FIXME (rand-int 0xFFFFFFFF) is what we'd want.
+  {:uri     uri-to
+   :method  method
+   :headers {:to               {:uri uri-to}
+             :from             {:uri (str/replace (-> headers :from :uri) #"sip:\w+@" (str "sip:" caller "@")) :name caller}
+             :call-id          call-id
+             ;:via             ; thankfully, sip.js takes care of this one.
+             :contact [{:name nil
+                        :uri (str "sip:" caller "@" ip ":5060;transport=UDP;ob")
+                        :params {}}]
+             :content-type     "application/sdp"
+             :cseq             {:seq (rand-int 888888), :method method}}}) ;; FIXME (rand-int 0xFFFFFFFF) is what we'd want.
 
 (defn mk-sdp [{ip :host port :port} {rtcp-port :port} method & [sdp]] ;; FIXME: ignoring rtpc for now.
   "generates SDP for invite or 200/ok. codec choice is hardcoded for now."
@@ -191,6 +198,22 @@
                                   (if (found-it? r)
                                     r
                                     (recur (<! from)))))
+              wait-for-bye    (fn [call-id sip-ctrl {name :name local-dest :dest}]
+                                (skip-until #(when (or (= "BYE" (-> % :nrq :method))
+                                                       (< 200   (-> % :nrq :status))
+                                                       (= :bye %))
+                                               (->> (mk-headers "BYE" call-id name @headers @uri-to local-dest)
+                                                    (merge {:content ""})
+                                                    s/to-js
+                                                    (.send sip))
+                                               (println "::: sent : " (mk-headers "BYE" call-id name @headers @uri-to local-dest))
+                                               (kill-call config call-id))
+                                            sip-ctrl))
+              add-sip-ctrl-to-rt-circs
+                              (fn [call-id sip-ctrl]
+                                (doseq [r [:rt :rtcp] i [:in :out]
+                                        :let [circ-id (->> call-id (@calls) r i)]]
+                                  (circ/update-data circ-id [:sip-ctrl] sip-ctrl)))
               ;; Process SIP logic:
               process     (fn process [rq]
                             (let [nrq          (-> rq cljs/js->clj walk/keywordize-keys)
@@ -199,10 +222,10 @@
                                                                 (->> contact :uri (re-find #"sip:(.*)@") second))
                                                             #"\"" "")]
                               ;; debug <--
-                              (println)
-                              (println :nrq nrq)
-                              (println :cid (-> nrq :headers :call-id (@sip-to-call-id) (@calls)))
-                              (println :cid @sip-to-call-id (-> nrq :headers :call-id ))
+                              ;; (println)
+                              ;; (println :nrq nrq)
+                              ;; (println :cid (-> nrq :headers :call-id (@sip-to-call-id) (@calls)))
+                              ;; (println :cid @sip-to-call-id (-> nrq :headers :call-id ))
                               ;; debug -->
 
                               (cond
@@ -339,12 +362,16 @@
                                                                                        :params {}}])
                                                                            (mk-sdp {:host (:local-ip config) :port local-port} {:port loc-rtcp-port} :ack sdp)))
                                                        process)
-                                                (loop [{nrq :nrq rq :rq}  (<! sip-ctrl)]                                                                  ;; loop on sip messages with this call-id until we receive a BYE.
-                                                  (cond (= "ACK" (:method nrq)) (println "request ack, ok, cool")
-                                                        (= "BYE" (:method nrq)) (println "bye bye.") ;; and tear down. and 200 OK. and don't recur.
-                                                        (< 200 (:status nrq))   (println "error.")
-                                                        :else                   (println "what?"))
-                                                  (recur (<! sip-ctrl))))))))))
+                                                (add-sip-ctrl-to-rt-circs call-id sip-ctrl)
+                                                (wait-for-bye call-id sip-ctrl {:name callee-name
+                                                                                :dest {:host (:local-ip config)}})
+                                                ;; (loop [{nrq :nrq rq :rq}  (<! sip-ctrl)]                                                                  ;; loop on sip messages with this call-id until we receive a BYE.
+                                                ;;   (cond (= "ACK" (:method nrq)) (println "request ack, ok, cool")
+                                                ;;         (= "BYE" (:method nrq)) (kill-call config call-id) ;; and tear down. and 200 OK. and don't recur.
+                                                ;;         (< 200 (:status nrq))   (kill-call config call-id)
+                                                ;;         :else                   (kill-call config call-id))
+                                                ;;   (recur (<! sip-ctrl)))
+                                                )))))))
 
                                 :else (log/error "Unsupported sip method" (:method nrq)))))]
 
@@ -402,7 +429,7 @@
                           ok-200            (atom {})]
                       (log/info "SIP: invited by" caller "- Call-ID:" call-id "Rdv" caller-rdv-id)
                       (add-call call-id {:sip-ctrl sip-ctrl, :sip-call-id call-id, :state :ringing, :peer-rdv caller-rdv-id :rt {:out rtp-circ}}) ;; FIXME add rtp rt, add rtcp
-                      (.send sip (s/to-js (merge (mk-headers call-id caller @headers @uri-to local-dest)       ;; Send our crafted invite with local udp port as "caller's" media session
+                      (.send sip (s/to-js (merge (mk-headers "INVITE" call-id caller @headers @uri-to local-dest)       ;; Send our crafted invite with local udp port as "caller's" media session
                                                  (mk-sdp local-dest {:port loc-rtcp-port} :invite)))
                              process)
                       (<! (skip-until #(let [status (-> % :nrq :status)
@@ -427,6 +454,8 @@
                       (circ/relay-sip config rtcp-circ :f-enc (b/cat (-> :ack-rtcp s/from-cmd b/new1)          ;; Send ack to caller, with our mix's coordinates so he can create an rt-path to us to send rtp.
                                                                      (b/new call-id)
                                                                      b/zero))
+                      (update-data call-id [:rt :out] rtp-circ)
+                      (update-data call-id [:rtcp :out] rtcp-circ)
                       (let [reply1             (<! (skip-until #(:circ-id %) sip-ctrl))
                             reply2             (<! (skip-until #(:circ-id %) sip-ctrl))
                             [rtp-id rtcp-id]   (map :circ-id (if (= (:cmd reply1) :ackack-rtcp) [reply2 reply1] [reply1 reply2]))]                                     ;; Wait for caller's rt path's first message.
@@ -435,7 +464,10 @@
                         (update-data call-id [:rt :in] rtp-id)
                         (update-data call-id [:rtcp :in] rtcp-id))
                       (.send sip (mk-ack @ok-200 call-id) process)
-                      (log/info "SIP: got ackack, ready for relay on" call-id))) ;; loop waiting for bye.
+                      (log/info "SIP: got ackack, ready for relay on" call-id)
+                      (add-sip-ctrl-to-rt-circs call-id sip-ctrl)
+                      (wait-for-bye call-id sip-ctrl {:name caller
+                                                      :dest {:host (:local-ip config)}}))) ;; loop waiting for bye.
 
                 :else
                 (log/info "SIP: incoming message with unknown call id:" call-id "-- dropping."))
