@@ -79,13 +79,14 @@
                               (circ/relay-sip config circ :b-enc reply))
                           (do (log/debug "SIP DIR, could not find" name)
                               (circ/relay-sip config circ :b-enc
-                                              (b/cat (-> :error s/from-cmd b/new1) (b/new call-id) b/zero (b/new "404")))))))]
+                                              (b/cat (-> :error s/from-cmd b/new1) (b/new call-id) b/zero (b/new "404")))))))
+        cmd         (-> request :sip-rq (.readUInt8 0))]
     ;; dispatch requests to the corresponding functions:
     (go-loop [request (<! sip-chan)]
-      (condp = (-> request :sip-rq (.readUInt8 0) s/to-cmd)
+      (condp = (s/to-cmd cmd)
         :register (p-register request)
         :query    (p-query request)
-        (log/error "SIP DIR, received unknown command"))
+        (log/error "SIP DIR, received unknown command" (s/to-cmd cmd) cmd))
       (recur (<! sip-chan)))
     sip-chan))
 
@@ -136,14 +137,15 @@
                          (let [[_ data] (s/get-call-id rq)
                                rdv-id   (.readUInt32BE data 0)]
                            (when (circ/get-data rdv-id)
-                             (circ/relay-sip config rdv-id :b-enc rq))))]
+                             (circ/relay-sip config rdv-id :b-enc rq))))
+        cmd            (-> request :sip-rq (.readUInt8 0))]
     ;; dispatch requests to the corresponding functions:
     (go-loop [request (<! sip-chan)]
-      (condp = (-> request :sip-rq (.readUInt8 0) s/to-cmd)
+      (condp = (s/to-cmd cmd)
         :register-to-mix (p-register request)
         :extend          (p-extend request)
         :invite          (p-relay-invite request)
-        (log/error "SIP DIR, received unknown command"))
+        (log/error "SIP MIX DIR, received unknown command" (s/to-cmd cmd) cmd))
       (recur (<! sip-chan)))
     sip-chan))
 

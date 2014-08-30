@@ -74,15 +74,17 @@
   "create headers for generating an invite. Uses the headers that we saved during register."
   {:uri     uri-to
    :method  method
-   :headers {:to               {:uri uri-to}
-             :from             {:uri (str/replace (-> headers :from :uri) #"sip:\w+@" (str "sip:" caller "@")) :name caller}
-             :call-id          call-id
-             ;:via             ; thankfully, sip.js takes care of this one.
-             :contact [{:name nil
-                        :uri (str "sip:" caller "@" ip ":5060;transport=UDP;ob")
-                        :params {}}]
-             :content-type     "application/sdp"
-             :cseq             {:seq (rand-int 888888), :method method}}}) ;; FIXME (rand-int 0xFFFFFFFF) is what we'd want.
+   :headers (merge {:to               {:uri uri-to}
+                    :from             {:uri (str/replace (-> headers :from :uri) #"sip:\w+@" (str "sip:" caller "@")) :name caller}
+                    :call-id          call-id
+                    ;:via             ; thankfully, sip.js takes care of this one.
+                    :contact [{:name nil
+                               :uri (str "sip:" caller "@" ip ":5060;transport=UDP;ob")
+                               :params {}}]
+                    :cseq             {:seq 1 ;(rand-int 888888)
+                                       :method method}} ;; FIXME (rand-int 0xFFFFFFFF) is what we'd want.
+                   (when (= "INVITE" method)
+                     {:content-type    "application/sdp"}))})
 
 (defn mk-sdp [{ip :host port :port} {rtcp-port :port} method & [sdp]] ;; FIXME: ignoring rtpc for now.
   "generates SDP for invite or 200/ok. codec choice is hardcoded for now."
@@ -166,7 +168,6 @@
 (defn create-server [config net-info]
   "Creates the listening service that will process the connected SIP client's requests.
   Application Proxies start this service."
-  ;; assuming only one client
   (let [incoming-sip          (chan)
         node-id-len           (-> config :ntor-values :node-id-len)] ;; Constant we'll be using often.
     (go (let [sip             (node/require "sip")
@@ -192,6 +193,8 @@
               get-sdp-rtcp    (fn [rq]
                                 {:port (->> (:content rq) (re-seq #"(?m)m\=(video)\s*(\d+)") first last)
                                  :host (second (re-find #"(?m)c\=IN IP4 ((\d+\.){3}\d+)" (:content rq)))})
+              ;; temp helper
+              select          #(->> net-info seq (map second) (filter %) shuffle)                ;; FIXME -> this should be shared by path.
               ;; sip channel processing:
               skip-until      (fn [found-it? from]
                                 (go-loop [r (<! from)]
@@ -237,7 +240,6 @@
 
                                 (= (:method nrq) "REGISTER")
                                 (let [rdv-data     (circ/get-data out-rdv-id)
-                                      select       #(->> net-info seq (map second) (filter %) shuffle)                ;; FIXME -> this should be shared by path.
                                       sip-dir-dest (first (select #(= (:role %) :sip-dir)))
                                       sip-dir-dest (merge sip-dir-dest {:dest sip-dir-dest})                          ;; FIXME will get rid of :dest someday.
                                       ack          (.makeResponse sip rq 200 "OK")]                                   ;; prepare sip successful answer
@@ -286,8 +288,13 @@
                                           call-id          (mk-call-id)
                                           sip-ctrl         (chan)
                                           callee-name      (second (re-find #"sip:(.*)@" (:uri nrq)))                                   ;; get callee name
-                                          sdp              (:content nrq)]
+                                          sdp              (:content nrq)
+                                          sip-dir-dest     (first (select #(= (:role %) :sip-dir)))
+                                          sip-dir-dest     (merge sip-dir-dest {:dest sip-dir-dest})]                          ;; FIXME will get rid of :dest someday.
                                       (add-call call-id {:sip-ctrl sip-ctrl :sip-call-id sip-call-id :state :ringing})
+                                      (assert (:auth sip-dir-dest) "Could not find SIP DIR in aqua network")
+                                      (>! out-rdv-ctrl sip-dir-dest)                                                ;; --- RDV: connect to sip dir to send register
+                                      (<! out-rdv-notify)                                                           ;; wait until connected to send
                                       (sd/query config callee-name out-rdv-id call-id)                                                  ;; query for callee's rdv
                                       (log/info "SIP:" "initiating call" call-id "to" callee-name)
                                       (let [query-reply-rdv      (<! sip-ctrl)]                                                         ;; get query reply
