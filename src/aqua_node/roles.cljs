@@ -37,7 +37,8 @@
   (log/debug "new aqua dtls conn from:" (-> s .-socket .-_destIP) (-> s .-socket .-_destPort)) ;; FIXME: investigate nil .-remote[Addr|Port]
   (c/add s {:cs :client :type :aqua :host (-> s .-socket .-_destIP) :port (-> s .-socket .-_destPort)})
   (c/add-listeners s {:data #(circ/process config s %)})
-  (rate/init config s))
+  (c/update-data s [:rate-timer] (rate/init config s))
+  (c/update-data s [:keep-alive-timer] (js/setTimeout #(circ/destroy-from-socket config s) (:keep-alive-interval config))))
 
 (defn aqua-dir-recv [config s]
   "Setup socket as a dir service, sending all received data through dir/process"
@@ -74,17 +75,6 @@
         (.end c)
         (dir/get-net-info))))
 
-(defn hardcoded-rtp-path [config {dest :dest port :listen-port}] ;; keep this for testing and benchmarks. should move this.
-  "Was used for facilitating benchmarking."
-  (go (let [cid            (<! (path/get-path :rt))
-            circ           (circ/get-data cid)
-            state          (chan)]
-        (circ/update-data cid [:state-ch] state)
-        (go (>! (:dest-ctrl circ) (merge dest {:proto :udp :type :ip4})))
-        (go (let [state          (<! state)
-                  [_ local-port] (<! (path/attach-local-udp4 config cid {:host "127.0.0.1"} path/app-proxy-forward-udp port))]
-              (log/info "Hardcoded RTP: listening on:" local-port "forwarding to:" (:host dest) (:port dest) "using circ:" cid))))))
-
 (defn aqua-connect [config dest & [ctrl]]
   (let [con (chan)
         soc (conn/new :aqua :client dest config {:connect #(go (>! con :done))})]
@@ -102,6 +92,16 @@
                  mix)]
     (aqua-connect config (first mixes) ctrl)))
 
+(defn connect-to-all [{aq :aqua :as config}]
+  "For each mix in node info, if not already connected, extract ip & port and connect."
+  (go (let [ctrl   (chan)]
+        (doseq [[[ip port] mix] (seq (dir/get-net-info))
+                :when (and (or (not= (:host aq) ip)
+                               (not= (:port aq) port))
+                           (nil? (c/find-by-dest {:host ip})))]
+          (aqua-connect config mix ctrl)
+          (<! ctrl)))))
+
 (defn bootstrap [{roles :roles ap :app-proxy aq :aqua ds :remote-dir dir :dir sip-dir :sip-dir :as config}]
   "Setup the services needed by the given role."
   (go (let [is?         #(m/is? % roles)                        ;; tests roles for our running instance
@@ -115,13 +115,14 @@
         (when (is? :app-proxy)
           (let [geo      (<! geo)
                 net-info (<! net-info)
-                sip-chan (sip/create-server config net-info)
+                sip-chan (sip/create-server config)
                 cfg      (merge config {:sip-chan sip-chan})
                 mix      (path/init-pools cfg net-info geo 2)]
             (conn/new :socks :server ap config {:data     path/app-proxy-forward
                                                 :udp-data path/app-proxy-forward-udp
                                                 :init     app-proxy-init
                                                 :error    circ/destroy-from-socket})
+            (js/setInterval #(get-net-info config ds) (:register-interval config))
             (log/info "Dir: sending register info")
             (register-to-dir config geo mix ds)))
 
@@ -131,16 +132,15 @@
 
         (when (or (is? :mix) (is? :rdv))
           (let [sip-chan (sip-dir/create-mix-dir config)
-                cfg      (merge config {:sip-chan sip-chan :aqua sip-dir :sip-mix-dir sip-dir/mix-dir})
+                config   (merge config {:sip-chan sip-chan :sip-mix-dir sip-dir/mix-dir})
                 ctrl     (chan)]
-            (conn/new :aqua :server aq cfg {:connect aqua-server-recv})
-            (register-to-dir config (<! geo) nil ds)
-            ;; for each mix in node info, extract ip & port and connect.
-            (doseq [[[ip port] mix] (seq (<! net-info))
-                    :when (or (not= (:host aq) ip)
-                              (not= (:port aq) port))]
-              (aqua-connect cfg mix ctrl)
-              (<! ctrl))))
+            (conn/new :aqua :server aq config {:connect aqua-server-recv})
+            (<! net-info)
+            (connect-to-all config)
+            (js/setInterval #(go (<! (get-net-info config ds))
+                                 (connect-to-all config))
+                            (:register-interval config))
+            (register-to-dir config (<! geo) nil ds)))
 
         (when (is? :dir)
           (conn/new :dir :server dir config {:connect aqua-dir-recv}))

@@ -30,6 +30,7 @@
      :rate                  {:period 10}
      ;; dir & sip dir register will timeout if not renewed within these:
      :register-interval     10000
+     :keep-alive-interval   120000
      :sip-register-interval 600000}))
 
 (defn read-config [argv]

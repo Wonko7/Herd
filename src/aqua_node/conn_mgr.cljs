@@ -16,6 +16,7 @@
         is?         #(and (= %2 cs) (= %1 type))
         data        (partial data config)
         udp-data    (partial udp-data config)
+        err         (or err #(do (log/error "Caught error on socket:" %) (c/destroy %)))
         ;; create a new tcp connection:
         new-tcp-c   (fn [] (let [socket (.connect (node/require "net") (cljs/clj->js (select-keys conn [:host :port])))]
                              (c/add socket {:ctype :tcp :type :tcp-exit :cs :client})
@@ -36,10 +37,10 @@
         connect     (partial connect config)]
     ;; create the appropriate connection:
     (cond (is? :socks :server) (socks/create-server conn data udp-data (partial init config) (partial err config))
-          (is? :aqua :server)  (dtls/create-server conn config connect)
-          (is? :aqua :client)  (dtls/connect conn config connect)
-          (is? :dir :server)   (tls/create-server conn config connect) ;; FIXME: setting type to aqua/aqua-dir is in dtls/tls. this is Bad.
-          (is? :dir :client)   (tls/connect conn config connect)
+          (is? :aqua :server)  (dtls/create-server conn config connect err)
+          (is? :aqua :client)  (dtls/connect conn config connect err)
+          (is? :dir :server)   (tls/create-server conn config connect err) ;; FIXME: setting type to aqua/aqua-dir is in dtls/tls. this is Bad.
+          (is? :dir :client)   (tls/connect conn config connect err)
           (is? :tcp :client)   (new-tcp-c)
           (is? :udp :client)   (new-udp-c :udp-exit)
           (is? :rtp :client)   (new-udp-c :rtp-exit)

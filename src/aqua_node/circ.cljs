@@ -75,6 +75,8 @@
 (defn add [circ-id socket & [state]]
   ;; FIXME remove socket from there. this shall become :forward-hop.
   (assert (nil? (@circuits circ-id)) (str "could not create circuit, " circ-id " already exists"))
+  (let [circs (-> socket c/get-data :circuits)]
+    (c/update-data socket [:circuits] (cons circ-id circs)))
   (swap! circuits merge {circ-id (merge state {:conn socket})}))
 
 (defn update-data [circ keys subdata]
@@ -82,6 +84,8 @@
   circ)
 
 (defn rm [circ]
+  (let [circs (-> circ :conn c/get-data :circuits)]
+    (c/update-data (:conn circ) [:circuits] (remove #(= % circ) circs)))
   (swap! circuits dissoc circ)
   circ)
 
@@ -92,10 +96,10 @@
     (rm circ)))
 
 (defn destroy-from-socket [config s]
-  (let [circ-id   (:circuit (c/get-data s))
-        circ      (@circuits circ-id)]
-    (when circ
-      (destroy config circ-id))))
+  (js/clearInterval (-> s c/get-data :rate-timer))
+  (doseq [circ-id (-> s c/get-data :circuits)]
+    (destroy config circ-id))
+  (c/destroy s))
 
 (defn get-all []
   @circuits)
@@ -626,7 +630,8 @@
         cell-len     (r32 0)           ;; length the packet should have
         circ-id      (r32 4)           ;; circuit id
         command      (to-cmd (r8 8))   ;; what kind of packet command (relay, extend, etc)
-        payload      (.slice data 9)]
+        payload      (.slice data 9)
+        circ         (@circuits circ-id)]
     ;(when (not= :padding (:name command)) ;; only print debug if the message isn't padding
     ;  (log/debug "recv cell: id:" circ-id "cmd:" (:name command) "len:" len))
     (cond (> len cell-len) (let [[f r] (b/cut data cell-len)] ;; more than one cell in our data, cut it up accordingly:
@@ -634,11 +639,14 @@
                              (process config socket f)
                              (process config socket r))
           ;; not enough data, put it on wait buffer.
-          (< len cell-len) (cond (@circuits circ-id)                     (reset! wait-buffer data)
+          (< len cell-len) (cond circ                                    (reset! wait-buffer data)
                                  (@circuits (.readUInt32BE data-orig 4)) (reset! wait-buffer data-orig)
                                  :else                                   (reset! wait-buffer nil))
           ;; we're done, find the associated function for processing that command:
           :else            (do (reset! wait-buffer nil)
+                               (when circ
+                                 (js/clearTimeout (:keep-alive-timer circ))
+                                 (c/update-data socket [:keep-alive-timer] (js/setTimeout #(destroy-from-socket config socket) (:keep-alive-interval config))))
                                (when (:fun command)
                                  (try
                                    ((:fun command) config socket circ-id payload)

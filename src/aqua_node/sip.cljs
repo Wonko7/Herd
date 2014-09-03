@@ -165,7 +165,7 @@
 
 ;; Manage local SIP client requests ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
-(defn create-server [config net-info]
+(defn create-server [config]
   "Creates the listening service that will process the connected SIP client's requests.
   Application Proxies start this service."
   (let [incoming-sip          (chan)
@@ -194,7 +194,7 @@
                                 {:port (->> (:content rq) (re-seq #"(?m)m\=(video)\s*(\d+)") first last)
                                  :host (second (re-find #"(?m)c\=IN IP4 ((\d+\.){3}\d+)" (:content rq)))})
               ;; temp helper
-              select          #(->> net-info seq (map second) (filter %) shuffle)                ;; FIXME -> this should be shared by path.
+              select          #(->> (dir/get-net-info) seq (map second) (filter %) shuffle)                ;; FIXME -> this should be shared by path.
               ;; sip channel processing:
               skip-until      (fn [found-it? from]
                                 (go-loop [r (<! from)]
@@ -256,7 +256,7 @@
                                         (reset! headers (-> ack cljs/js->clj walk/keywordize-keys :headers)))
                                     (do (log/error "Could not find SIP DIR in aqua network")
                                         ;; debug <--
-                                        (doall (->> net-info seq (map second) (map #(dissoc % :auth)) (map println)))
+                                        (doall (->> (dir/get-net-info) seq (map second) (map #(dissoc % :auth)) (map println)))
                                         ;; debug -->
                                         (.send sip (.makeResponse sip rq "404" "NOT FOUND")))))
 

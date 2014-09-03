@@ -110,7 +110,9 @@
 
 (defn send-net-request [config soc done]
   "Send a message asking for the aqua mix topology"
-  (.write soc (-> [(from-cmd :net-request) 101] cljs/clj->js b/new) #(go (>! done :done)))) ;; FIXME the done channel isn't necessary, I was tired. get rid of it here when you can.
+  (.write soc (-> [(from-cmd :net-request) 101] cljs/clj->js b/new)
+          #(when done
+             (go (>! done :done)))))
 
 (defn send-query [config soc ip]
   "Send a query to get the rendez vous point of a client. Right now we query using

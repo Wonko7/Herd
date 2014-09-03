@@ -33,9 +33,10 @@
   (when-let [c (@connections conn)]
     (rm conn)
     (doall (map #(%) (:on-destroy c)))
-    (if (= :udp (:ctype c))
-      (.close conn)
-      (.destroy conn))))
+    (when conn
+      (if (= :udp (:ctype c))
+        (.close conn)
+        (.destroy conn)))))
 
 (defn add-listeners [conn listeners]
   "Add callbacks to socket events.
@@ -58,7 +59,7 @@
                    s))
                (seq @connections))))
 
-(defn find-by-dest [{host :host}] ;; FIXME make a map to link to sockets.
+(defn find-by-dest [{host :host}] ;; FIXME should deprecate this. breaks on nat for example.
   "Find an open socket for the given host.
   Might also add a filter to match a type of connections (aqua, dir, etc)."
   (first (keep (fn [[s d]]
