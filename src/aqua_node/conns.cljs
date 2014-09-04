@@ -13,8 +13,13 @@
 
 (def connections (atom {}))
 
+(def id-to-connections (atom {}))
+
 (defn add [conn & [data]]
   (swap! connections merge {conn data})
+  (when (-> data :auth :srv-id)
+    (swap! id-to-connections merge {(-> data :auth :srv-id b/hx) (merge data {:socket conn})})
+    (log/info "Added connection to:" (-> data :auth :srv-id b/hx)))
   conn)
 
 (defn set-data [conn data]
@@ -26,11 +31,15 @@
   conn)
 
 (defn rm [conn]
+  (when (-> conn (@connections) :auth :srv-id)
+    (swap! id-to-connections dissoc (-> conn (@connections) :auth :srv-id b/hx)))
   (swap! connections dissoc conn)
   conn)
 
 (defn destroy [conn]
   (when-let [c (@connections conn)]
+    (log/info "Removed connection to:" (-> c :auth :srv-id b/hx))
+    (swap! connections dissoc (-> c :auth :srv-id))
     (rm conn)
     (doall (map #(%) (:on-destroy c)))
     (when conn
@@ -49,15 +58,13 @@
   @connections)
 
 (defn get-data [conn]
-  (@connections conn))
+  (when conn
+    (@connections conn)))
 
 (defn find-by-id [id]
   "Find an open socket for the given host.
   Might also add a filter to match a type of connections (aqua, dir, etc)."
-  (first (keep (fn [[s d]]
-                 (when (and (-> d :auth :srv-id) (b/b= id (-> d :auth :srv-id)))
-                   s))
-               (seq @connections))))
+  (-> id b/hx (@id-to-connections) :socket))
 
 (defn find-by-dest [{host :host}] ;; FIXME should deprecate this. breaks on nat for example.
   "Find an open socket for the given host.

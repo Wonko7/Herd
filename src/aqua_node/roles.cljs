@@ -38,7 +38,9 @@
   (c/add s {:cs :client :type :aqua :host (-> s .-socket .-_destIP) :port (-> s .-socket .-_destPort)})
   (c/add-listeners s {:data #(circ/process config s %)})
   (c/update-data s [:rate-timer] (rate/init config s))
-  (c/update-data s [:keep-alive-timer] (js/setTimeout #(circ/destroy-from-socket config s) (:keep-alive-interval config))))
+  (c/update-data s [:keep-alive-timer] (js/setTimeout #(do (log/info "Lost connection to" (-> s c/get-data :auth))
+                                                           (circ/destroy-from-socket config s))
+                                                      (:keep-alive-interval config))))
 
 (defn aqua-dir-recv [config s]
   "Setup socket as a dir service, sending all received data through dir/process"
@@ -98,7 +100,7 @@
         (doseq [[[ip port] mix] (seq (dir/get-net-info))
                 :when (and (or (not= (:host aq) ip)
                                (not= (:port aq) port))
-                           (nil? (c/find-by-dest {:host ip})))]
+                           (nil? (c/find-by-id (-> mix :auth :srv-id))))]
           (aqua-connect config mix ctrl)
           (<! ctrl)))))
 

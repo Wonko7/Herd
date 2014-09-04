@@ -75,7 +75,7 @@
 (defn add [circ-id socket & [state]]
   ;; FIXME remove socket from there. this shall become :forward-hop.
   (assert (nil? (@circuits circ-id)) (str "could not create circuit, " circ-id " already exists"))
-  (let [circs (-> socket c/get-data :circuits)]
+  (let [circs     (-> socket c/get-data :circuits)]
     (c/update-data socket [:circuits] (cons circ-id circs)))
   (swap! circuits merge {circ-id (merge state {:conn socket})}))
 
@@ -646,7 +646,8 @@
           :else            (do (reset! wait-buffer nil)
                                (when circ
                                  (js/clearTimeout (:keep-alive-timer circ))
-                                 (c/update-data socket [:keep-alive-timer] (js/setTimeout #(destroy-from-socket config socket) (:keep-alive-interval config))))
+                                 (c/update-data socket [:keep-alive-timer] (js/setTimeout #(do (log/info "Lost connection to" (-> socket c/get-data :auth))
+                                                                                               (destroy-from-socket config circ-id)) (:keep-alive-interval config))))
                                (when (:fun command)
                                  (try
                                    ((:fun command) config socket circ-id payload)

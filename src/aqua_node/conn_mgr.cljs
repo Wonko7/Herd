@@ -37,8 +37,8 @@
         connect     (partial connect config)]
     ;; create the appropriate connection:
     (cond (is? :socks :server) (socks/create-server conn data udp-data (partial init config) (partial err config))
-          (is? :aqua :server)  (dtls/create-server conn config connect err)
-          (is? :aqua :client)  (dtls/connect conn config connect err)
+          (is? :aqua :server)  (dtls/create-server conn config conn-info connect err)
+          (is? :aqua :client)  (dtls/connect conn config conn-info connect err)
           (is? :dir :server)   (tls/create-server conn config connect err) ;; FIXME: setting type to aqua/aqua-dir is in dtls/tls. this is Bad.
           (is? :dir :client)   (tls/connect conn config connect err)
           (is? :tcp :client)   (new-tcp-c)
