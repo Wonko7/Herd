@@ -647,7 +647,7 @@
                                (js/clearTimeout (-> socket c/get-data :keep-alive-timer))
                                (c/update-data socket [:keep-alive-timer] (js/setTimeout #(do (log/info "Lost connection to" (when (-> socket c/get-data :auth :srv-id)
                                                                                                                               (-> socket c/get-data :auth :srv-id b/hx)))
-                                                                                             (destroy-from-socket config circ-id)) (:keep-alive-interval config)))
+                                                                                             (destroy-from-socket config socket)) (:keep-alive-interval config)))
                                (when (:fun command)
                                  (try
                                    ((:fun command) config socket circ-id payload)
