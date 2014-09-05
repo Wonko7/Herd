@@ -644,10 +644,10 @@
                                  :else                                   (reset! wait-buffer nil))
           ;; we're done, find the associated function for processing that command:
           :else            (do (reset! wait-buffer nil)
-                               (when circ
-                                 (js/clearTimeout (:keep-alive-timer circ))
-                                 (c/update-data socket [:keep-alive-timer] (js/setTimeout #(do (log/info "Lost connection to" (-> socket c/get-data :auth))
-                                                                                               (destroy-from-socket config circ-id)) (:keep-alive-interval config))))
+                               (js/clearTimeout (-> socket c/get-data :keep-alive-timer))
+                               (c/update-data socket [:keep-alive-timer] (js/setTimeout #(do (log/info "Lost connection to" (when (-> socket c/get-data :auth :srv-id)
+                                                                                                                              (-> socket c/get-data :auth :srv-id b/hx)))
+                                                                                             (destroy-from-socket config circ-id)) (:keep-alive-interval config)))
                                (when (:fun command)
                                  (try
                                    ((:fun command) config socket circ-id payload)

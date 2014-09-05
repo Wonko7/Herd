@@ -34,9 +34,6 @@
 (defn create-single [config [n & nodes :as all-nodes]]
   "Creates a single path. Assumes a connection to the first node exists."
   ;; Find the first mix's socket & send a create.
-  ;(println :create n)
-  ;(println :create (c/find-by-dest (:dest n)))
-(println :lol (c/find-by-id (-> n :auth :srv-id)))
   (let [socket (c/find-by-id (-> n :auth :srv-id))
         id     (circ/create config socket (:auth n))
         ctrl   (chan)
@@ -254,18 +251,9 @@
     (log/debug "Chosen mix:" (:host mix) (:port mix))
     (reset! chosen-mix mix)
     ;; init channel pools:
-    ;(println :path (keys mix))
     (reset! pool {:one-hop (chan N) :rt (chan N) :single (chan N)})
     ;; wait until connected to the chosen mix before sending requests
-    ;(c/update-data soc [:auth] (:auth mix))
-    ;(println :path soc)
-        (println :path (-> soc c/get-data keys) soc)
     (go (<! connected)
-        (println :path soc)
-        (println (keys mix) (-> mix :auth :srv-id b/hx) )
-        (println (-> mix :auth :srv-id b/hx c/find-by-id c/get-data keys) soc)
-        (println (-> soc c/get-data keys) soc)
-        (println (= (-> mix :auth :srv-id b/hx c/find-by-id .-id) (.-id soc) ))
         (rate/init config soc)
         (rate/queue soc #(circ/send-id config soc))
         (c/add-listeners soc {:data #(circ/process config soc %)})

@@ -46,7 +46,7 @@
 (defn kill-call [config call-id]
   (let [call      (@calls call-id)
         flat-sel  #(map second (select-keys %1 %2))]
-    (println "killing:" call-id call)
+    (log/info "SIP killing call:" call-id)
     (doseq [r [:rt :rtcp] i [:in :out]]
       (->> call r i (circ/destroy config)))
     (rm-call call-id)))
@@ -206,7 +206,6 @@
                                   (skip-until #(when (or (= "BYE" (-> % :nrq :method))
                                                          (< 200   (-> % :nrq :status))
                                                          (= :bye %))
-                                                 (println "headers:" (s/to-clj bye))
                                                  ;(.send sip bye)
                                                  ;(->> (mk-headers "BYE" sip-call-id name headers uri-to local-dest)
                                                  ;     (merge {:content ""})
@@ -375,8 +374,8 @@
                                                                             :uri (str "sip:" callee-name "@" (:local-ip config) ":5060;transport=UDP;ob")
                                                                             :params {}}])
                                                                 (mk-sdp {:host (:local-ip config) :port local-port} {:port loc-rtcp-port} :ack sdp))]
-                                                  (println :ok ok)
-                                                  (println :uri (-> ok :headers :contact first :uri))
+                                                  ;(println :ok ok)
+                                                  ;(println :uri (-> ok :headers :contact first :uri))
                                                   (update-data call-id [:uri-to] (-> ok :headers :contact first :uri))
                                                   (update-data call-id [:headers] (-> ok :headers))
                                                   ;(update-data call-id [:bye] (.makeResponse sip rq))

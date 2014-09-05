@@ -38,7 +38,8 @@
 
 (defn destroy [conn]
   (when-let [c (@connections conn)]
-    (log/info "Removed connection to:" (-> c :auth :srv-id b/hx))
+    (when (-> c :auth :srv-id)
+      (log/info "Removed connection to:" (-> c :auth :srv-id b/hx)))
     (swap! connections dissoc (-> c :auth :srv-id))
     (rm conn)
     (doall (map #(%) (:on-destroy c)))

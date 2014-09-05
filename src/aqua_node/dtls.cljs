@@ -21,5 +21,4 @@
   (let [[dtls opts] (mk-dtls config dest)
         c           (.connect dtls opts)]
     (c/add-listeners c {:secureConnect #(conn-handler c) :error err})
-    (println :dtls (merge conn-info {:cs :client :type :aqua :host (:host dest) :port (:port dest)}))
     (c/add c (merge conn-info {:cs :client :type :aqua :host (:host dest) :port (:port dest)})))) ;; FIXME doing this because for some reason .-remote[Addr|Port] end up nil.
