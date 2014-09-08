@@ -620,6 +620,13 @@
 
 (def wait-buffer (atom nil)) ;; FIXME we need one per socket
 
+(defn reset-keep-alive [config socket]
+  (let [id (-> socket c/get-data :auth :srv-id)]
+    (js/clearTimeout (-> socket c/get-data :keep-alive-timer))
+    (c/update-data socket [:keep-alive-timer] (js/setTimeout #(do (log/info "Lost connection to" (when id (b/hx id)))
+                                                                  (destroy-from-socket config socket))
+                                                             (:keep-alive-interval config)))))
+
 (defn process [config socket data-orig]
   "Takes received data from a socket, checks if there is enough data,
   parses the header and calls the appropriate function to process it."
@@ -644,10 +651,7 @@
                                  :else                                   (reset! wait-buffer nil))
           ;; we're done, find the associated function for processing that command:
           :else            (do (reset! wait-buffer nil)
-                               (js/clearTimeout (-> socket c/get-data :keep-alive-timer))
-                               (c/update-data socket [:keep-alive-timer] (js/setTimeout #(do (log/info "Lost connection to" (when (-> socket c/get-data :auth :srv-id)
-                                                                                                                              (-> socket c/get-data :auth :srv-id b/hx)))
-                                                                                             (destroy-from-socket config socket)) (:keep-alive-interval config)))
+                               (reset-keep-alive config socket)
                                (when (:fun command)
                                  (try
                                    ((:fun command) config socket circ-id payload)
