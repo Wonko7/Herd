@@ -84,6 +84,7 @@
     (go (<! con)
         (rate/init config soc)
         (rate/queue soc #(circ/send-id config soc))
+        (circ/reset-keep-alive config soc)
         (when ctrl (>! ctrl soc)))))
 
 (defn aqua-connect-from-id [config net-info id ctrl]

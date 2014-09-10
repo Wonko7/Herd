@@ -17,7 +17,7 @@
       (f) ;; period is zero, immediate send, no chaffing.
       (do (when-not (zero? t)
             (do (c/update-data c [:rate :tokens] (dec t))))   ;; -> not counting these anymore.
-          (if (< (count fs) 10)
+          (if (< (count fs) 5)
             (c/update-data c [:rate :fs] (concat fs [f]))     ;; add f to fs in last position.
             (log/error "Rate limiter; dropped one."))))))     ;; FIXME -> add to list if not= t 1.
 
@@ -28,8 +28,11 @@
       (do (f)                                         ;; f is called and sends a packet.
           (c/update-data c [:rate :fs] fs))           ;; update queue
       (when (and (.-writable c))
-        (js/setImmediate #(circ/padding config c))))  ;; send a padding packet instead.
+        (circ/padding config c)))                     ;; send a padding packet instead.
     (c/update-data c [:rate :tokens] tot)))           ;; -> also useless.
+
+(def sockets (atom []))
+(def timer (atom nil))
 
 (defn init [{{p :period} :rate :as config} c]
   "Initialise rate limiter on a socket."
@@ -40,5 +43,7 @@
                               :tokens t
                               :total  t
                               :queue  (partial queue c)})
-    (when-not (zero? p)
-      (js/setInterval #(pop-write config c) p))))
+    (reset! sockets (vec (cons c @sockets)))
+    (when-not (or (zero? p) @timer)
+      (reset! timer (js/setInterval #(doseq [c @sockets]
+                                       (pop-write config c)) p)))))

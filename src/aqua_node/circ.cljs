@@ -159,10 +159,10 @@
     (w32 circ-id 4)
     (w8 (from-cmd cmd) 8)
     (.copy payload buf 9)
-    (js/setImmediate (do (when (and (:data config) (zero? (dec-block)))
-                           (.emit (:data config) "readable"))
-                         #(when (and socket (.-writable socket))
-                            (.write socket buf)))))) ;-> good perf, more drops --> socket can be killed before we send
+    (do (when (and (:data config) (zero? (dec-block)))
+          (.emit (:data config) "readable"))
+        (when (and socket (.-writable socket))
+          (.write socket buf))))) ;-> good perf, more drops --> socket can be killed before we send
 
 
 ;; make requests: circuit level ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
@@ -640,7 +640,9 @@
         payload      (.slice data 9)
         circ         (@circuits circ-id)]
     ;(when (not= :padding (:name command)) ;; only print debug if the message isn't padding
-    ;  (log/debug "recv cell: id:" circ-id "cmd:" (:name command) "len:" len))
+    ;  (log/debug "recv cell: id:" circ-id "cmd:" (:name command) "len:" len  "id:" (if-let [id (-> socket c/get-data :auth :srv-id)]
+    ;                                                                                 (b/hx id)
+    ;                                                                                 "unknown")))
     (cond (> len cell-len) (let [[f r] (b/cut data cell-len)] ;; more than one cell in our data, cut it up accordingly:
                              (reset! wait-buffer nil)
                              (process config socket f)
