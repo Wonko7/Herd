@@ -10,14 +10,22 @@
 (defn int-to-zone [zone]
   "Return keyword from int coding of zone"
   (condp = zone
-    0 :ireland
-    1 :north-america))
+    0  :australia
+    1  :california
+    2  :ireland
+    3  :japan
+    4  :singapore
+    5  :virginia))
 
 (defn zone-to-int [zone]
   "Return int coding of region keyword. For sending over network."
   (condp = zone
-    :ireland           0
-    :north-america     1))
+    :australia   0
+    :california  1
+    :ireland     2
+    :japan       3
+    :singapore   4
+    :virginia    5))
 
 (defn parse [config]
   (try
