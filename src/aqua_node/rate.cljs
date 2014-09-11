@@ -21,9 +21,9 @@
             (c/update-data c [:rate :fs] (concat fs [f]))     ;; add f to fs in last position.
             (log/error "Rate limiter; dropped one."))))))     ;; FIXME -> add to list if not= t 1.
 
-(defn pop-write [config c]
+(defn pop-write [config c data]
   "pop the write function queue."
-  (let [{t :tokens tot :total [f & fs] :fs} (:rate (c/get-data c))]
+  (let [{t :tokens tot :total [f & fs] :fs} (:rate data)]
     (if (and f (.-writable c))
       (do (f)                                         ;; f is called and sends a packet.
           (c/update-data c [:rate :fs] fs))           ;; update queue
@@ -31,7 +31,6 @@
         (circ/padding config c)))                     ;; send a padding packet instead.
     (c/update-data c [:rate :tokens] tot)))           ;; -> also useless.
 
-(def sockets (atom []))
 (def timer (atom nil))
 
 (defn init [{{p :period} :rate :as config} c]
@@ -43,7 +42,9 @@
                               :tokens t
                               :total  t
                               :queue  (partial queue c)})
-    (reset! sockets (vec (cons c @sockets)))
     (when-not (or (zero? p) @timer)
-      (reset! timer (js/setInterval #(doseq [c @sockets]
-                                       (pop-write config c)) p)))))
+      (reset! timer (js/setInterval #(doseq [[c data] (filter (fn [[c data]]
+                                                                (:rate data))
+                                                              (c/get-all))]
+                                       (pop-write config c data))
+                                    p)))))

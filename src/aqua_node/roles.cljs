@@ -97,8 +97,7 @@
   "For each mix in node info, if not already connected, extract ip & port and connect."
   (go (let [ctrl   (chan)]
         (doseq [[[ip port] mix] (seq (dir/get-net-info))
-                :when (and (or (not= (:host aq) ip)
-                               (not= (:port aq) port))
+                :when (and (not= (-> mix :auth :srv-id b/hx) (-> config :auth :aqua-id :id b/hx))
                            (nil? (c/find-by-id (-> mix :auth :srv-id))))]
           (aqua-connect config mix ctrl)
           (<! ctrl)))))
@@ -112,6 +111,17 @@
 
         (log/info "Aqua node ID:" (-> config :auth :aqua-id :id b/hx))
         (log/info "Bootstrapping as" roles)
+
+        (when (:debug config)
+          (js/setInterval (fn []
+                            (let [circs (circ/get-all)
+                                  conns (c/get-all)
+                                  net-info (dir/get-net-info)]
+                              (log/info "Status:" (count circs) "circuits")
+                              (log/info "Status:" (count conns) "connections")
+                              (log/info "Status:" (count (filter #(-> % second :rate) conns)) "rate limited connections")
+                              (log/info "Status:" (count net-info) "net-info entries")))
+                          20000))
 
         (when (is? :app-proxy)
           (let [geo      (<! geo)

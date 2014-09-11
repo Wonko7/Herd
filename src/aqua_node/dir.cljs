@@ -146,6 +146,7 @@
   ;; FIXME: we should reset mix-dir first.
   (let [nb      (.readUInt32BE msg 0)] ;; nb is the number of entries
     ;; init i at 0, and cut the header off of msg
+    (reset! mix-dir nil)
     (loop [i 0, msg (.slice msg 4)]
       ;; do this until we've parsed all entries:
       (when (< i nb)

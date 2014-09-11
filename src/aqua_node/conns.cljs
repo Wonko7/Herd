@@ -15,21 +15,6 @@
 
 (def id-to-connections (atom {}))
 
-(defn add [conn & [data]]
-  (swap! connections merge {conn data})
-  (when (-> data :auth :srv-id)
-    (swap! id-to-connections merge {(-> data :auth :srv-id b/hx) (merge data {:socket conn})})
-    (log/info "Added connection to:" (-> data :auth :srv-id b/hx)))
-  conn)
-
-(defn set-data [conn data]
-  (swap! connections merge {conn data})
-  conn)
-
-(defn update-data [conn keys subdata]
-  (swap! connections assoc-in (cons conn keys) subdata)
-  conn)
-
 (defn rm [conn]
   (when (-> conn (@connections) :auth :srv-id)
     (swap! id-to-connections dissoc (-> conn (@connections) :auth :srv-id b/hx)))
@@ -40,13 +25,33 @@
   (when-let [c (@connections conn)]
     (when (-> c :auth :srv-id)
       (log/info "Removed connection to:" (-> c :auth :srv-id b/hx)))
-    (swap! connections dissoc (-> c :auth :srv-id))
     (rm conn)
     (doall (map #(%) (:on-destroy c)))
     (when conn
       (if (= :udp (:ctype c))
         (.close conn)
         (.destroy conn)))))
+
+(defn add [conn & [data]]
+  (swap! connections merge {conn data})
+  (when-let [id (-> data :auth :srv-id)]
+    (destroy (-> id b/hx (@id-to-connections) :socket))
+    (swap! id-to-connections merge {(-> id b/hx) {:socket conn}})
+    (log/info "Added connection to:" (-> id b/hx)))
+  conn)
+
+(defn add-id [conn id]
+  (destroy (-> id b/hx (@id-to-connections) :socket))
+  (swap! id-to-connections merge {(b/hx id) {:socket conn}})
+  (log/info "Received ID connection to:" (b/hx id)))
+
+(defn set-data [conn data]
+  (swap! connections merge {conn data})
+  conn)
+
+(defn update-data [conn keys subdata]
+  (swap! connections assoc-in (cons conn keys) subdata)
+  conn)
 
 (defn add-listeners [conn listeners]
   "Add callbacks to socket events.

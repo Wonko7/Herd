@@ -319,6 +319,7 @@
 
 (defn recv-id [config socket circ-id payload]
   "Recv client's public ID & attach to socket"
+  (c/add-id socket payload)
   (c/update-data socket [:auth] {:srv-id payload}))
 
 
@@ -458,7 +459,7 @@
                                                          (destroy config circ-id))}
                              sock         (condp = (:proto dest) ;; FIXME -> this should be set by each transport/tunnel type. -> call backs from socks, rtpp, etc.
                                             :tcp (conn/new :tcp :client dest config (merge cbs {:data (fn [config soc b] ;; FIXME -> mk this a fn used in roles?
-                                                                                                        (doall (map (fn [b] (.nextTick js/process #(relay config socket circ-id :data :b-enc b)))
+                                                                                                        (doall (map (fn [b] (js/setImmediate #(relay config socket circ-id :data :b-enc b)))
                                                                                                                     (apply (partial b/cut b) (range 1350 (.-length b) 1350)))))}))
                                             :udp (conn/new :udp :client nil config (merge cbs {:data (fn [config soc msg rinfo]
                                                                                                        (relay config socket circ-id :data :b-enc msg))}))
@@ -621,8 +622,9 @@
 (def wait-buffer (atom nil)) ;; FIXME we need one per socket
 
 (defn reset-keep-alive [config socket]
-  (let [id (-> socket c/get-data :auth :srv-id)]
-    (js/clearTimeout (-> socket c/get-data :keep-alive-timer))
+  (let [data  (-> socket c/get-data)
+        id    (-> data :auth :srv-id)]
+    (js/clearTimeout (-> data :keep-alive-timer))
     (c/update-data socket [:keep-alive-timer] (js/setTimeout #(do (log/info "Lost connection to" (when id (b/hx id)))
                                                                   (destroy-from-socket config socket))
                                                              (:keep-alive-interval config)))))
