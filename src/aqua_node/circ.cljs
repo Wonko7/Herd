@@ -203,7 +203,7 @@
   (when-let [circ  (@circuits circ-id)]
     (let [c        (node/require "crypto")
           encs     (get-path-enc circ direction) ;; FIXME: PATH: mk pluggable
-          iv       (or iv (.randomBytes c. (-> config :enc :iv-len)))
+          iv       (or iv (.randomBytes c (-> config :enc :iv-len)))
           msg      (b/copycat2 iv (reduce #(%2 iv %1) msg encs))]
       (cell-send config socket circ-id circ-cmd msg))))
 
@@ -300,12 +300,12 @@
 
 (defn forward [config circ-id dest-str cell]
   "Part of the multipath prototype"
-  (let [socket  (c/find-by-dest {})
-        iv      (.randomBytes c. 16)
-        key     (-> (@circuits circ-id) :mux :auth :secret)
-        cell    (b/cat iv (crypto/enc-aes key iv cell))
-        payload (b/cat (b/new dest-str) (b/new (cljs/clj->js [0])) cell)]
-    (cell-send config socket 0 :forward payload)))
+  (comment (let [socket  (c/find-by-dest {})
+                 ;;iv      (.randomBytes c 16)
+                 key     (-> (@circuits circ-id) :mux :auth :secret)
+                 cell    (b/cat iv (crypto/enc-aes key iv cell))
+                 payload (b/cat (b/new dest-str) (b/new (cljs/clj->js [0])) cell)]
+             (cell-send config socket 0 :forward payload))))
 
 (defn send-destroy [config dest circ-id reason]
   "Send a destroy packet to tear down a circuit."

@@ -15,7 +15,7 @@
 
 (defn hmac [key message]
   (let [crypto (node/require "crypto")]
-        (-> (.createHmac crypto. "sha256" key)
+        (-> (.createHmac crypto "sha256" key)
             (.update message)
             .digest)))
 

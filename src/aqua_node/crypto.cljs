@@ -12,22 +12,22 @@
 
 (defn create-tmp-enc [key iv msg]
   (let [c    (node/require "crypto")
-        aes  (.createCipheriv c. "aes-256-ctr" key iv)]
+        aes  (.createCipheriv c "aes-256-ctr" key iv)]
     (.update aes msg)))
 
 (defn create-tmp-dec [key iv msg]
   (let [c    (node/require "crypto")
-        aes  (.createDecipheriv c. "aes-256-ctr" key iv)]
+        aes  (.createDecipheriv c "aes-256-ctr" key iv)]
     (.update aes msg)))
 
 (defn create-dec [key iv]
   (let [c    (node/require "crypto")
-        aes  (.createDecipheriv c. "aes-256-ctr" key iv)]
+        aes  (.createDecipheriv c "aes-256-ctr" key iv)]
     aes))
 
 (defn create-enc [key iv]
   (let [c    (node/require "crypto")
-        aes  (.createCipheriv c. "aes-256-ctr" key iv)]
+        aes  (.createCipheriv c "aes-256-ctr" key iv)]
     aes))
 
 ;; curve:
