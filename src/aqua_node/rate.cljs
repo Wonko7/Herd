@@ -16,7 +16,7 @@
     (if (zero? p)
       (f) ;; period is zero, immediate send, no chaffing.
       (do (when-not (zero? t)
-            (do (c/update-data c [:rate :tokens] (dec t))))   ;; -> not counting these anymore.
+            (c/update-data c [:rate :tokens] (dec t)))   ;; -> not counting these anymore.
           (if (< (count fs) 5)
             (c/update-data c [:rate :fs] (concat fs [f]))     ;; add f to fs in last position.
             (log/error "Rate limiter; dropped one."))))))     ;; FIXME -> add to list if not= t 1.
@@ -27,7 +27,7 @@
     (if (and f (.-writable c))
       (do (f)                                         ;; f is called and sends a packet.
           (c/update-data c [:rate :fs] fs))           ;; update queue
-      (when (and (.-writable c))
+      (when (.-writable c)
         (circ/padding config c)))                     ;; send a padding packet instead.
     (c/update-data c [:rate :tokens] tot)))           ;; -> also useless.
 

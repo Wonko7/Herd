@@ -1,7 +1,7 @@
 (ns aqua-node.roles
   (:require [cljs.core :as cljs]
             [cljs.nodejs :as node]
-            [cljs.core.async :refer [chan <! >! filter< mult tap]]
+            [cljs.core.async :refer [chan <! >! ] :as a]
             [aqua-node.log :as log]
             [aqua-node.misc :as m]
             [aqua-node.buf :as b]
@@ -56,8 +56,8 @@
                                      (dir/send-client-info config c geo mix done)
                                      (<! done)
                                      (log/debug "successfully sent register info")
-                                     (c/rm c)
-                                     (.end c))))]
+                                     (.end c)
+                                     (c/destroy c))))]
     (send-register-to-dir)
     (js/setInterval #(send-register-to-dir) (:register-interval config))))
 
@@ -67,25 +67,28 @@
   (let [done (chan)
         c    (conn/new :dir :client dir config {:connect #(go (>! done :connected))})] ;; also, we'd need a one hop aqua circ here.
     (c/add-listeners c {:data #(dir/process config c % done)})
-    (go (<! done)
+    (go (<! done) ;; wait for socket connect
         (dir/send-net-request config c done)
-        (<! done)
-        (<! done)
-        (c/rm c)
+        (<! done) ;; wait for sent message
+        (<! done) ;; wait for received message
         (.end c)
+        (c/destroy c)
         (dir/get-net-info))))
 
 (defn aqua-connect [config dest & [ctrl]]
-  (let [con (chan)
-        soc (conn/new :aqua :client dest config {:connect #(go (>! con :done))})]
+  (let [con     (chan)
+        soc     (conn/new :aqua :client dest config {:connect #(go (>! con :done))})
+        timer   (js/setTimeout #(go (>! con :timeout)) (:keep-alive-interval config))]
     (log/debug "Aqua: Connecting to" (select-keys dest [:host :port :role]))
     (c/add-listeners soc {:data #(circ/process config soc %)})
     (c/update-data soc [:auth] (:auth dest))
-    (go (<! con)
-        (rate/init config soc)
-        (rate/queue soc #(circ/send-id config soc))
-        (circ/reset-keep-alive config soc)
-        (when ctrl (>! ctrl soc)))))
+    (go (if (= :timeout (<! con))
+          (c/destroy soc)
+          (do (js/clearTimeout timer)
+              (rate/init config soc)
+              (rate/queue soc #(circ/send-id config soc))
+              (circ/reset-keep-alive config soc)
+              (when ctrl (>! ctrl soc)))))))
 
 (defn aqua-connect-from-id [config net-info id ctrl]
   (let  [mixes (for [[[ip port] mix] (seq (<! net-info))
@@ -143,7 +146,7 @@
 
         (when (or (is? :mix) (is? :rdv))
           (let [sip-chan (sip-dir/create-mix-dir config)
-                config   (merge config {:sip-chan sip-chan :sip-mix-dir sip-dir/mix-dir})
+                config   (merge config {:sip-chan sip-chan :sip-mix-dir sip-dir/mix-dir}) ;; FIXME :sip-mix-dir unused.
                 ctrl     (chan)]
             (conn/new :aqua :server aq config {:connect aqua-server-recv})
             (<! net-info)
