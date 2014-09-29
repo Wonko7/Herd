@@ -107,7 +107,7 @@
 
 (defn bootstrap [{roles :roles ap :app-proxy aq :aqua ds :remote-dir dir :dir sip-dir :sip-dir :as config}]
   "Setup the services needed by the given role."
-  (go (let [is?         #(m/is? % roles)                        ;; tests roles for our running instance
+  (go (let [is?         #(m/is? % roles)                      ;; tests roles for our running instance
             geo         (go (<! (geo/parse config)))          ;; match our ip against database, unless already specified in config:
             net-info    (go (when-not (is? :dir)              ;; request net-info if we're not a dir. FIXME -> get-net-info will be called periodically.
                               (<! (get-net-info config ds))))]
@@ -116,6 +116,18 @@
         (log/info "Bootstrapping as" roles)
 
         (when (:debug config)
+          (js/setInterval #(log/info "Memory Usage:"
+                                     :date (-> js/Date .now (/ 1000) int)
+                                     (.inspect (node/require "util") (.memoryUsage js/process)))
+                          300000)
+          (js/setInterval #(let [conns (c/get-all)]
+                             (log/info "Status: open rate connections:")
+                             (doseq [[c data] (filter (fn [[c data]]
+                                                        (:rate data))
+                                                      conns)
+                                     :let [id (-> data :auth :srv-id)]]
+                               (log/info "Rate connection to:" (if id (b/hx id) "unknown"))))
+                          300000)
           (js/setInterval (fn []
                             (let [circs (circ/get-all)
                                   conns (c/get-all)

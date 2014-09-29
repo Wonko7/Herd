@@ -2,6 +2,7 @@
   (:require [cljs.core :as cljs]
             [cljs.nodejs :as node]
             [cljs.core.async :refer [chan <! >!]]
+            [aqua-node.buf :as b]
             [aqua-node.log :as log]
             [aqua-node.conns :as c]
             [aqua-node.circ :as circ])
@@ -35,7 +36,8 @@
 
 (defn init [{{p :period} :rate :as config} c]
   "Initialise rate limiter on a socket."
-  (let [t 1]
+  (let [t 1
+        keep-alive-interval (:keep-alive-interval config)]
     (log/info "Rate limiter:" t "packet per" p "millisecond period.")
     ;; init rate data on socket metadata:
     (c/update-data c [:rate] {:period p
@@ -47,4 +49,13 @@
                                                                 (:rate data))
                                                               (c/get-all))]
                                        (pop-write config c data))
-                                    p)))))
+                                    p))
+      (js/setInterval  #(let [now (.now js/Date)]
+                          (doseq [[c data] (filter (fn [[c data]]
+                                                     (:rate data))
+                                                   (c/get-all))]
+                            (when (> (- now (:keep-alive-date data)) keep-alive-interval)
+                              (let [id (-> data :auth :srv-id)]
+                                (log/info "Lost connection to" (when id (b/hx id)))
+                                (circ/destroy-from-socket config c)))))
+                      keep-alive-interval))))

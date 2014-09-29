@@ -622,12 +622,7 @@
 (def wait-buffer (atom nil)) ;; FIXME we need one per socket
 
 (defn reset-keep-alive [config socket]
-  (let [data  (-> socket c/get-data)
-        id    (-> data :auth :srv-id)]
-    (js/clearTimeout (-> data :keep-alive-timer))
-    (c/update-data socket [:keep-alive-timer] (js/setTimeout #(do (log/info "Lost connection to" (when id (b/hx id)))
-                                                                  (destroy-from-socket config socket))
-                                                             (:keep-alive-interval config)))))
+  (c/update-data socket [:keep-alive-date] (.now js/Date)))
 
 (defn process [config socket data-orig]
   "Takes received data from a socket, checks if there is enough data,

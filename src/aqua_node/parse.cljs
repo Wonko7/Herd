@@ -40,6 +40,7 @@
   Return the destination information and the rest of the buffer."
   (let [z    (->> (range (.-length buf))
                   (map #(when (= 0 (.readUInt8 buf %)) %))
+                  doall
                   (some identity))]
     (assert z "bad buffer: no zero delimiter")
     (let [str           (.toString buf "ascii" 0 z)
@@ -47,10 +48,11 @@
           ip6-re        #"^([utr]):\[((\d|[a-fA-F]|:)+)\]:(\d+)$"
           dns-re        #"^([utr]):(.*):(\d+)$"
           re            #(let [res (cljs/js->clj (.match %2 %1))]
-                           (map (partial nth res) %&))
+                           (doall (map (partial nth res) %&)))
           [ip prot h p] (->> [(re ip4-re str 1 2 4) (re ip6-re str 1 2 4) (re dns-re str 1 2 3)]
                              (map cons [:ip4 :ip6 :dns])
                              (filter second)
+                             doall
                              first)]
       [{:proto (condp = prot, "u" :udp, "t" :tcp, "r" :rtp) :type ip :host h :port (js/parseInt p)} (.slice buf (inc z))])))
 

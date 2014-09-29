@@ -61,12 +61,12 @@
   (let [role         (conv/int-to-role (.readUInt8 msg 0))
         zone         (.readUInt8 msg 1)
         id-len       (-> config :ntor-values :node-id-len)
-        [id pub msg] (b/cut (.slice msg 2) id-len (+ id-len (-> config :ntor-values :h-len)))
-        [client msg] (conv/parse-addr msg)
+        [id pub msg] (doall (b/cut (.slice msg 2) id-len (+ id-len (-> config :ntor-values :h-len))))
+        [client msg] (doall (conv/parse-addr msg))
         ip           (:host client)
-        [mix msg]    (if (= role :app-proxy)
-                       (conv/parse-addr msg)
-                       [nil msg])]
+        [mix msg]    (doall (if (= role :app-proxy)
+                              (conv/parse-addr msg)
+                              [nil msg]))]
     [(merge client {:mix mix :zone (geo/int-to-zone zone) :role role :auth {:srv-id id :pub-B pub}}) msg]))
 
 (defn mk-info-buf [info]
@@ -151,8 +151,8 @@
       ;; do this until we've parsed all entries:
       (when (< i nb)
         ;; Parse entry and add it to mix-dir.
-        (let [[info msg] (parse-info config msg)]
-          (swap! mix-dir merge {[(:host info) (:port info)] info})
+        (let [[{port :port host :host :as info} msg] (parse-info config msg)]
+          (swap! mix-dir merge {[host port] (merge {:dest {:host host :port port}} info)})
           (recur (inc i) msg))))
     (when recv-chan
       (go (>! recv-chan :got-geo)))))
@@ -215,7 +215,6 @@
 
 
 ;; interface ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
-;; FIXME things like get-net-info & register will move here.
 
 (defn query [{dir :remote-dir :as config} ip]
   "Query for an client's rendez vous from his IP."

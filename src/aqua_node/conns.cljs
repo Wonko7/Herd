@@ -30,7 +30,8 @@
     (when conn
       (if (= :udp (:ctype c))
         (.close conn)
-        (.destroy conn)))))
+        (.destroy conn))
+      (.removeAllListeners conn))))
 
 (defn add [conn & [data]]
   (swap! connections merge {conn data})

@@ -100,19 +100,13 @@
     (circ/update-data id [:mk-path-fn] #(go (>! ctrl :next)))
     (go (<! ctrl)
         (log/debug "RT Circuit" id "waiting for destination")
-        ;; wait until we are given a destination: the peer's mix, and the peer's name.
-        (let [[mix2 ap]    (<! dest)]
-          (circ/relay-extend config id mix2) ;; FIXME test.
+        ;; wait until we are given a destination: our rdv, the peer's rdv, the peer's mix, and the peer's name.
+        (doseq [hop (<! dest)]
+          (circ/relay-extend config id hop)
           (<! ctrl)
-          ;; extend to the callee's AP.
-          (circ/relay-extend config id ap)
-          (<! ctrl)
-          ;; we are done, update state info & notify we are ready.
-          ;; (circ/relay-begin config id rt-dest) ;; ask exit (callee's ap) to begin relaying data. --> FIXME done by relay sip? don't know yet.
-          ;; (circ/update-data id [:state] :relay)
-          ;; (<! ctrl)                            ;; relay begin was acknowledged.
-          (>! notify :done)       ;; notify we can start relaying data.
-          (log/info "RT Circuit" id "is ready for relay")))
+          (log/info "RT Circuit" id "extended by one hop"))
+        (>! notify :done)
+        (log/info "RT Circuit" id "is ready for relay"))
     id))
 ;(circ/update-data id [:path-dest] rt-dest)
 
@@ -235,13 +229,12 @@
   "Initialise a pool of N of each type of circuits (rt and single for now)
   net-info is the list of mixes with their geo info."
   (let [zone         (-> loc :zone)
-        fixme-path   (fn [path] (map #(merge % {:dest %}) path)) ;; FIXME yes, get rid of this
         select-mixes #(->> net-info seq (map second) (filter %) shuffle)
         ;; entry mix, for :rt --> will be assigned by dir.
         mix          (first (select-mixes #(and (= (:role %) :mix) (= (:zone %) zone))))
         ;; make path for :single, three hops, the first being mix chosen for :rt.
         mk-path      (fn [] ;; change (take n) for a path of n+1 nodes.
-                       (->> (select-mixes #(and (= (:role %) :mix) (not= mix %))) (take 0) (cons mix) fixme-path)) ;; use same mix as entry point for single & rt. ; not= mix
+                       (->> (select-mixes #(and (= (:role %) :mix) (not= mix %))) (take 0) (cons mix))) ;; use same mix as entry point for single & rt. ; not= mix
         ;; rdvs in our zone:
         rdvs         (select-mixes #(and (= (:role %) :rdv) (= (:zone %) zone)))
         connected    (chan)
@@ -259,7 +252,7 @@
         (rate/queue soc #(circ/send-id config soc))
         (circ/reset-keep-alive config soc)
         (init-pool config soc :rt mix)
-        (init-pool config soc :single #(concat (mk-path) (->> rdvs shuffle (take 1) fixme-path))) ;; for now all single circuits are for rdvs, if this changes this'll have to change too.
+        (init-pool config soc :single #(concat (mk-path) (->> rdvs shuffle (take 1)))) ;; for now all single circuits are for rdvs, if this changes this'll have to change too.
         (init-pool config soc :one-hop mix))
     mix))
 
