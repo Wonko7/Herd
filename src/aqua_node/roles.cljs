@@ -125,9 +125,19 @@
                              (doseq [[c data] (filter (fn [[c data]]
                                                         (:rate data))
                                                       conns)
-                                     :let [id (-> data :auth :srv-id)]]
-                               (log/info "Rate connection to:" (if id (b/hx id) "unknown"))))
-                          300000)
+                                     :let [id      (-> data :auth :srv-id)
+                                           rate-dw (:rate-count-dw data)
+                                           rate-up (:rate-count-up data)]]
+                               (c/update-data c [:rate-count-dw] 0)
+                               (c/update-data c [:rate-count-up] 0)
+                               (log/info "Rate connection to:"
+                                         (if id (b/hx id) "unknown")
+                                         "down:"
+                                         (/ rate-dw 5)
+                                         "p/s, up:"
+                                         (/ rate-up 5)
+                                         "p/s")))
+                          5000)
           (js/setInterval (fn []
                             (let [circs (circ/get-all)
                                   conns (c/get-all)

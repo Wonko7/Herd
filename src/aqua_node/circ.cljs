@@ -622,6 +622,7 @@
 (def wait-buffer (atom nil)) ;; FIXME we need one per socket
 
 (defn reset-keep-alive [config socket]
+  (c/update-data socket [:rate-count-dw] (-> socket c/get-data :rate-count-dw inc))
   (c/update-data socket [:keep-alive-date] (.now js/Date)))
 
 (defn process [config socket data-orig]

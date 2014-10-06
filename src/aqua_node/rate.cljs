@@ -13,7 +13,8 @@
 
 (defn queue [c f]
   "Add a function that will send a packet to the queue on the given socket."
-  (let [{p :period t :tokens fs :fs} (-> c c/get-data :rate)] ;; fs: functions queue
+  (let [data                         (c/get-data c)
+        {p :period t :tokens fs :fs} (:rate data)] ;; fs: functions queue
     (if (zero? p)
       (f) ;; period is zero, immediate send, no chaffing.
       (do (when-not (zero? t)
@@ -25,6 +26,7 @@
 (defn pop-write [config c data]
   "pop the write function queue."
   (let [{t :tokens tot :total [f & fs] :fs} (:rate data)]
+    (c/update-data c [:rate-count-up] (-> data :rate-count-up inc))
     (if (and f (.-writable c))
       (do (f)                                         ;; f is called and sends a packet.
           (c/update-data c [:rate :fs] fs))           ;; update queue
