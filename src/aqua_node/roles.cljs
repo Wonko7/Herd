@@ -121,6 +121,7 @@
                                      (.inspect (node/require "util") (.memoryUsage js/process)))
                           300000)
           (js/setInterval #(let [conns (c/get-all)]
+                             (log/info "Status: timestamp:" (.now js/Date))
                              (log/info "Status: open rate connections:")
                              (doseq [[c data] (filter (fn [[c data]]
                                                         (:rate data))
@@ -134,7 +135,7 @@
                                          (if id (b/hx id) "unknown")
                                          "down:"
                                          (/ rate-dw 5)
-                                         "p/s, up:"
+                                         "p/s,\tup:"
                                          (/ rate-up 5)
                                          "p/s")))
                           5000)
