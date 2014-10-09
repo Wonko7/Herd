@@ -45,6 +45,7 @@
     (circ/update-data id [:notify] notify)
     (circ/update-data id [:mk-path-fn] #(go (>! ctrl :next)))
     (circ/update-data id [:path-dest] (-> all-nodes last :dest))
+    (circ/update-data id [:initial-path] (map #(-> % :auth :srv-id b/hx) all-nodes))
     ;; for each remaining mix (nodes here), send a relay-extend, wait until
     ;; the handshaking is over by waiting on (<! ctrl)
     (go (loop [cmd (<! ctrl), [n & nodes] nodes]
