@@ -201,7 +201,7 @@
               select          #(->> (dir/get-net-info) seq (map second) (filter %) shuffle)                ;; FIXME -> this should be shared by path.
               distinct-hops   (fn [{current-path :initial-path} path]
                                 (let [current-path (set current-path)]
-                                  (remove #(current-path %) path)))
+                                  (remove #(current-path (-> % :auth :srv-id)) path)))
               ;; sip channel processing:
               skip-until      (fn [found-it? from]
                                 (go-loop [r (<! from)]
