@@ -308,7 +308,8 @@
                                       (<! out-rdv-notify)                                                           ;; wait until connected to send
                                       (sd/query config callee-name out-rdv-id call-id)                                                  ;; query for callee's rdv
                                       (log/info "SIP:" "initiating call" call-id "to" callee-name)
-                                      (let [query-reply-rdv      (<! sip-ctrl)]                                                         ;; get query reply
+                                      (let [query-reply-rdv      (<! sip-ctrl)                                                          ;; get query reply
+                                            rdv-data             (circ/get-data rdv-id)]
                                         (if (= :error (-> query-reply-rdv :sip-rq (.readUInt8 0) s/to-cmd))                             ;; FIXME: assert this instead.
                                           (do (log/error "Query for" callee-name "failed.")
                                               (.send sip (.makeResponse sip rq 404 "NOT FOUND")))
@@ -358,10 +359,10 @@
                                                                                                                      (go (:circ-id rtcp-rep))
                                                                                                                      (go rtcp-circ)
                                                                                                                      (go rtcp-dest)))
-                                                    circuit-path                  (distinct-hops rdv-data [rdv-data                           ;; our rdv
-                                                                                                           (dir/find-by-id rdv-callee-id)     ;; callee's rdv
-                                                                                                           (dir/find-by-id mix-id)            ;; callee's mix
-                                                                                                           {:auth {:pub-B pub :srv-id id}}])] ;; callee.
+                                                    circuit-path                  (cons (:rdv rdv-data)                                               ;; our rdv
+                                                                                        (distinct-hops rdv-data [(dir/find-by-id rdv-callee-id)       ;; callee's rdv
+                                                                                                                 (dir/find-by-id mix-id)              ;; callee's mix
+                                                                                                                 {:auth {:pub-B pub :srv-id id}}]))]  ;; callee.
                                                 (>! rtp-ctrl circuit-path)                                            ;; connect to callee using given path.
                                                 (>! rtcp-ctrl circuit-path)                                           ;; connect to callee using given path.
                                                 (<! rtp-notify)                                                                                           ;; wait until ready.
@@ -384,13 +385,12 @@
                                                                             :uri (str "sip:" callee-name "@" (:local-ip config) ":5060;transport=UDP;ob")
                                                                             :params {}}])
                                                                 (mk-sdp (:codec config) {:host (:local-ip config) :port local-port} {:port loc-rtcp-port} :ack sdp))]
-                                                  ;(println :ok ok)
-                                                  ;(println :uri (-> ok :headers :contact first :uri))
                                                   (update-data call-id [:uri-to] (-> ok :headers :contact first :uri))
                                                   (update-data call-id [:headers] (-> ok :headers))
                                                   ;(update-data call-id [:bye] (.makeResponse sip rq))
                                                   (.send sip (s/to-js ok) process))
                                                 (add-sip-ctrl-to-rt-circs call-id sip-ctrl)
+                                                (js/setInterval #(circ/relay-ping config rtcp-circ) 2000)
                                                 (wait-for-bye call-id
                                                               sip-ctrl
                                                               {:name callee-name
@@ -422,13 +422,14 @@
                           [_ rdv-caller-id mix-id msg]  (b/cut msg 4 (+ 4 node-id-len) (+ 4 (* 2 node-id-len)))
                           [caller msg]                  (b/cut-at-null-byte msg)
                           [id pub]                      (b/cut msg node-id-len)
+                          rdv-data                      (circ/get-data rdv-id)
                           caller                        (.toString caller)
                           sip-ctrl                      (chan)
                           mix-dest                      (dir/find-by-id mix-id)
-                          circuit-path                  (distinct-hops rdv-data [rdv-data                           ;; our rdv
-                                                                                 (dir/find-by-id rdv-caller-id)     ;; caller's rdv
-                                                                                 (dir/find-by-id mix-id)            ;; caller's mix
-                                                                                 {:auth {:pub-B pub :srv-id id}}])  ;; caller
+                          circuit-path                  (cons (:rdv rdv-data)                                              ;; our rdv
+                                                              (distinct-hops rdv-data [(dir/find-by-id rdv-caller-id)      ;; caller's rdv
+                                                                                       (dir/find-by-id mix-id)             ;; caller's mix
+                                                                                       {:auth {:pub-B pub :srv-id id}}]))  ;; caller
                           ;; rtp
                           rtp-circ                      (<! (path/get-path :rt))
                           rtp-data                      (circ/get-data rtp-circ)
@@ -499,6 +500,7 @@
                                 (.send sip (s/to-js ok) process))
                               (log/info "SIP: got ackack, ready for relay on" call-id)
                               (add-sip-ctrl-to-rt-circs call-id sip-ctrl)
+                              (js/setInterval #(circ/relay-ping config rtcp-circ) 2000)
                               (wait-for-bye call-id
                                             sip-ctrl
                                             {:name caller

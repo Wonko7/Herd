@@ -270,6 +270,11 @@
                  (@circuits circ-id))
          circ-id :sip direction payload))
 
+(defn relay-ping [config circ-id]
+  "Send a ping to circuit destination to measure roundtrip delay."
+  (let [now (-> js/Date .now .toString)]
+    (relay config (:forward-hop (@circuits circ-id)) circ-id :ping :f-enc (b/new now))))
+
 (defn padding [config socket]
   "Send padding message. Will be dropped."
   (cell-send config socket 0 :padding (b/new 369))) ;; FIXME no enc on circ 0.
@@ -508,7 +513,13 @@
 
         p-sip        #(if-let [sip-ch (or (:sip-chan circ) (:sip-chan config))] ;; sip dir servers use a global chan so it is stored in config, clients use a per circ chan.
                         (go (>! sip-ch {:circ circ :circ-id circ-id :sip-rq r-payload}))
-                        (log/error "SIP uninitialised, dropping request on circuit:" circ-id))]
+                        (log/error "SIP uninitialised, dropping request on circuit:" circ-id))
+
+        p-ping       #(relay config socket circ-id :pong :b-enc r-payload)
+
+        p-pong       #(let [now   (.now js/Date)
+                            sent  (-> r-payload .toString js/parseInt)]
+                        (log/debug "Ping: Circuit:" circ-id "roundtrip delay:" (- now sent) "ms"))]
 
     ;; dispatch the relay command to appropriate function.
     (condp = (:relay-cmd relay-data)
@@ -532,6 +543,8 @@
       16 (p-sip)
       ;; 17 (p-extend-sip)
       18 (p-rdv)
+      19 (p-ping)
+      20 (p-pong)
       (log/error "unsupported relay command"))))
 
 ;; see tor spec 6.
@@ -556,12 +569,12 @@
         (let [msg         (reduce #(%2 iv %1) msg (get-path-enc circ direction))
               [r1 r2 r4]  (b/mk-readers msg)
               recognised? (and (= 101 (r2 3) (r4 5) (r2 9)) (zero? (r2 1))) ;; FIXME -> add digest
-              relay-data  {:relay-cmd  (r1 0)
-                           :recognised recognised?
-                           :stream-id  (r2 3)
-                           :digest     (r4 5)
-                           :relay-len  (r2 9)
-                           :payload    (when recognised? (.slice msg 11))}] ;; FIXME check how aes padding is handled.
+              relay-data  {:relay-cmd    (r1 0)
+                           :recognised   recognised?
+                           :stream-id    (r2 3)
+                           :digest       (r4 5)
+                           :relay-len    (r2 9)
+                           :payload      (when recognised? (.slice msg 11))}]
 
           (cond (:recognised relay-data)        (process-relay config socket circ-id relay-data)
                 (and mux? (-> circ :mux :bhop)) (forward config circ-id (-> circ :mux :bhop) msg)
@@ -617,7 +630,9 @@
    ;; extended 
    :sip        16
    :sip-extend 17
-   :rdv        18})
+   :rdv        18
+   :ping       19
+   :pong       20})
 
 (def wait-buffer (atom nil)) ;; FIXME we need one per socket
 
