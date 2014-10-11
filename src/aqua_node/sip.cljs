@@ -199,9 +199,16 @@
                                  :host (second (re-find #"(?m)c\=IN IP4 ((\d+\.){3}\d+)" (:content rq)))})
               ;; temp helper
               select          #(->> (dir/get-net-info) seq (map second) (filter %) shuffle)                ;; FIXME -> this should be shared by path.
-              distinct-hops   (fn [{current-path :initial-path} path]
-                                (let [current-path (set current-path)]
-                                  (remove #(current-path (-> % :auth :srv-id)) path)))
+              distinct-hops   (fn [[m1 r1 r2 m2 c]]
+                                "We are already connected to m1. Remove duplicate hops (only happens on same zone calls)."
+                                (let [id=  #(= (-> %1 :auth :srv-id b/hx) (-> %2 :auth :srv-id b/hx))]
+                                  (cond (id= m1 m2)                  [c]
+                                        (or (id= r1 r2) (id= m1 r2)) [r1 m2 c]
+                                        (id= r2 m2)                  [r2 m2 c]
+                                        :else                        [r1 r2 m2 c])))
+              ;;print-hops      (fn [path] ;; used for testing distinct-hops
+              ;;                  (doseq [h path]
+              ;;                    (println :path (-> h :auth :srv-id b/hx))))
               ;; sip channel processing:
               skip-until      (fn [found-it? from]
                                 (go-loop [r (<! from)]
@@ -321,10 +328,13 @@
                                             (assert callee-rdv-id (str "SIP: Could not find callee's mix:" name))
                                             (update-data call-id [:peer-rdv] callee-rdv-cid)
                                             (.send sip (.makeResponse sip rq 100 "TRYING"))                                             ;; inform the SIP client we have initiated the call.
-                                            (when (not= callee-rdv-id (-> out-rdv-id circ/get-data :rdv :auth :srv-id))                 ;; if we are using the same RDV we don't extend to it, it would fail (can't reuse the same node in a circ)
-                                              (>! out-rdv-ctrl (dir/find-by-id callee-rdv-id))
-                                              (<! out-rdv-notify)
-                                              (log/debug "Extended to callee's RDV"))
+                                            (if (not (b/b= callee-rdv-id (-> out-rdv-id circ/get-data :rdv :auth :srv-id)))
+                                              (do (>! out-rdv-ctrl (dir/find-by-id callee-rdv-id))
+                                                  (<! out-rdv-notify)
+                                                  (log/debug "Extended to callee's RDV"))
+                                              (do (>! out-rdv-ctrl :drop-last)
+                                                  (<! out-rdv-notify)
+                                                  (log/debug "We already are on callee's RDV")))
                                             ;; FIXME: once this works we'll add relay-sip extend to callee so rdv can't read demand,
                                             ;; and client can match our HS against the keys he has for his contacts.
                                             (circ/relay-sip config out-rdv-id :f-enc (b/cat (-> :invite s/from-cmd b/new1)              ;; Send invite to callee. include our rdv-id so callee can send sig to us.
@@ -359,10 +369,12 @@
                                                                                                                      (go (:circ-id rtcp-rep))
                                                                                                                      (go rtcp-circ)
                                                                                                                      (go rtcp-dest)))
-                                                    circuit-path                  (cons (:rdv rdv-data)                                               ;; our rdv
-                                                                                        (distinct-hops rdv-data [(dir/find-by-id rdv-callee-id)       ;; callee's rdv
-                                                                                                                 (dir/find-by-id mix-id)              ;; callee's mix
-                                                                                                                 {:auth {:pub-B pub :srv-id id}}]))]  ;; callee.
+                                                    circuit-path                  (distinct-hops [(:chosen-mix rdv-data)              ;; our mix
+                                                                                                  (:rdv rdv-data)                     ;; our rdv
+                                                                                                  (dir/find-by-id rdv-callee-id)      ;; callee's rdv
+                                                                                                  (dir/find-by-id mix-id)             ;; callee's mix
+                                                                                                  {:auth {:pub-B pub :srv-id id}}])]  ;; callee.
+
                                                 (>! rtp-ctrl circuit-path)                                            ;; connect to callee using given path.
                                                 (>! rtcp-ctrl circuit-path)                                           ;; connect to callee using given path.
                                                 (<! rtp-notify)                                                                                           ;; wait until ready.
@@ -426,10 +438,11 @@
                           caller                        (.toString caller)
                           sip-ctrl                      (chan)
                           mix-dest                      (dir/find-by-id mix-id)
-                          circuit-path                  (cons (:rdv rdv-data)                                              ;; our rdv
-                                                              (distinct-hops rdv-data [(dir/find-by-id rdv-caller-id)      ;; caller's rdv
-                                                                                       (dir/find-by-id mix-id)             ;; caller's mix
-                                                                                       {:auth {:pub-B pub :srv-id id}}]))  ;; caller
+                          circuit-path                  (distinct-hops [(:chosen-mix rdv-data)              ;; our mix
+                                                                        (:rdv rdv-data)                     ;; our rdv
+                                                                        (dir/find-by-id rdv-caller-id)      ;; caller's rdv
+                                                                        (dir/find-by-id mix-id)             ;; caller's mix
+                                                                        {:auth {:pub-B pub :srv-id id}}])   ;; caller
                           ;; rtp
                           rtp-circ                      (<! (path/get-path :rt))
                           rtp-data                      (circ/get-data rtp-circ)

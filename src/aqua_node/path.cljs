@@ -39,13 +39,13 @@
         ctrl   (chan)
         dest   (chan)
         notify (chan)]
-    (circ/update-data id [:roles] [:origin])
-    (circ/update-data id [:ctrl] ctrl)
-    (circ/update-data id [:dest-ctrl] dest)
-    (circ/update-data id [:notify] notify)
+    (circ/update-data id [:roles]      [:origin])
+    (circ/update-data id [:ctrl]       ctrl)
+    (circ/update-data id [:dest-ctrl]  dest)
+    (circ/update-data id [:notify]     notify)
     (circ/update-data id [:mk-path-fn] #(go (>! ctrl :next)))
-    (circ/update-data id [:path-dest] (-> all-nodes last :dest))
-    (circ/update-data id [:initial-path] (map #(-> % :auth :srv-id b/hx) all-nodes))
+    (circ/update-data id [:path-dest]  (-> all-nodes last :dest))
+    (circ/update-data id [:chosen-mix] n)
     ;; for each remaining mix (nodes here), send a relay-extend, wait until
     ;; the handshaking is over by waiting on (<! ctrl)
     (go (loop [cmd (<! ctrl), [n & nodes] nodes]
@@ -75,14 +75,16 @@
                          (let [enc-path (-> id circ/get-data :path)]
                            ;; if rdv had a next hop, remove it from the encryption node list.
                            (when (> (count enc-path) (count all-nodes))
+                             ;; FIXME send-destroy!
                              (circ/update-data id [:path] (drop-last enc-path)))
-                           (log/debug "Extending RDV" id "to" (-> next-hop :role) (-> next-hop :auth :srv-id b/hx))
-                           ;; send extend, then wait for extended before notifying upstream.
-                           (circ/relay-extend config id next-hop)
-                           (<! ctrl) ;; FIXME add timeout in case things go wrong.
-                           ;; notify:
-                           (circ/update-data id [:state] :relay)
-                           (log/info "RDV" id "is ready for relay")
+                           (when (not= next-hop :drop-last)
+                             (log/debug "Extending RDV" id "to" (-> next-hop :role) (-> next-hop :auth :srv-id b/hx))
+                             ;; send extend, then wait for extended before notifying upstream.
+                             (circ/relay-extend config id next-hop)
+                             (<! ctrl) ;; FIXME add timeout in case things go wrong.
+                             ;; notify:
+                             (circ/update-data id [:state] :relay)
+                             (log/info "RDV" id "is ready for relay"))
                            (go (>! notify :extended))
                            (recur (<! dest)))))
             (log/error "Single: Did not understand command" cmd "on circ" id))))
