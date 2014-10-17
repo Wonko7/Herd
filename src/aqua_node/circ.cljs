@@ -417,6 +417,7 @@
   (let [circ         (@circuits circ-id)
         r-payload    (:payload relay-data)
         add-role     #(->> circ :roles (cons %) distinct)
+        answering-machine (some #(= % :answering-machine) (:roles config))
 
         ;; FIXME begin & data are bad and I should feel bad. everything that was "temporary".
         ;; process data packet: forward payload as rtp, udp to destination socket.
@@ -426,7 +427,8 @@
                              dest-data            (c/get-data dest)]
                          (assert (some (partial = socket) hops) "relay data came from neither forward or backward hop.")
                          (if-not dest
-                           (log/error "No destination, dropping on circuit" circ-id)
+                           (when (not answering-machine)
+                             (log/error "No destination, dropping on circuit" circ-id))
                            (condp = (:type dest-data)
                              :udp-exit  (if (:send-udp circ) ;; FIXME this is tmp, for rtp only, single path would crash things
                                           (let [real-sz (.readUInt16BE r-payload 0)
@@ -447,7 +449,12 @@
                              :udp-ap    (.send dest r-payload 0 (.-length r-payload) (-> dest-data :from :port) (-> dest-data :from :host))
                              :rtp-exit  (let [real-len (.readUInt16BE r-payload 0)
                                               msg      (.slice r-payload 2 (+ real-len 2))]
-                                          (.send dest msg 0 real-len (-> dest-data :rtp-dest :port) (-> dest-data :rtp-dest :host)))
+                                          (.send dest msg 0 real-len (-> dest-data :rtp-dest :port) (-> dest-data :rtp-dest :host))
+                                          (let [rtp-seq          (.readUInt16BE msg 2)
+                                                [total prev]     (:rtp-stats dest-data)]
+                                            (if (nil? prev)
+                                              (c/update-data dest [:rtp-stats] [0 rtp-seq])
+                                              (c/update-data dest [:rtp-stats] [(+ total (- rtp-seq prev 1)) rtp-seq]))))
                              :rtp-ap    (.send dest r-payload 0 (.-length r-payload) (-> circ :local-dest :port) (-> circ :local-dest :host)) ;; FIXME quick and diiiirty
                              (.write dest r-payload)))))
 
