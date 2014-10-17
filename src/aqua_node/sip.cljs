@@ -502,11 +502,7 @@
                           (add-sip-ctrl-to-rt-circs call-id sip-ctrl)
                           (js/setInterval #(circ/relay-ping config rtcp-circ) 2000)
                           (println "--------------, SDP port" (:port local-dest))
-                          (exec (str "cvlc '" (:answering-machine-file config) "' --sout '#transcode{acodec=ulaw,channels=1,samplerate=8000}:rtp{dst=127.0.0.1,port-audio=" (:port local-dest) "'"))
-                          (wait-for-bye call-id
-                                        sip-ctrl
-                                        {:name caller
-                                         :dest {:host (:local-ip config)}}))
+                          (exec (str "cvlc '" (:answering-machine-file config) "' --play-and-exit --sout '#transcode{acodec=ulaw,channels=1,samplerate=8000}:rtp{dst=127.0.0.1,port-audio=" (:port local-dest) "'") nil #(kill-call config call-id)))
                         (do (.send sip (s/to-js (merge (mk-headers "INVITE" call-id caller @headers @uri-to local-dest)       ;; Send our crafted invite with local udp port as "caller's" media session
                                                        (mk-sdp (:codec config) local-dest {:port loc-rtcp-port} :invite)))
                                    process)
