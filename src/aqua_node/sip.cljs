@@ -554,14 +554,27 @@
                 (log/info "SIP: incoming message with unknown call id:" call-id "-- dropping."))
               (recur (<! incoming-sip))))
 
-            (log/info "SIP proxy listening on default UDP SIP port"))
-            (when (:debug config)
-              (js/setInterval (fn []
-                                (let [rtp-conns (filter #(-> % second :rtp-stats) (c/get-all))]
-                                  (doseq [[socket {[total rtp-seq] :rtp-stats circ-id :circuit}] rtp-conns]
-                                    (c/update-data socket [:rtp-stats] [0 rtp-seq])
-                                    (log/debug "RTP Status:" total "drops on circuit" circ-id "in the last 5 seconds"))))
-                              5000)))
+            (log/info "SIP proxy listening on default UDP SIP port")
+
+            (when answering-machine
+              (let [name            (:answering-machine-name config)
+                    sip-dir-dest    (first (select #(= (:role %) :sip-dir)))
+                    rdv-data        (circ/get-data rdv-id)
+                    register        #(go (>! out-rdv-ctrl sip-dir-dest)                                                ;; --- RDV: connect to sip dir to send register
+                                         (<! out-rdv-notify)                                                           ;; wait until connected to send
+                                         (sd/register config name out-rdv-id rdv-id (-> rdv-data :rdv :auth :srv-id))  ;; send register to dir, ack to sip client:
+                                         (sd/register-to-mix config name mix-id)                                       ;; register our sip user name (needed for last step of incoming rt circs, without giving our ip to caller)
+                                         (reset! my-name name))]
+                (register)
+                (js/setInterval register (/ (:sip-register-interval config) 2)))))
+
+          (when (:debug config)
+            (js/setInterval (fn []
+                              (let [rtp-conns (filter #(-> % second :rtp-stats) (c/get-all))]
+                                (doseq [[socket {[total rtp-seq] :rtp-stats circ-id :circuit}] rtp-conns]
+                                  (c/update-data socket [:rtp-stats] [0 rtp-seq])
+                                  (log/debug "RTP Status:" total "drops on circuit" circ-id "in the last 5 seconds"))))
+                            5000)))
     incoming-sip))
 
 
