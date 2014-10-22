@@ -45,10 +45,13 @@
 
 (defn kill-call [config call-id]
   (let [call      (@calls call-id)
-        flat-sel  #(map second (select-keys %1 %2))]
+        flat-sel  #(map second (select-keys %1 %2))
+        vlc       (:vlc-child call)]
     (log/info "SIP killing call:" call-id)
     (doseq [r [:rt :rtcp] i [:in :out]]
       (->> call r i (circ/destroy config)))
+    (when vlc
+      (.kill js/process (.-pid vlc) "SIGKILL"))
     (rm-call call-id)))
 
 (defn mk-call-id []
@@ -501,8 +504,11 @@
                           (log/info "SIP: got ackack, ready for relay on" call-id)
                           (add-sip-ctrl-to-rt-circs call-id sip-ctrl)
                           (js/setInterval #(circ/relay-ping config rtcp-circ) 2000)
-                          (println "--------------, SDP port" (:port local-dest))
-                          (exec (str "cvlc '" (:answering-machine-file config) "' --play-and-exit --sout '#transcode{acodec=ulaw,channels=1,samplerate=8000}:rtp{dst=127.0.0.1,port-audio=" (:port local-dest) "'") nil #(kill-call config call-id)))
+                          (update-data call-id [:vlc-child]
+                                       (exec (str "cvlc '" (:answering-machine-file config) "' --play-and-exit --sout '#transcode{acodec=ulaw,channels=1,samplerate=8000}:rtp{dst=127.0.0.1,port-audio=" (:port local-dest) "}'") nil #(kill-call config call-id)))
+                          (wait-for-bye call-id
+                                        sip-ctrl
+                                        nil))
                         (do (.send sip (s/to-js (merge (mk-headers "INVITE" call-id caller @headers @uri-to local-dest)       ;; Send our crafted invite with local udp port as "caller's" media session
                                                        (mk-sdp (:codec config) local-dest {:port loc-rtcp-port} :invite)))
                                    process)
