@@ -45,6 +45,7 @@
   (log/debug "new dir tls conn from:" (-> s .-remoteAddress) (-> s .-remotePort))
   (c/add-listeners s {:data #(dir/process config s %) :error #(log/info "Dir: socket error")}))
 
+(def register-to-dir-timer (atom nil))
 (defn register-to-dir [config geo mix dir]
   "Call send-register-to-dir periodically."
   (let [send-register-to-dir (fn []
@@ -59,7 +60,9 @@
                                      (.end c)
                                      (c/destroy c))))]
     (send-register-to-dir)
-    (js/setInterval #(send-register-to-dir) (:register-interval config))))
+    (when @register-to-dir-timer
+      (js/clearInterval @register-to-dir-timer))
+    (reset! register-to-dir-timer (js/setInterval #(send-register-to-dir) (:register-interval config)))))
 
 (defn get-net-info [config dir]
   "Create a socket to dir, send net request, wait until we get an answer, close, return net info."
@@ -150,18 +153,29 @@
                           20000))
 
         (when (is? :app-proxy)
-          (let [geo      (<! geo)
-                net-info (<! net-info)
-                sip-chan (sip/create-server config)
-                cfg      (merge config {:sip-chan sip-chan})
-                mix      (path/init-pools cfg net-info geo 2)]
+          (let [geo       (<! geo)
+                net-info  (<! net-info)
+                sip-chan  (atom nil)
+                reconnect (fn []
+                            (reset! sip-chan (sip/create-server config))
+                            (let [cfg      (merge config {:sip-chan @sip-chan})
+                                  mix      (path/init-pools cfg net-info geo 2)]
+                              (log/info "Dir: sending register info")
+                              (register-to-dir config geo mix ds)))]
+            (reconnect)
+            ;; FIXME: not really using this right now... could be used for external API.
             (conn/new :socks :server ap config {:data     path/app-proxy-forward
                                                 :udp-data path/app-proxy-forward-udp
                                                 :init     app-proxy-init
                                                 :error    circ/destroy-from-socket})
-            (js/setInterval #(get-net-info config ds) (:register-interval config))
-            (log/info "Dir: sending register info")
-            (register-to-dir config geo mix ds)))
+            (js/setInterval #(go (<! (get-net-info config ds))
+                                 (when (zero? (count (circ/get-all)))
+                                   (log/error "Lost connectivity, reconnecting")
+                                   (doseq [c (c/get-all)]
+                                     (c/destroy c))
+                                   (>! @sip-chan :destroy)
+                                   (reconnect)))
+                            (:register-interval config))))
 
         ;; (when (is? :super-peer)
         ;;   (register-to-dir config (<! geo) mix ds)
