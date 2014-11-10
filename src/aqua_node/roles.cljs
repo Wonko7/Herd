@@ -168,13 +168,14 @@
                                                 :udp-data path/app-proxy-forward-udp
                                                 :init     app-proxy-init
                                                 :error    circ/destroy-from-socket})
-            (js/setInterval #(go (<! (get-net-info config ds))
-                                 (when (zero? (count (circ/get-all)))
-                                   (log/error "Lost connectivity, reconnecting")
-                                   (doseq [c (c/get-all)]
-                                     (c/destroy c))
-                                   (>! @sip-chan :destroy)
-                                   (reconnect)))
+            (js/setInterval (fn []
+                              (go (<! (get-net-info config ds))
+                                  (when (or (empty? (filter #(-> % second :rate) (c/get-all))) (empty? (circ/get-all)))
+                                    (log/error "Lost connectivity, reconnecting")
+                                    (doseq [c (c/get-all)]
+                                      (c/destroy c))
+                                    (>! @sip-chan :destroy)
+                                    (reconnect))))
                             (:register-interval config))))
 
         ;; (when (is? :super-peer)
