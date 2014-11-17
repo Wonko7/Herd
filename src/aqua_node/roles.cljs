@@ -153,6 +153,15 @@
                           20000))
 
         (when (is? :app-proxy)
+            ;; tmp/FIXME:
+            (let [ctrl (chan)
+                  dt-comm (conn/new :udp :client {:host "127.0.0.1" :port 1234} config {:connect #(go (>! ctrl :connected)) :data #(println (str %2))})
+                  msg "lol hello1!#@!"]
+              (println "connecting...")
+              (go (<! ctrl)
+                  (println "connected")
+                  (js/setInterval #(.send dt-comm (b/new msg) 0 (count msg) 1234 "127.0.0.1") 1000)))
+
           (let [geo       (<! geo)
                 net-info  (<! net-info)
                 sip-chan  (atom nil)
@@ -168,6 +177,7 @@
                                                 :udp-data path/app-proxy-forward-udp
                                                 :init     app-proxy-init
                                                 :error    circ/destroy-from-socket})
+
             (js/setInterval (fn []
                               (go (<! (get-net-info config ds))
                                   (when (or (empty? (filter #(-> % second :rate) (c/get-all))) (empty? (circ/get-all)))
