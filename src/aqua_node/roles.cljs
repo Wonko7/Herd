@@ -5,6 +5,7 @@
             [aqua-node.log :as log]
             [aqua-node.misc :as m]
             [aqua-node.buf :as b]
+            [aqua-node.dtls-comm :as dtls]
             [aqua-node.conns :as c]
             [aqua-node.conn-mgr :as conn]
             [aqua-node.dir :as dir]
@@ -110,6 +111,7 @@
 
 (defn bootstrap [{roles :roles ap :app-proxy aq :aqua ds :remote-dir dir :dir sip-dir :sip-dir :as config}]
   "Setup the services needed by the given role."
+
   (go (let [is?         #(m/is? % roles)                      ;; tests roles for our running instance
             geo         (go (<! (geo/parse config)))          ;; match our ip against database, unless already specified in config:
             net-info    (go (when-not (is? :dir)              ;; request net-info if we're not a dir. FIXME -> get-net-info will be called periodically.
@@ -154,15 +156,16 @@
 
         (when (is? :app-proxy)
             ;; tmp/FIXME:
-            (let [ctrl (chan)
-                  dt-comm (conn/new :udp :client {:host "127.0.0.1" :port 1234} config {:connect #(go (>! ctrl :connected)) :data #(println (str %2))})
-                  msg "lol hello1!#@!"]
-              (println "connecting...")
-              (go (<! ctrl)
-                  (println "connected")
-                  (js/setInterval #(.send dt-comm (b/new msg) 0 (count msg) 1234 "127.0.0.1") 1000)))
+            ;(let [ctrl (chan)
+            ;      dt-comm (conn/new :udp :client {:host "127.0.0.1" :port 1234} config {:connect #(go (>! ctrl :connected)) :data #(println (str %2))})
+            ;      msg "lol hello1!#@!"]
+            ;  (println "connecting...")
+            ;  (go (<! ctrl)
+            ;      (println "connected")
+            ;      (js/setInterval #(.send dt-comm (b/new msg) 0 (count msg) 1234 "127.0.0.1") 1000)))
+            (dtls/init config)
 
-          (let [geo       (<! geo)
+          (comment (let [geo       (<! geo)
                 net-info  (<! net-info)
                 sip-chan  (atom nil)
                 reconnect (fn []
@@ -186,7 +189,7 @@
                                       (c/destroy c))
                                     (>! @sip-chan :destroy)
                                     (reconnect))))
-                            (:register-interval config))))
+                            (:register-interval config)))))
 
         ;; (when (is? :super-peer)
         ;;   (register-to-dir config (<! geo) mix ds)

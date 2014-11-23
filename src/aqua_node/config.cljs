@@ -31,7 +31,10 @@
      ;; dir & sip dir register will timeout if not renewed within these:
      :register-interval     10000
      :keep-alive-interval   20000
-     :sip-register-interval 600000}))
+     :sip-register-interval 600000
+     ;; dtls c layer:
+     :dtls-handler-port     6677
+     }))
 
 (defn read-config [argv]
   "Parse config file aquarc in current directory, or from argv's --config <path>."

@@ -384,7 +384,8 @@
     (if (and (= (:port dest) (.-localPort socket)) (= (:host dest) (.-localAddress socket)))
       (let [k      (-> circ :mux :auth :secret)
             [iv m] (b/cut payload 16)
-            cell   (crypto/dec-aes k iv m)]
+            ;cell   (crypto/dec-aes k iv m)
+            cell   nil]
         (process config socket cell))
       (let [socket (c/find-by-dest dest)]
         (assert socket "could not find next hop for forwarding")

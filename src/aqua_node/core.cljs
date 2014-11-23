@@ -55,6 +55,7 @@
   (let [argv   (-> ((node/require "minimist") (-> js/process .-argv (.slice 2))) cljs/js->clj walk/keywordize-keys)
         config (config/read-config argv)]
     (log/init config)
+    (println (:dtls-handler-port config))
     (roles/bootstrap config)))
 
 ;(set! *main-cli-fn* #(do (enable-console-print!) ;; @Nic: sometimes you want to do things outside the try catch for a more complete stacktrace.
