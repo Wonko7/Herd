@@ -16,6 +16,11 @@
     (.writeUInt32BE b integer 0)
     b))
 
+(defn new2 [integer]
+  (let [b (js/Buffer. 2)]
+    (.writeUInt16BE b integer 0)
+    b))
+
 (defn new1 [integer]
   (let [b (js/Buffer. 1)]
     (.writeUInt8 b integer 0)

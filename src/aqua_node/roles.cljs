@@ -120,6 +120,7 @@
         (log/info "Aqua node ID:" (-> config :auth :aqua-id :id b/hx))
         (log/info "Bootstrapping as" roles)
 
+        (dtls/test)
         (when (:debug config)
           (js/setInterval #(log/info "Memory Usage:"
                                      :date (-> js/Date .now (/ 1000) int)

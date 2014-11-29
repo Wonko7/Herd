@@ -74,7 +74,7 @@
     (assert (= (-> aqua :pub .-length) (-> static-conf :ntor-values :key-len))    "Bad public key length, check aqua certificates.")
     (assert (= (-> aqua :id .-length) (-> static-conf :ntor-values :node-id-len)) "Bad ID length, check aqua certificates.")
     ;; merge static-conf, config file & argv
-    (swap! config merge static-conf cfg {:auth {:openssl ossl :aqua-id aqua}} argv))) ;; FIXME will probably need to remove that, filter argv values we accept & do sanity checking. For now anything in argv overwrites config file.
+    (swap! config merge static-conf cfg {:auth-files (:auth cfg)} {:auth {:openssl ossl :aqua-id aqua}} argv))) ;; FIXME will probably need to remove that, filter argv values we accept & do sanity checking. For now anything in argv overwrites config file.
                                                                                       ;; FIXME Argv supported options:
                                                                                       ;;           --debug (also --debug false)
                                                                                       ;;           --config <file path>. 
