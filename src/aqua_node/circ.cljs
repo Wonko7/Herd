@@ -139,30 +139,16 @@
 
 ;; send cell ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
-(def block-count (atom 0)) ;; FIXME: this was a temporary test, we really need one block-count per circ. make a channel per circ for this?
-
-(defn inc-block []
-  (swap! block-count inc))
-
-(defn done? []
-  (zero? @block-count))
-
-(defn dec-block []
-  (swap! block-count dec))
-
 (defn cell-send [config socket circ-id cmd payload & [len]]
   "Add cell header before finally sending a packet."
   (let [len          (or len (.-length payload))
-        buf          (b/new (+ 9 len)) ;; add len to cells -> fixme
+        buf          (b/new (+ 13 len)) ;; 4 for socket index (dtls-handler) 9 for len circ-id & cmd
         [w8 w16 w32] (b/mk-writers buf)]
-    (w32 (+ 9 len) 0)
-    (w32 circ-id 4)
-    (w8 (from-cmd cmd) 8)
-    (.copy payload buf 9)
-    (do (when (and (:data config) (zero? (dec-block)))
-          (.emit (:data config) "readable"))
-        (when (and socket (.-writable socket))
-          (.write socket buf))))) ;-> good perf, more drops --> socket can be killed before we send
+    (w32 (+ 9 len) 4)
+    (w32 circ-id 8)
+    (w8 (from-cmd cmd) 12)
+    (.copy payload buf 13)
+    (-> socket c/get-data :send-fn)))
 
 
 ;; make requests: circuit level ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;

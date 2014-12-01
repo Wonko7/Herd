@@ -41,9 +41,13 @@
     (println "recvd" cmd)
     (condp = cmd
       :ack (go (>! dispatch-rq buf))
-      (do (println (h/to-clj rinfo))
-          ;(println (.toString buf))
-          ))))
+      (let [socket-id (.readUInt32BE buf 1)]
+        (if (nil? (c/get-data socket-id))
+          (log/error "Got data for an invalid/unknown DTLS socket id" socket-id))
+        (circ/process config socket-id (.slice buf 5))
+        (println (h/to-clj rinfo))
+        ;(println (.toString buf))
+        ))))
 
 (defn send-to-dtls [buf]
   "send to dtls"
@@ -94,7 +98,9 @@
             (do (println "got fail on" cookie)
                 :fail)
             (do (log/debug "got dtls-handler ok on cookie" cookie "given node id =" id)
-                (c/add id (merge {:id id :cs :client :type :aqua :host (:host dest) :port (:port dest)}))))))))
+                (c/add id (merge {:id id :cs :client :type :aqua :host (:host dest) :port (:port dest)
+                                  :send-fn #(do (.writeUInt32BE % id 0)
+                                                (send-to-dtls %))}))))))))
 
 ;  (defn connect [dest config conn-info conn-handler err]
 
@@ -109,7 +115,7 @@
         soc           (.createSocket (node/require "dgram") "udp4")
         soc-ctrl      (chan)
         dispatch-rq   (chan)]
-    (reset! dispatch-pub (pub dispatch-rq #(do (println :disp-cookie (.readUInt32BE %1 1)) (.readUInt32BE %1 1))))
+    (reset! dispatch-pub (pub dispatch-rq #(.readUInt32BE %1 1)))
     (.bind soc 0 "127.0.0.1")
     (c/add-listeners soc {:message   #(process soc %1 %2 dispatch-rq)
                           :listening #(go (>! soc-ctrl :listening))
@@ -124,7 +130,6 @@
         (send-init config)
         (send-to-dtls (b/cat (b/new1 3) (b/new "Hellololololol again!")))
         (connect {:host "127.0.0.1" :port 12345 :id (-> config :auth :aqua-id :id)})
-        
         )))
 
 (defn test []
