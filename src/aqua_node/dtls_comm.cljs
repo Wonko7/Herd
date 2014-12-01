@@ -30,7 +30,7 @@
    4  :forward
    5  :data
    6  :new-circuit
-   7  :answer})
+   7  :ack})
 
 (def from-cmd
   (apply merge (for [k (keys to-cmd)]
@@ -38,15 +38,17 @@
 
 (defn process [socket buf rinfo dispatch-rq]
   (let [cmd (-> buf (.readUInt8 0) to-cmd)]
+    (println "recvd" cmd)
     (condp = cmd
-      :answer (>! dispatch-rq buf)
+      :ack (go (>! dispatch-rq buf))
       (do (println (h/to-clj rinfo))
-          (println (.toString buf))))))
+          ;(println (.toString buf))
+          ))))
 
 (defn send-to-dtls [buf]
   "send to dtls"
   (let [[soc soc-ctrl port] @dtls-handler-socket-data]
-    (println :fwd port buf (.-length buf))
+    (println :fwd port (.-length buf))
     (.send soc buf 0 (.-length buf) port "127.0.0.1")))
 
 (defn send-init [config]
@@ -55,44 +57,50 @@
         aqua-pub          (-> config :auth :aqua-id :pub)
         aqua-sec          (-> config :auth :aqua-id :sec)
         aqua-id           (-> config :auth :aqua-id :id)
-        mk-size-and-buf   #(b/cat (b/new2 (count %)) (b/new %))]
+        mk-size-and-buf   #(let [buf (b/new %)]
+                             (b/cat (b/new2 (.-length buf)) buf))]
     (println key-file)
     (println cert-file)
     (b/print-x aqua-pub)
     (b/print-x aqua-sec)
     (send-to-dtls (b/cat (-> :init from-cmd b/new1)
-                        (mk-size-and-buf cert-file)
-                        (mk-size-and-buf key-file)
-                        (mk-size-and-buf aqua-pub)
-                        (mk-size-and-buf aqua-sec)
-                        (mk-size-and-buf aqua-id)
-                        (-> config :aqua :port b/new2)))))
+                         (mk-size-and-buf cert-file)
+                         (mk-size-and-buf key-file)
+                         (mk-size-and-buf aqua-pub)
+                         (mk-size-and-buf aqua-sec)
+                         (mk-size-and-buf aqua-id)
+                         (-> config :aqua :port b/new2)))))
 
 (defn send-connect [dest cookie]
-  (send-to-dtls (b/cat (-> :init from-cmd b/new1)
-                      (b/new4 cookie)
-                      (-> dest conv/dest-to-tor-str b/new)
-                      b/zero
-                      (-> dest :id))))
+  (send-to-dtls (b/cat (-> :connect-to-node from-cmd b/new1)
+                       (b/new4 cookie)
+                       (-> dest conv/dest-to-tor-str b/new)
+                       b/zero
+                       (-> dest :id))))
 
 (defn connect [dest]
   (let [c         (node/require "crypto")
-        cookie    (.readUInt32BE (.randomBytes c 4)) ;; cookie used to identify transaction
+        cookie    (.readUInt32BE (.randomBytes c 4) 0) ;; cookie used to identify transaction
         ctrl      (chan)]
+    (println "sending connect with cookie" cookie "id length" (.-length (:id dest)))
     (sub @dispatch-pub cookie ctrl)
     (go (send-connect dest cookie)
         (let [answer (<! ctrl) ;; also allow for timeout...
-              state  (.readUInt8 answer 5)
-              id     (.readUInt32BE answer 6)]
+              state  (.readUInt32BE answer 5)
+              id     (.readUInt32BE answer 9)]
           (unsub @dispatch-pub cookie ctrl)
           (close! ctrl)
-          (if (= 0 state)
-            :fail
-            (c/add id (merge {:id id :cs :client :type :aqua :host (:host dest) :port (:port dest)})))))))
+          (if (not= 0 state)
+            (do (println "got fail on" cookie)
+                :fail)
+            (do (log/debug "got dtls-handler ok on cookie" cookie "given node id =" id)
+                (c/add id (merge {:id id :cs :client :type :aqua :host (:host dest) :port (:port dest)}))))))))
+
+;  (defn connect [dest config conn-info conn-handler err]
 
 (defn init [{port :dtls-handler-port fixme :files-for-certs :as config}]
   (let [exec          (.-exec (node/require "child_process"))
-        dtls-handler  (exec (str "./dtls-handler " port)
+        dtls-handler  (exec (str (:dtls-handler-path config) " " port)
                             nil
                             #(do (log/error "dtls-handler exited with" %1)
                                  (log/error %&)
@@ -101,7 +109,7 @@
         soc           (.createSocket (node/require "dgram") "udp4")
         soc-ctrl      (chan)
         dispatch-rq   (chan)]
-    (reset! dispatch-pub (pub dispatch-rq #(.readUInt32BE % 0)))
+    (reset! dispatch-pub (pub dispatch-rq #(do (println :disp-cookie (.readUInt32BE %1 1)) (.readUInt32BE %1 1))))
     (.bind soc 0 "127.0.0.1")
     (c/add-listeners soc {:message   #(process soc %1 %2 dispatch-rq)
                           :listening #(go (>! soc-ctrl :listening))
@@ -111,22 +119,13 @@
     (log/info "Started dtls handler, PID:" (.-pid dtls-handler) "Port:" port)
     (reset! dtls-handler-socket-data [soc soc-ctrl port])
     (go (<! soc-ctrl)
-        (println :sent)
         (send-to-dtls (b/cat (b/new1 3) (b/new "Hellololololol!")))
         (send-to-dtls (b/cat (b/new1 1) (-> {:host "123.124.125.126" :port 12345 :type :ip :proto :udp} conv/dest-to-tor-str b/new)))
         (send-init config)
-        (send-to-dtls (b/cat (b/new1 3) (b/new "Hellololololol again!"))))))
-
-(defn connect [dest config conn-info conn-handler err]
-  (let []
-    (send-connect dest)
-    (c/add-listeners c {:secureConnect #(conn-handler c) :error err})
-    (c/add c (merge conn-info {:cs :client :type :aqua :host (:host dest) :port (:port dest)}))))
-
-(c/add 0 )
-
-
-
+        (send-to-dtls (b/cat (b/new1 3) (b/new "Hellololololol again!")))
+        (connect {:host "127.0.0.1" :port 12345 :id (-> config :auth :aqua-id :id)})
+        
+        )))
 
 (defn test []
   (go (let [c (chan)

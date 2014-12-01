@@ -34,6 +34,7 @@
      :sip-register-interval 600000
      ;; dtls c layer:
      :dtls-handler-port     6677
+     :dtls-handler-path     "./dtls-handler"
      }))
 
 (defn read-config [argv]
