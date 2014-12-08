@@ -2,7 +2,6 @@
   (:require [cljs.core :as cljs]
             [cljs.nodejs :as node]
             [cljs.core.async :refer [chan <! >! sub pub unsub close!] :as a]
-            [aqua-node.sip-helpers :as h]
             [aqua-node.parse :as conv]
             [aqua-node.log :as log]
             [aqua-node.buf :as b]
@@ -10,9 +9,7 @@
   (:require-macros [cljs.core.async.macros :as m :refer [go-loop go]]))
 
 ;; globals:
-
-(def dtls-handler-socket-data (atom nil))
-(def dispatch-pub (atom nil))
+(declare circ-process dispatch-pub dtls-handler-socket-data)
 
 ;;  :init             -> give ntor certs, paths to dtls certs.
 ;;  :connect-to-node  -> give tor-dest
@@ -36,7 +33,7 @@
   (apply merge (for [k (keys to-cmd)]
                  {(to-cmd k) k})))
 
-(defn process [socket buf rinfo dispatch-rq]
+(defn process [socket config buf rinfo dispatch-rq]
   (let [cmd (-> buf (.readUInt8 0) to-cmd)]
     (println "recvd" cmd)
     (condp = cmd
@@ -44,14 +41,14 @@
       (let [socket-id (.readUInt32BE buf 1)]
         (if (nil? (c/get-data socket-id))
           (log/error "Got data for an invalid/unknown DTLS socket id" socket-id))
-        (circ/process config socket-id (.slice buf 5))
-        (println (h/to-clj rinfo))
+        (circ-process config socket-id (.slice buf 5))
+        (println (conv/to-clj rinfo))
         ;(println (.toString buf))
         ))))
 
 (defn send-to-dtls [buf]
   "send to dtls"
-  (let [[soc soc-ctrl port] @dtls-handler-socket-data]
+  (let [[soc soc-ctrl port] dtls-handler-socket-data]
     (println :fwd port (.-length buf))
     (.send soc buf 0 (.-length buf) port "127.0.0.1")))
 
@@ -87,15 +84,15 @@
         cookie    (.readUInt32BE (.randomBytes c 4) 0) ;; cookie used to identify transaction
         ctrl      (chan)]
     (println "sending connect with cookie" cookie "id length" (.-length (:id dest)))
-    (sub @dispatch-pub cookie ctrl)
+    (sub dispatch-pub cookie ctrl)
     (go (send-connect dest cookie)
         (let [answer (<! ctrl) ;; also allow for timeout...
               state  (.readUInt32BE answer 5)
               id     (.readUInt32BE answer 9)]
-          (unsub @dispatch-pub cookie ctrl)
+          (unsub dispatch-pub cookie ctrl)
           (close! ctrl)
           (if (not= 0 state)
-            (do (println "got fail on" cookie)
+            (do (log/error "got fail on" cookie)
                 :fail)
             (do (log/debug "got dtls-handler ok on cookie" cookie "given node id =" id)
                 (c/add id (merge {:id id :cs :client :type :aqua :host (:host dest) :port (:port dest)
@@ -104,7 +101,7 @@
 
 ;  (defn connect [dest config conn-info conn-handler err]
 
-(defn init [{port :dtls-handler-port fixme :files-for-certs :as config}]
+(defn init [{port :dtls-handler-port fixme :files-for-certs :as config} circ-process]
   (let [exec          (.-exec (node/require "child_process"))
         dtls-handler  (exec (str (:dtls-handler-path config) " " port)
                             nil
@@ -115,15 +112,18 @@
         soc           (.createSocket (node/require "dgram") "udp4")
         soc-ctrl      (chan)
         dispatch-rq   (chan)]
-    (reset! dispatch-pub (pub dispatch-rq #(.readUInt32BE %1 1)))
+    ;; yerk, define globals:
+    (def circ-process circ-process)
+    (def dispatch-pub (pub dispatch-rq #(.readUInt32BE %1 1)))
     (.bind soc 0 "127.0.0.1")
-    (c/add-listeners soc {:message   #(process soc %1 %2 dispatch-rq)
+    (c/add-listeners soc {:message   #(process soc config %1 %2 dispatch-rq)
                           :listening #(go (>! soc-ctrl :listening))
                           :error     #(log/error "DTLS control socket error")
                           :close     #(log/error "DTLS control socket closed")})
 
     (log/info "Started dtls handler, PID:" (.-pid dtls-handler) "Port:" port)
-    (reset! dtls-handler-socket-data [soc soc-ctrl port])
+    ;; yerk, define global:
+    (def dtls-handler-socket-data [soc soc-ctrl port])
     (go (<! soc-ctrl)
         (send-to-dtls (b/cat (b/new1 3) (b/new "Hellololololol!")))
         (send-to-dtls (b/cat (b/new1 1) (-> {:host "123.124.125.126" :port 12345 :type :ip :proto :udp} conv/dest-to-tor-str b/new)))

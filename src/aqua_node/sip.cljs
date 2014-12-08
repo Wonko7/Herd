@@ -227,7 +227,7 @@
                                                  ;(.send sip bye)
                                                  ;(->> (mk-headers "BYE" sip-call-id name headers uri-to local-dest)
                                                  ;     (merge {:content ""})
-                                                 ;     s/to-js
+                                                 ;     conv/to-js
                                                  ;     (.send sip))
                                                  (kill-call config call-id))
                                             sip-ctrl)))
@@ -393,7 +393,7 @@
                                                                                                (b/new call-id)
                                                                                                b/zero))
                                                 (log/info "SIP: sent ackack, ready for relay on" call-id)
-                                                (let [ok (merge (assoc-in (assoc-in (s/to-clj (.makeResponse sip rq 200 "OK"))                 ;; Send our client a 200 OK, with out-circ's listening udp as "callee's" dest (what caller thinks is the callee actually is aqua).
+                                                (let [ok (merge (assoc-in (assoc-in (conv/to-clj (.makeResponse sip rq 200 "OK"))                 ;; Send our client a 200 OK, with out-circ's listening udp as "callee's" dest (what caller thinks is the callee actually is aqua).
                                                                                     [:headers :content-type]
                                                                                     "application/sdp") ;; inelegant, testing.
                                                                           [:headers :contact]
@@ -404,7 +404,7 @@
                                                   (update-data call-id [:uri-to] (-> ok :headers :contact first :uri))
                                                   (update-data call-id [:headers] (-> ok :headers))
                                                   ;(update-data call-id [:bye] (.makeResponse sip rq))
-                                                  (.send sip (s/to-js ok)))
+                                                  (.send sip (conv/to-js ok)))
                                                 (add-sip-ctrl-to-rt-circs call-id sip-ctrl)
                                                 (js/setInterval #(circ/relay-ping config rtcp-circ) 2000)
                                                 (wait-for-bye call-id
@@ -514,7 +514,7 @@
                             (wait-for-bye call-id
                                           sip-ctrl
                                           nil))
-                          (do (.send sip (s/to-js (merge (mk-headers "INVITE" call-id caller @headers @uri-to local-dest)       ;; Send our crafted invite with local udp port as "caller's" media session
+                          (do (.send sip (conv/to-js (merge (mk-headers "INVITE" call-id caller @headers @uri-to local-dest)       ;; Send our crafted invite with local udp port as "caller's" media session
                                                          (mk-sdp (:codec config) local-dest {:port loc-rtcp-port} :invite))))
                               (let [user-answer (<! (skip-until #(let [status (-> % :nrq :status)
                                                                        {user-answer :nrq} %]
@@ -551,7 +551,7 @@
                                       (let [ok (mk-ack @ok-200 call-id)]
                                         (update-data call-id [:uri-to] (-> ok :uri))
                                         (update-data call-id [:headers] (-> ok :headers))
-                                        (.send sip (s/to-js ok)))
+                                        (.send sip (conv/to-js ok)))
                                       (log/info "SIP: got ackack, ready for relay on" call-id)
                                       (add-sip-ctrl-to-rt-circs call-id sip-ctrl)
                                       (js/setInterval #(circ/relay-ping config rtcp-circ) 2000)

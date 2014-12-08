@@ -8,6 +8,8 @@
 
 ;; Aqua source code:
 ;;
+;; Currently obsolete: socks, rtpp. Soon: rate, dtls.
+;;
 ;; - roles.cljs sets up the different services the node is expected to have:
 ;;   - an app-proxy sets up a socks proxy & an rtp-proxy and inits a pool of
 ;;     circuits.
@@ -30,6 +32,7 @@
 ;; - core.cljs: just to init the main function, immediately calls
 ;;   roles/bootstrap.
 ;; - dir.cljs: directory logic. Has server service & client requests.
+;; - dtls_comm: communication with dtls-handler.
 ;; - rtpp.cljs: rtp proxy, used to manipulate sip sdp's, create circuits (using
 ;;   get-path) when a call is being initialised.
 ;; - sip.cljs: sip b2b that'll replace rtpp.

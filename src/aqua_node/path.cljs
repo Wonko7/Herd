@@ -163,12 +163,12 @@
         circ-data (circ/get-data circ-id)
         config    (merge config {:data s})]
     (if (= (-> circ-data :state) :relay)
-      (when (circ/done?)
+      (when true;(circ/done?)
         (if-let [b (.read s 1350)] ;; FIXME, this value should not be hardcoded.
-          (do (circ/inc-block)
+          (do ;(circ/inc-block)
               (circ/relay-data config circ-id b))
           (when-let [b (.read s)]
-            (circ/inc-block)
+            ;(circ/inc-block)
             (circ/relay-data config circ-id b))))
       (log/info "TCP: not ready for data, dropping on circuit" circ-id))))
 

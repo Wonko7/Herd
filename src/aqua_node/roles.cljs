@@ -165,7 +165,7 @@
             ;      (js/setInterval #(.send dt-comm (b/new msg) 0 (count msg) 1234 "127.0.0.1") 1000)))
             (dtls/init config)
 
-          (comment (let [geo       (<! geo)
+          (let [geo       (<! geo)
                 net-info  (<! net-info)
                 sip-chan  (atom nil)
                 reconnect (fn []
@@ -175,11 +175,6 @@
                               (log/info "Dir: sending register info")
                               (register-to-dir config geo mix ds)))]
             (reconnect)
-            ;; FIXME: not really using this right now... could be used for external API.
-            (conn/new :socks :server ap config {:data     path/app-proxy-forward
-                                                :udp-data path/app-proxy-forward-udp
-                                                :init     app-proxy-init
-                                                :error    circ/destroy-from-socket})
 
             (js/setInterval (fn []
                               (go (<! (get-net-info config ds))
@@ -189,7 +184,7 @@
                                       (c/destroy c))
                                     (>! @sip-chan :destroy)
                                     (reconnect))))
-                            (:register-interval config)))))
+                            (:register-interval config))))
 
         ;; (when (is? :super-peer)
         ;;   (register-to-dir config (<! geo) mix ds)

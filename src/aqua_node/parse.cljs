@@ -71,3 +71,14 @@
     2 :sip-dir
     3 :rdv
     4 :super-peer))
+
+
+;; Converting ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+(defn to-clj [js-map]
+  "Convert a js map to a clojure hashmap with keywords as keys"
+  (-> js-map cljs/js->clj walk/keywordize-keys))
+
+(defn to-js [clj-map]
+  "Convert a clj map to a js hashmap with strings as keys"
+  (-> clj-map walk/stringify-keys cljs/clj->js))
