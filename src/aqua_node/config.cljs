@@ -35,6 +35,7 @@
      ;; dtls c layer:
      :dtls-handler-port     6677
      :dtls-handler-path     "./dtls-handler"
+     :aqua-packet-size      384
      }))
 
 (defn read-config [argv]

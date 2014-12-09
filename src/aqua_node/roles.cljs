@@ -89,8 +89,8 @@
     (go (if (= :timeout (<! con))
           (c/destroy soc)
           (do (js/clearTimeout timer)
-              (rate/init config soc)
-              (rate/queue soc #(circ/send-id config soc))
+              ;(rate/init config soc)
+              (circ/send-id config soc)
               (circ/reset-keep-alive config soc)
               (when ctrl (>! ctrl soc)))))))
 
@@ -112,6 +112,8 @@
 (defn bootstrap [{roles :roles ap :app-proxy aq :aqua ds :remote-dir dir :dir sip-dir :sip-dir :as config}]
   "Setup the services needed by the given role."
 
+  (dtls/init config circ/process)
+
   (go (let [is?         #(m/is? % roles)                      ;; tests roles for our running instance
             geo         (go (<! (geo/parse config)))          ;; match our ip against database, unless already specified in config:
             net-info    (go (when-not (is? :dir)              ;; request net-info if we're not a dir. FIXME -> get-net-info will be called periodically.
@@ -120,7 +122,7 @@
         (log/info "Aqua node ID:" (-> config :auth :aqua-id :id b/hx))
         (log/info "Bootstrapping as" roles)
 
-        (when (:debug config)
+        (comment (when (:debug config)
           (js/setInterval #(log/info "Memory Usage:"
                                      :date (-> js/Date .now (/ 1000) int)
                                      (.inspect (node/require "util") (.memoryUsage js/process)))
@@ -152,19 +154,9 @@
                               (log/info "Status:" (count conns) "connections")
                               (log/info "Status:" (count (filter #(-> % second :rate) conns)) "rate limited connections")
                               (log/info "Status:" (count net-info) "net-info entries")))
-                          20000))
+                          20000)))
 
         (when (is? :app-proxy)
-            ;; tmp/FIXME:
-            ;(let [ctrl (chan)
-            ;      dt-comm (conn/new :udp :client {:host "127.0.0.1" :port 1234} config {:connect #(go (>! ctrl :connected)) :data #(println (str %2))})
-            ;      msg "lol hello1!#@!"]
-            ;  (println "connecting...")
-            ;  (go (<! ctrl)
-            ;      (println "connected")
-            ;      (js/setInterval #(.send dt-comm (b/new msg) 0 (count msg) 1234 "127.0.0.1") 1000)))
-            (dtls/init config)
-
           (let [geo       (<! geo)
                 net-info  (<! net-info)
                 sip-chan  (atom nil)
@@ -194,7 +186,7 @@
           (let [sip-chan (sip-dir/create-mix-dir config)
                 config   (merge config {:sip-chan sip-chan :sip-mix-dir sip-dir/mix-dir}) ;; FIXME :sip-mix-dir unused.
                 ctrl     (chan)]
-            (conn/new :aqua :server aq config {:connect aqua-server-recv})
+            ;(conn/new :aqua :server aq config {:connect aqua-server-recv})
             (<! net-info)
             (connect-to-all config)
             (js/setInterval #(go (<! (get-net-info config ds))
@@ -208,5 +200,5 @@
         (when (is? :sip-dir)
           (let [sip-chan (sip-dir/create-dir config)
                 cfg      (merge config {:sip-chan sip-chan :aqua sip-dir})]
-            (conn/new :aqua :server sip-dir cfg {:connect aqua-server-recv})
+            ;(conn/new :aqua :server sip-dir cfg {:connect aqua-server-recv})
             (register-to-dir cfg (<! geo) nil ds))))))

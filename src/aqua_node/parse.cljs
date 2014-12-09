@@ -62,7 +62,7 @@
     :mix         1
     :sip-dir     2
     :rdv         3
-    :super-peer  4) )
+    :super-peer  4))
 
 (defn int-to-role [role]
   (condp = role

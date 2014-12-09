@@ -3,7 +3,6 @@
             [cljs.nodejs :as node]
             [aqua-node.log :as log]
             [aqua-node.dtls-comm :as dtls]
-            ;[aqua-node.dtls :as dtls]
             [aqua-node.tls :as tls]
             [aqua-node.socks :as socks]
             [aqua-node.conns :as c]))
@@ -12,7 +11,8 @@
 
 
 (defn new [type cs conn {auth :auth :as config} {connect :connect data :data udp-data :udp-data init :init err :error}]
-  "Used to create new connections. Type can be socks, aqua, dir, tcp, udp or rtp."
+  "Used to create new connections. Type can be socks, aqua, dir, tcp, udp or rtp.
+  Warning: :aqua :client will return a chan to the socket id, whereas all others return the socket id. <- FIXME."
   (let [conn-info   (merge conn {:type type :cs cs})
         is?         #(and (= %2 cs) (= %1 type))
         data        (partial data config)
@@ -38,8 +38,8 @@
         connect     (partial connect config)]
     ;; create the appropriate connection:
     (cond (is? :socks :server) (socks/create-server conn data udp-data (partial init config) (partial err config))
-          (is? :aqua :server)  (dtls/create-server conn config conn-info connect err)
-          (is? :aqua :client)  (dtls/connect conn config conn-info connect err)
+          (is? :aqua :server)  (log/error "Aqua server should be created by dtls-comm/init now")
+          (is? :aqua :client)  (dtls/connect conn conn-info connect err)
           (is? :dir :server)   (tls/create-server conn config connect err) ;; FIXME: setting type to aqua/aqua-dir is in dtls/tls. this is Bad.
           (is? :dir :client)   (tls/connect conn config connect err)
           (is? :tcp :client)   (new-tcp-c)

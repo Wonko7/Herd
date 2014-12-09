@@ -140,15 +140,20 @@
 ;; send cell ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
 (defn cell-send [config socket circ-id cmd payload & [len]]
+  ;; FIXME: fix cell size.
   "Add cell header before finally sending a packet."
   (let [len          (or len (.-length payload))
-        buf          (b/new (+ 13 len)) ;; 4 for socket index (dtls-handler) 9 for len circ-id & cmd
+        packet-sz    (:aqua-packet-size config)
+        buf          (b/new (+ 5 packet-sz)) ;; 5 for cmd type & socket index (dtls-handler), 9 for len circ-id & cmd
         [w8 w16 w32] (b/mk-writers buf)]
-    (w32 (+ 9 len) 4)
-    (w32 circ-id 8)
-    (w8 (from-cmd cmd) 12)
-    (.copy payload buf 13)
-    (-> socket c/get-data :send-fn)))
+    (if (> len packet-sz)
+      (log/error "cell-send: dropping to big cell, circ-id:" circ-id)
+      (do (w32 (+ 9 len) 5)
+          (w32 circ-id 9)
+          (w8 (from-cmd cmd) 13)
+          (.copy payload buf 14)
+          (println :sending :cell! socket (c/get-data socket))
+          ((-> socket c/get-data :send-fn) buf)))))
 
 
 ;; make requests: circuit level ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
@@ -644,13 +649,18 @@
         cell-len     (r32 0)           ;; length the packet should have
         circ-id      (r32 4)           ;; circuit id
         command      (to-cmd (r8 8))   ;; what kind of packet command (relay, extend, etc)
-        payload      (.slice data 9)
         circ         (@circuits circ-id)]
     ;(when (not= :padding (:name command)) ;; only print debug if the message isn't padding
     ;  (log/debug "recv cell: id:" circ-id "cmd:" (:name command) "len:" len  "id:" (if-let [id (-> socket c/get-data :auth :srv-id)]
     ;                                                                                 (b/hx id)
     ;                                                                                 "unknown")))
-    (cond (> len cell-len) (let [[f r] (b/cut data cell-len)] ;; more than one cell in our data, cut it up accordingly:
+    (if (not= len (:aqua-packet-size config))
+      (log/error "Circ:" circ-id "received cell with bad length:" len "or cell length:" cell-len)
+      (when (:fun command)
+        (try
+          ((:fun command) config socket circ-id (.slice data 9 cell-len))
+          (catch js/Object e (log/c-info e (str "Killed circuit " circ-id)) (destroy config circ-id)))))
+    (comment (cond (> len cell-len) (let [[f r] (b/cut data cell-len)] ;; more than one cell in our data, cut it up accordingly:
                              (reset! wait-buffer nil)
                              (process config socket f)
                              (process config socket r))
@@ -664,4 +674,4 @@
                                (when (:fun command)
                                  (try
                                    ((:fun command) config socket circ-id payload)
-                                   (catch js/Object e (log/c-info e (str "Killed circuit " circ-id)) (destroy config circ-id))))))))
+                                   (catch js/Object e (log/c-info e (str "Killed circuit " circ-id)) (destroy config circ-id)))))))))

@@ -27,24 +27,13 @@
    4  :forward
    5  :data
    6  :new-circuit
-   7  :ack})
+   7  :ack
+   8  :new-client
+   })
 
 (def from-cmd
   (apply merge (for [k (keys to-cmd)]
                  {(to-cmd k) k})))
-
-(defn process [socket config buf rinfo dispatch-rq]
-  (let [cmd (-> buf (.readUInt8 0) to-cmd)]
-    (println "recvd" cmd)
-    (condp = cmd
-      :ack (go (>! dispatch-rq buf))
-      (let [socket-id (.readUInt32BE buf 1)]
-        (if (nil? (c/get-data socket-id))
-          (log/error "Got data for an invalid/unknown DTLS socket id" socket-id))
-        (circ-process config socket-id (.slice buf 5))
-        (println (conv/to-clj rinfo))
-        ;(println (.toString buf))
-        ))))
 
 (defn send-to-dtls [buf]
   "send to dtls"
@@ -77,31 +66,61 @@
                        (b/new4 cookie)
                        (-> dest conv/dest-to-tor-str b/new)
                        b/zero
-                       (-> dest :id))))
+                       (-> dest :auth :srv-id))))
 
-(defn connect [dest]
+(defn connect [dest conn-info conn-handler err]
   (let [c         (node/require "crypto")
         cookie    (.readUInt32BE (.randomBytes c 4) 0) ;; cookie used to identify transaction
         ctrl      (chan)]
-    (println "sending connect with cookie" cookie "id length" (.-length (:id dest)))
+    (log/info "Connecting to" (select-keys dest [:host :port :role]))
+    (println "sending connect with cookie" cookie "id length" (-> dest :auth :srv-id .-length))
     (sub dispatch-pub cookie ctrl)
     (go (send-connect dest cookie)
         (let [answer (<! ctrl) ;; also allow for timeout...
               state  (.readUInt32BE answer 5)
-              id     (.readUInt32BE answer 9)]
+              id     (.readUInt32BE answer 9)
+              header (b/new 5)]
+          ;; prepare header for forwarding with :send-fn:
+          (.writeUInt8 header (from-cmd :forward) 0)
+          (.writeUInt32BE header id 1)
           (unsub dispatch-pub cookie ctrl)
           (close! ctrl)
           (if (not= 0 state)
             (do (log/error "got fail on" cookie)
+                (when err
+                  (err))
                 :fail)
-            (do (log/debug "got dtls-handler ok on cookie" cookie "given node id =" id)
-                (c/add id (merge {:id id :cs :client :type :aqua :host (:host dest) :port (:port dest)
-                                  :send-fn #(do (.writeUInt32BE % id 0)
+            (do (when conn-handler
+                  (println :yay :connect-handler)
+                  (conn-handler))
+                (log/debug "got dtls-handler ok on cookie" cookie "given node id =" id)
+                (c/add id (merge conn-info
+                                 {:id id :cs :client :type :aqua :host (:host dest) :port (:port dest)
+                                  :send-fn #(do (.copy header %)
                                                 (send-to-dtls %))}))))))))
 
-;  (defn connect [dest config conn-info conn-handler err]
+(defn process [socket config buf rinfo dispatch-rq]
+  (let [[r1 r2 r4]  (b/mk-readers buf)
+        cmd         (to-cmd (r1 0))]
+    (println "recvd" cmd)
+    (condp = cmd
+      :ack        (go (>! dispatch-rq buf))
+      :data       (let [socket-id (r4 1)]
+                    (if (nil? (c/get-data socket-id))
+                      (log/error "Got data for an invalid/unknown DTLS socket id" socket-id)
+                      (do (circ-process config socket-id (.slice buf 5))
+                          (println (conv/to-clj rinfo)))))
+      :new-client (let [socket-id (r4 1)]
+                    (log/info "New client on socket-id:" socket-id)
+                    (c/add socket-id {:id socket-id :cs :server :type :aqua ;; FIXME can we get rid of :cs? that was old...
+                                      :send-fn #(do (.writeUInt32BE % socket-id 0)
+                                                    (println :sendingon socket-id)
+                                                    (send-to-dtls %))})
+                    ;;
+                    )
+      (log/error "DTLS comm: unsupported command" cmd (r1 0)))))
 
-(defn init [{port :dtls-handler-port fixme :files-for-certs :as config} circ-process]
+(defn init [{port :dtls-handler-port fixme :files-for-certs :as config} circ-process] ; FIXME:also others
   (let [exec          (.-exec (node/require "child_process"))
         dtls-handler  (exec (str (:dtls-handler-path config) " " port)
                             nil
@@ -125,11 +144,11 @@
     ;; yerk, define global:
     (def dtls-handler-socket-data [soc soc-ctrl port])
     (go (<! soc-ctrl)
-        (send-to-dtls (b/cat (b/new1 3) (b/new "Hellololololol!")))
-        (send-to-dtls (b/cat (b/new1 1) (-> {:host "123.124.125.126" :port 12345 :type :ip :proto :udp} conv/dest-to-tor-str b/new)))
         (send-init config)
-        (send-to-dtls (b/cat (b/new1 3) (b/new "Hellololololol again!")))
-        (connect {:host "127.0.0.1" :port 12345 :id (-> config :auth :aqua-id :id)})
+        ;(send-to-dtls (b/cat (b/new1 3) (b/new "Hellololololol!")))
+        ;(send-to-dtls (b/cat (b/new1 1) (-> {:host "123.124.125.126" :port 12345 :type :ip :proto :udp} conv/dest-to-tor-str b/new)))
+        ;(send-to-dtls (b/cat (b/new1 3) (b/new "Hellololololol again!")))
+        ;(connect {:host "127.0.0.1" :port 12345 :id (-> config :auth :aqua-id :id)})
         )))
 
 (defn test []
