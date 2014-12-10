@@ -650,28 +650,13 @@
         circ-id      (r32 4)           ;; circuit id
         command      (to-cmd (r8 8))   ;; what kind of packet command (relay, extend, etc)
         circ         (@circuits circ-id)]
-    ;(when (not= :padding (:name command)) ;; only print debug if the message isn't padding
-    ;  (log/debug "recv cell: id:" circ-id "cmd:" (:name command) "len:" len  "id:" (if-let [id (-> socket c/get-data :auth :srv-id)]
-    ;                                                                                 (b/hx id)
-    ;                                                                                 "unknown")))
+    (comment (when (not= :padding (:name command)) ;; only print debug if the message isn't padding
+               (log/debug "recv cell: id:" circ-id "cmd:" (:name command) "len:" len  "id:" (if-let [id (-> socket c/get-data :auth :srv-id)]
+                                                                                              (b/hx id)
+                                                                                              "unknown"))))
     (if (not= len (:aqua-packet-size config))
       (log/error "Circ:" circ-id "received cell with bad length:" len "or cell length:" cell-len)
       (when (:fun command)
         (try
           (do (println :processing (:name command)) ((:fun command) config socket circ-id (.slice data 9 cell-len)))
-          (catch js/Object e (log/c-info e (str "Killed circuit " circ-id)) (destroy config circ-id)))))
-    (comment (cond (> len cell-len) (let [[f r] (b/cut data cell-len)] ;; more than one cell in our data, cut it up accordingly:
-                             (reset! wait-buffer nil)
-                             (process config socket f)
-                             (process config socket r))
-          ;; not enough data, put it on wait buffer.
-          (< len cell-len) (cond circ                                    (reset! wait-buffer data)
-                                 (@circuits (.readUInt32BE data-orig 4)) (reset! wait-buffer data-orig)
-                                 :else                                   (reset! wait-buffer nil))
-          ;; we're done, find the associated function for processing that command:
-          :else            (do (reset! wait-buffer nil)
-                               (reset-keep-alive config socket)
-                               (when (:fun command)
-                                 (try
-                                   ((:fun command) config socket circ-id payload)
-                                   (catch js/Object e (log/c-info e (str "Killed circuit " circ-id)) (destroy config circ-id)))))))))
+          (catch js/Object e (log/c-info e (str "Killed circuit " circ-id)) (destroy config circ-id)))))))

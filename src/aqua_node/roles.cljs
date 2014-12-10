@@ -1,7 +1,7 @@
 (ns aqua-node.roles
   (:require [cljs.core :as cljs]
             [cljs.nodejs :as node]
-            [cljs.core.async :refer [chan <! >! ] :as a]
+            [cljs.core.async :refer [chan <! >!] :as a]
             [aqua-node.log :as log]
             [aqua-node.misc :as m]
             [aqua-node.buf :as b]
@@ -37,9 +37,7 @@
   "Setup socket as an aqua service, send all received data through circ/process."
   (log/debug "new aqua dtls conn from:" (-> s .-socket .-_destIP) (-> s .-socket .-_destPort)) ;; FIXME: investigate nil .-remote[Addr|Port]
   (c/add s {:cs :client :type :aqua :host (-> s .-socket .-_destIP) :port (-> s .-socket .-_destPort)})
-  (c/add-listeners s {:data #(circ/process config s %)})
-  (c/update-data s [:rate-timer] (rate/init config s))
-  (circ/reset-keep-alive config s))
+  (c/add-listeners s {:data #(circ/process config s %)}))
 
 (defn aqua-dir-recv [config s]
   "Setup socket as a dir service, sending all received data through dir/process"
@@ -84,15 +82,14 @@
         soc     (conn/new :aqua :client dest config {:connect #(go (>! con :done))})
         timer   (js/setTimeout #(go (>! con :timeout)) (:keep-alive-interval config))]
     (log/debug "Aqua: Connecting to" (select-keys dest [:host :port :role]))
-    (c/add-listeners soc {:data #(circ/process config soc %)})
-    (c/update-data soc [:auth] (:auth dest))
-    (go (if (= :timeout (<! con))
-          (c/destroy soc)
-          (do (js/clearTimeout timer)
-              ;(rate/init config soc)
-              (circ/send-id config soc)
-              (circ/reset-keep-alive config soc)
-              (when ctrl (>! ctrl soc)))))))
+    (go (let [soc (<! soc)]
+          (c/add-listeners soc {:data #(circ/process config soc %)})
+          (c/update-data soc [:auth] (:auth dest))
+          (if (= :timeout (<! con))
+            (c/destroy soc)
+            (do (js/clearTimeout timer)
+                (circ/send-id config soc)
+                (when ctrl (>! ctrl soc))))))))
 
 (defn aqua-connect-from-id [config net-info id ctrl]
   (let  [mixes (for [[[ip port] mix] (seq (<! net-info))
@@ -112,93 +109,76 @@
 (defn bootstrap [{roles :roles ap :app-proxy aq :aqua ds :remote-dir dir :dir sip-dir :sip-dir :as config}]
   "Setup the services needed by the given role."
 
-  (dtls/init config circ/process)
+  (let [config      (merge config {:sip-chan (chan)})]          ;; init sip-chan
+    (dtls/init config circ/process aqua-server-recv)            ;; init dtls-handler
 
-  (go (let [is?         #(m/is? % roles)                      ;; tests roles for our running instance
-            geo         (go (<! (geo/parse config)))          ;; match our ip against database, unless already specified in config:
-            net-info    (go (when-not (is? :dir)              ;; request net-info if we're not a dir. FIXME -> get-net-info will be called periodically.
-                              (<! (get-net-info config ds))))]
+    (go (let [is?         #(m/is? % roles)                      ;; tests roles for our running instance
+              geo         (go (<! (geo/parse config)))          ;; match our ip against database, unless already specified in config:
+              net-info    (go (when-not (is? :dir)              ;; request net-info if we're not a dir. FIXME -> get-net-info will be called periodically.
+                                (<! (get-net-info config ds))))]
 
-        (log/info "Aqua node ID:" (-> config :auth :aqua-id :id b/hx))
-        (log/info "Bootstrapping as" roles)
+          (log/info "Aqua node ID:" (-> config :auth :aqua-id :id b/hx))
+          (log/info "Bootstrapping as" roles)
 
-        (comment (when (:debug config)
-          (js/setInterval #(log/info "Memory Usage:"
-                                     :date (-> js/Date .now (/ 1000) int)
-                                     (.inspect (node/require "util") (.memoryUsage js/process)))
-                          300000)
-          (js/setInterval #(let [conns (c/get-all)]
-                             (log/info "Status: timestamp:" (.now js/Date))
-                             (log/info "Status: open rate connections:")
-                             (doseq [[c data] (filter (fn [[c data]]
-                                                        (:rate data))
-                                                      conns)
-                                     :let [id      (-> data :auth :srv-id)
-                                           rate-dw (:rate-count-dw data)
-                                           rate-up (:rate-count-up data)]]
-                               (c/update-data c [:rate-count-dw] 0)
-                               (c/update-data c [:rate-count-up] 0)
-                               (log/info "Rate connection to:"
-                                         (if id (b/hx id) "unknown")
-                                         "down:"
-                                         (/ rate-dw 5)
-                                         "p/s,\tup:"
-                                         (/ rate-up 5)
-                                         "p/s")))
-                          5000)
-          (js/setInterval (fn []
-                            (let [circs (circ/get-all)
-                                  conns (c/get-all)
-                                  net-info (dir/get-net-info)]
-                              (log/info "Status:" (count circs) "circuits")
-                              (log/info "Status:" (count conns) "connections")
-                              (log/info "Status:" (count (filter #(-> % second :rate) conns)) "rate limited connections")
-                              (log/info "Status:" (count net-info) "net-info entries")))
-                          20000)))
+          (comment (when (:debug config)
+                     (js/setInterval #(log/info "Memory Usage:"
+                                                :date (-> js/Date .now (/ 1000) int)
+                                                (.inspect (node/require "util") (.memoryUsage js/process)))
+                                     300000)
+                     (js/setInterval (fn []
+                                       (let [circs (circ/get-all)
+                                             conns (c/get-all)
+                                             net-info (dir/get-net-info)]
+                                         (log/info "Status:" (count circs) "circuits")
+                                         (log/info "Status:" (count conns) "connections")
+                                         (log/info "Status:" (count (filter #(= :aqua (-> % second :type)) conns)) "aqua dtls connections")
+                                         (log/info "Status:" (count net-info) "net-info entries")))
+                                     20000)))
 
-        (when (is? :app-proxy)
-          (let [geo       (<! geo)
-                net-info  (<! net-info)
-                sip-chan  (atom nil)
-                reconnect (fn []
-                            (reset! sip-chan (sip/create-server config))
-                            (let [cfg      (merge config {:sip-chan @sip-chan})
-                                  mix      (path/init-pools cfg net-info geo 2)]
-                              (log/info "Dir: sending register info")
-                              (register-to-dir config geo mix ds)))]
-            (reconnect)
+          (when (is? :app-proxy)
+            (let [geo       (<! geo)
+                  net-info  (<! net-info)
+                  sip-chan  (atom nil)
+                  reconnect (fn []
+                              (when @sip-chan
+                                (a/close! @sip-chan))
+                              (reset! sip-chan (sip/create-server config))
+                              (a/pipe (:sip-chan config) @sip-chan)
+                              (let [mix      (path/init-pools config net-info geo 2)]
+                                (log/info "Dir: sending register info")
+                                (register-to-dir config geo mix ds)))]
+              (reconnect)
 
-            (js/setInterval (fn []
-                              (go (<! (get-net-info config ds))
-                                  (when (or (empty? (filter #(-> % second :rate) (c/get-all))) (empty? (circ/get-all)))
-                                    (log/error "Lost connectivity, reconnecting")
-                                    (doseq [c (c/get-all)]
-                                      (c/destroy c))
-                                    (>! @sip-chan :destroy)
-                                    (reconnect))))
-                            (:register-interval config))))
+              (js/setInterval (fn []
+                                (go (<! (get-net-info config ds))
+                                    (when (empty? (circ/get-all)) ;; FIXME: maybe count the nb of aqua sockets
+                                      (log/error "Lost connectivity, reconnecting")
+                                      (doseq [c (c/get-all)]
+                                        (c/destroy c))
+                                      (>! @sip-chan :destroy)
+                                      (reconnect))))
+                              (:register-interval config))))
 
-        ;; (when (is? :super-peer)
-        ;;   (register-to-dir config (<! geo) mix ds)
-        ;;   (conn/new :channel :server sp config {:connect identity}))
+          ;; (when (is? :super-peer)
+          ;;   (register-to-dir config (<! geo) mix ds)
+          ;;   (conn/new :channel :server sp config {:connect identity}))
 
-        (when (or (is? :mix) (is? :rdv))
-          (let [sip-chan (sip-dir/create-mix-dir config)
-                config   (merge config {:sip-chan sip-chan :sip-mix-dir sip-dir/mix-dir}) ;; FIXME :sip-mix-dir unused.
-                ctrl     (chan)]
-            ;(conn/new :aqua :server aq config {:connect aqua-server-recv})
-            (<! net-info)
-            (connect-to-all config)
-            (js/setInterval #(go (<! (get-net-info config ds))
-                                 (connect-to-all config))
-                            (:register-interval config))
-            (register-to-dir config (<! geo) nil ds)))
+          (when (or (is? :mix) (is? :rdv))
+            (let [sip-chan (sip-dir/create-mix-dir config)
+                  config   (merge config {:sip-mix-dir sip-dir/mix-dir}) ;; FIXME :sip-mix-dir unused.
+                  ctrl     (chan)]
+              (a/pipe (:sip-chan config) sip-chan)
+              (<! net-info)
+              (connect-to-all config)
+              (js/setInterval #(go (<! (get-net-info config ds))
+                                   (connect-to-all config))
+                              (:register-interval config))
+              (register-to-dir config (<! geo) nil ds)))
 
-        (when (is? :dir)
-          (conn/new :dir :server dir config {:connect aqua-dir-recv}))
+          (when (is? :dir)
+            (conn/new :dir :server dir config {:connect aqua-dir-recv}))
 
-        (when (is? :sip-dir)
-          (let [sip-chan (sip-dir/create-dir config)
-                cfg      (merge config {:sip-chan sip-chan :aqua sip-dir})]
-            ;(conn/new :aqua :server sip-dir cfg {:connect aqua-server-recv})
-            (register-to-dir cfg (<! geo) nil ds))))))
+          (when (is? :sip-dir)
+            (let [sip-chan (sip-dir/create-dir config)]
+              (a/pipe (:sip-chan config) sip-chan)
+              (register-to-dir config (<! geo) nil ds)))))))

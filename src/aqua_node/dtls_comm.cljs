@@ -119,7 +119,7 @@
       (log/error "DTLS comm: unsupported command" cmd (r1 0)))))
 
 ;; start dtls-handler & create listening socket:
-(defn init [{port :dtls-handler-port fixme :files-for-certs :as config} circ-process] ; FIXME:also others
+(defn init [{port :dtls-handler-port fixme :files-for-certs :as config} circ-process circ-accept]
   (let [exec          (.-exec (node/require "child_process"))
         dtls-handler  (exec (str (:dtls-handler-path config) " " port)
                             nil
@@ -132,6 +132,7 @@
         dispatch-rq   (chan)]
     ;; yerk, define globals:
     (def circ-process circ-process)
+    (def circ-accept circ-accept)
     (def dispatch-pub (pub dispatch-rq #(.readUInt32BE %1 1)))
     (.bind soc 0 "127.0.0.1")
     (c/add-listeners soc {:message   #(process soc config %1 %2 dispatch-rq)

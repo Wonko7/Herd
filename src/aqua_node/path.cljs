@@ -252,15 +252,11 @@
     ;; wait until connected to the chosen mix before sending requests
     (go (<! connected)
         (let [soc (<! soc)]
-          ;(c/add-listeners soc {:data #(circ/process config soc %)})
-          ;(rate/init config soc)
-          ;(rate/queue soc #(circ/send-id config soc))
           (circ/send-id config soc)
           (circ/reset-keep-alive config soc)
           (init-pool config soc :rt mix)
           (init-pool config soc :single #(concat (mk-path) (->> rdvs shuffle (take 1)))) ;; for now all single circuits are for rdvs, if this changes this'll have to change too.
-          (init-pool config soc :one-hop mix))
-        )
+          (init-pool config soc :one-hop mix)))
     mix))
 
 (defn get-path [type]
