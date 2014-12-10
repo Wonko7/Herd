@@ -116,6 +116,7 @@
 (defn create-one-hop [config socket mix]
   "Creates a one hop path. Assumes a connection to the first & only node exists. used for SIP dir signaling. See sip.cljs."
   ;; Find the first mix's (will be our assigned mix/SP) socket & send a create.
+  (println :creating :one-hop)
   (let [id     (circ/create config socket (:auth mix))
         ctrl   (chan)]
     (circ/update-data id [:roles] [:origin])
@@ -241,7 +242,7 @@
         ;; rdvs in our zone:
         rdvs         (select-mixes #(and (= (:role %) :rdv) (= (:zone %) zone)))
         connected    (chan)
-        soc          (conn/new :aqua :client mix config {:connect #(go (>! connected :done))})
+        soc          (conn/new :aqua :client mix config  {:connect #(go (>! connected :done))})
         N            (dec N)] ;; an additional circ is created waiting for the channel to be ready to receive.
     (log/info "Init Circuit pools: we are in" zone)
     (log/debug "Chosen mix:" (:host mix) (:port mix))
@@ -258,7 +259,8 @@
           (circ/reset-keep-alive config soc)
           (init-pool config soc :rt mix)
           (init-pool config soc :single #(concat (mk-path) (->> rdvs shuffle (take 1)))) ;; for now all single circuits are for rdvs, if this changes this'll have to change too.
-          (init-pool config soc :one-hop mix)))
+          (init-pool config soc :one-hop mix))
+        )
     mix))
 
 (defn get-path [type]

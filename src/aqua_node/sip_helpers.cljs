@@ -2,7 +2,6 @@
   (:require [cljs.core :as cljs]
             [cljs.nodejs :as node]
             [cljs.core.async :refer [chan <! >!]]
-            [clojure.walk :as walk]
             [aqua-node.log :as log]
             [aqua-node.buf :as b]
             [aqua-node.parse :as conv]

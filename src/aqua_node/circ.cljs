@@ -152,7 +152,7 @@
           (w32 circ-id 9)
           (w8 (from-cmd cmd) 13)
           (.copy payload buf 14)
-          (println :sending :cell! socket (c/get-data socket))
+          (println :circ :sendingon socket)
           ((-> socket c/get-data :send-fn) buf)))))
 
 
@@ -658,7 +658,7 @@
       (log/error "Circ:" circ-id "received cell with bad length:" len "or cell length:" cell-len)
       (when (:fun command)
         (try
-          ((:fun command) config socket circ-id (.slice data 9 cell-len))
+          (do (println :processing (:name command)) ((:fun command) config socket circ-id (.slice data 9 cell-len)))
           (catch js/Object e (log/c-info e (str "Killed circuit " circ-id)) (destroy config circ-id)))))
     (comment (cond (> len cell-len) (let [[f r] (b/cut data cell-len)] ;; more than one cell in our data, cut it up accordingly:
                              (reset! wait-buffer nil)
