@@ -31,6 +31,7 @@
    6  :new-circuit
    7  :ack
    8  :new-client
+   9  :rm-client
    })
 
 (def from-cmd
@@ -105,7 +106,7 @@
 (defn process [socket config buf rinfo dispatch-rq]
   (let [[r1 r2 r4]  (b/mk-readers buf)
         cmd         (to-cmd (r1 0))]
-    (println "recvd" cmd)
+    (log/debug "recvd" cmd "on socket" socket)
     (condp = cmd
       :ack        (go (>! dispatch-rq buf))
       :data       (let [socket-id (r4 1)]
@@ -116,6 +117,8 @@
                     (log/info "New client on socket-id:" socket-id)
                     (c/add socket-id {:id socket-id :cs :server :type :aqua ;; FIXME can we get rid of :cs? that was old...
                                       :send-fn (mk-send-fn socket-id)}))
+      :rm-client  (let [socket-id (r4 1)]
+                    (c/destroy socket-id))
       (log/error "DTLS comm: unsupported command" cmd (r1 0)))))
 
 ;; start dtls-handler & create listening socket:

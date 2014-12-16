@@ -75,7 +75,6 @@
                          (let [enc-path (-> id circ/get-data :path)]
                            ;; if rdv had a next hop, remove it from the encryption node list.
                            (when (> (count enc-path) (count all-nodes))
-                             ;; FIXME send-destroy!
                              (circ/update-data id [:path] (drop-last enc-path)))
                            (when (not= next-hop :drop-last)
                              (log/debug "Extending RDV" id "to" (-> next-hop :role) (-> next-hop :auth :srv-id b/hx))
@@ -253,7 +252,6 @@
     (go (<! connected)
         (let [soc (<! soc)]
           (circ/send-id config soc)
-          (circ/reset-keep-alive config soc)
           (init-pool config soc :rt mix)
           (init-pool config soc :single #(concat (mk-path) (->> rdvs shuffle (take 1)))) ;; for now all single circuits are for rdvs, if this changes this'll have to change too.
           (init-pool config soc :one-hop mix)))

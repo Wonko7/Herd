@@ -22,12 +22,13 @@
   conn)
 
 (defn destroy [conn]
+  (.trace js/console "who called me?")
   (when-let [c (@connections conn)]
     (when (-> c :auth :srv-id)
       (log/info "Removed connection to:" (-> c :auth :srv-id b/hx)))
     (rm conn)
     (doall (map #(%) (:on-destroy c)))
-    (when conn
+    (when (and conn (not= :aqua (:type c)))
       (if (= :udp (:ctype c))
         (.close conn)
         (.destroy conn))

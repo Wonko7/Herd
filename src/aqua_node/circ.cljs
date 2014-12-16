@@ -152,8 +152,10 @@
           (w32 circ-id 9)
           (w8 (from-cmd cmd) 13)
           (.copy payload buf 14)
-          (println :circ :sendingon socket)
-          ((-> socket c/get-data :send-fn) buf)))))
+          (log/debug :circ :sendingon socket cmd)
+          (if-let [send-fn (-> socket c/get-data :send-fn)]
+            (send-fn buf)
+            (log/error "Cell-Send: we were asked to send a cell on a non aqua socket, dropping."))))))
 
 
 ;; make requests: circuit level ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
@@ -562,7 +564,7 @@
         ;; then message is going back to origin -> add enc & forwad
         (if (and mux? (-> circ :mux :fhop))
           (forward config circ-id (-> circ :mux :fhop) payload)
-          ((-> circ :backward-hop c/get-data :rate :queue) #(enc-send config (:backward-hop circ) circ-id :relay :b-enc msg iv)))
+          (enc-send config (:backward-hop circ) circ-id :relay :b-enc msg iv))
 
         ;; message going towards exit -> rm our enc layer. OR message @ origin, peel of all layers.
         (let [msg         (reduce #(%2 iv %1) msg (get-path-enc circ direction))
@@ -577,7 +579,7 @@
 
           (cond (:recognised relay-data)        (process-relay config socket circ-id relay-data)
                 (and mux? (-> circ :mux :bhop)) (forward config circ-id (-> circ :mux :bhop) msg)
-                :else                           ((-> circ :forward-hop c/get-data :rate :queue) #(cell-send config (:forward-hop circ) circ-id :relay (b/copycat2 iv msg)))))))))
+                :else                           (cell-send config (:forward-hop circ) circ-id :relay (b/copycat2 iv msg))))))))
 
 
 ;; cell management (no state logic here) ;;;;;;;;;;;;;;;;;;;;;;;;;
@@ -650,7 +652,7 @@
         circ-id      (r32 4)           ;; circuit id
         command      (to-cmd (r8 8))   ;; what kind of packet command (relay, extend, etc)
         circ         (@circuits circ-id)]
-    (comment (when (not= :padding (:name command)) ;; only print debug if the message isn't padding
+    (identity (when (or true (not= :padding (:name command))) ;; only print debug if the message isn't padding
                (log/debug "recv cell: id:" circ-id "cmd:" (:name command) "len:" len  "id:" (if-let [id (-> socket c/get-data :auth :srv-id)]
                                                                                               (b/hx id)
                                                                                               "unknown"))))

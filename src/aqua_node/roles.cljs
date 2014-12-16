@@ -83,7 +83,6 @@
         timer   (js/setTimeout #(go (>! con :timeout)) (:keep-alive-interval config))]
     (log/debug "Aqua: Connecting to" (select-keys dest [:host :port :role]))
     (go (let [soc (<! soc)]
-          (c/add-listeners soc {:data #(circ/process config soc %)})
           (c/update-data soc [:auth] (:auth dest))
           (if (= :timeout (<! con))
             (c/destroy soc)

@@ -5,9 +5,8 @@ An Anonymous Quanta implementation.
 ## Building
 
 ### Program versions:
-- Node:		v0.10.12-release:a088cf4f930d3928c97d239adf950ab43e7794aa
+- Node:		v0.10.12-release:a088cf4f930d3928c97d239adf950ab43e7794aa --> this should no longer be a requirement now that we've stopped using the node dtls module.
 - OpenSSl:	1.0.1e
-- nodedtls:	shared-ossl:9ed519f1bfe373686c7b37bebbbde3a5cca80c3c (on our fork).
 
 ### Environment:
 - `prefix=...`
@@ -17,7 +16,6 @@ An Anonymous Quanta implementation.
 ### Building:
 - OpenSSL:	`./config shared --prefix=$prefix enable-tlsext enable-dtls enable-ssl; make; make install`
 - Node:		`./configure --prefix=$prefix --shared-openssl --shared-openssl-includes $prefix/include --shared-openssl-libpath $prefix/lib; make; make install`
-- nodedtls:	`node-gyp configure build`
 - Aqua:		`lein cljsbuild once`
 
 ## Usage

@@ -183,17 +183,21 @@
               my-name         (atom "")
               answering-machine (some #(= % :answering-machine) (:roles config))
               ;; Prepare RDV:
+              _ (println :lol3)
               rdv-id          (<! (path/get-path :single)) ;; FIXME we should specify what zone we want our rdv in.
               rdv-data        (circ/get-data rdv-id)
               rdv-ctrl        (:dest-ctrl rdv-data)
               rdv-notify      (:notify rdv-data)
+              _ (println :lol4)
               ;; Outgoinp RDV:
               out-rdv-id      (<! (path/get-path :single)) ;; FIXME we should specify what zone we want our rdv in.
               out-rdv-data    (circ/get-data out-rdv-id)
               out-rdv-ctrl    (:dest-ctrl out-rdv-data)
               out-rdv-notify  (:notify out-rdv-data)
+              _ (println :lol5)
               ;; Prepare MIX SIG:
               mix-id          (<! (path/get-path :one-hop))
+              _ (println :lol6)
               ;; SDP parsing:
               get-sdp-dest    (fn [rq]
                                 {:port (->> (:content rq) (re-seq #"(?m)m\=(audio)\s+(\d+)") first last)
@@ -261,6 +265,7 @@
                                 (let [rdv-data     (circ/get-data out-rdv-id)
                                       sip-dir-dest (first (select #(= (:role %) :sip-dir)))
                                       ack          (.makeResponse sip rq 200 "OK")]                                   ;; prepare sip successful answer
+                                  (println :l (doall (map :role (select identity))))
                                   (if (:auth sip-dir-dest)
                                     (go (>! out-rdv-ctrl sip-dir-dest)                                                ;; --- RDV: connect to sip dir to send register
                                         (<! out-rdv-notify)                                                           ;; wait until connected to send
@@ -415,11 +420,13 @@
                                 :else (log/error "Unsupported sip method" (:method nrq)))))]
 
           ;; Initialisation of create-server: prepare RDV, sip signalisation incoming channel.
+(println :lol1)
           (>! rdv-ctrl :rdv)
           (>! out-rdv-ctrl :rdv)
           (circ/update-data rdv-id [:sip-chan] incoming-sip)
           (circ/update-data out-rdv-id [:sip-chan] incoming-sip)
           (.start sip (cljs/clj->js {:protocol "UDP"}) process)
+(println :lol2)
 
           ;; FIXME: sip-ch is general and dispatches according to call-id to sub channels.
           (go-loop [query (<! incoming-sip)]
