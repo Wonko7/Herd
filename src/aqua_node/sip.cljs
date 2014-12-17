@@ -51,7 +51,9 @@
     (doseq [r [:rt :rtcp] i [:in :out]]
       (->> call r i (circ/destroy config)))
     (when vlc
-      (.kill js/process (.-pid vlc) "SIGKILL"))
+      (try
+        (.kill js/process (.-pid vlc) "SIGKILL")
+        (catch js/Object e (log/c-error e "VLC already exited."))))
     (rm-call call-id)))
 
 (defn mk-call-id []
