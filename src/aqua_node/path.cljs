@@ -137,7 +137,7 @@
         circ-data (circ/get-data circ-id)
         config    (merge config {:data s})]
     (if (= (-> circ-data :state) :relay)
-      (rate/queue (:forward-hop circ-data) #(circ/relay-data config circ-id b))
+      (circ/relay-data config circ-id b)
       (log/info "UDP: not ready for data, dropping on circuit" circ-id))))
 
 (defn forward-udp [config s b]
@@ -158,7 +158,7 @@
       (log/info "UDP: not ready for data, dropping on circuit" circ-id))))
 
 (defn app-proxy-forward [config s]
-  "Used for forwarding local TCP data."
+  "Used for forwarding local data."
   (let [circ-id   (:circuit (c/get-data s))
         circ-data (circ/get-data circ-id)
         config    (merge config {:data s})]
@@ -170,7 +170,7 @@
           (when-let [b (.read s)]
             ;(circ/inc-block)
             (circ/relay-data config circ-id b))))
-      (log/info "TCP: not ready for data, dropping on circuit" circ-id))))
+      (log/info "App-Proxy-Forward: not ready for data, dropping on circuit" circ-id))))
 
 (defn attach-local-udp [config circ-id forward-to forwarder & [bind-port]] ;; FIXME: forward-to changed meaning, it is now only used for what ip we're binding to.
   "Unused right now, except by hardcoded rtp benchmarks."

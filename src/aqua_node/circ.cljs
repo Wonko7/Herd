@@ -147,7 +147,7 @@
         buf          (b/new (+ 5 packet-sz)) ;; 5 for cmd type & socket index (dtls-handler), 9 for len circ-id & cmd
         [w8 w16 w32] (b/mk-writers buf)]
     (if (> len packet-sz)
-      (log/error "cell-send: dropping to big cell, circ-id:" circ-id)
+      (log/error "cell-send: dropping too big cell, circ-id:" circ-id "cmd:" cmd "size:" len)
       (do (w32 (+ 9 len) 5)
           (w32 circ-id 9)
           (w8 (from-cmd cmd) 13)

@@ -516,8 +516,12 @@
                             (log/info "SIP: got ackack, ready for relay on" call-id)
                             (add-sip-ctrl-to-rt-circs call-id sip-ctrl)
                             (js/setInterval #(circ/relay-ping config rtcp-circ) 2000)
+                            (log/info "SIP: launching vlc for answering-machine playback")
                             (update-data call-id [:vlc-child]
-                                         (exec (str "cvlc '" (:answering-machine-file config) "' --play-and-exit --sout '#transcode{acodec=ulaw,channels=1,samplerate=8000}:rtp{dst=127.0.0.1,port-audio=" (:port local-dest) "}'") nil #(kill-call config call-id)))
+                                         (exec (str "cvlc '" (:answering-machine-file config) "' --play-and-exit --sout '#transcode{acodec=ulaw,channels=1,samplerate=8000}:rtp{dst=127.0.0.1,port-audio=" (:port local-dest) "}'") nil #(do (log/debug "VLC exited with:" %1)
+                                                                                                                                                                                                                                             (log/debug "VLC stdout:" %2)
+                                                                                                                                                                                                                                             (log/debug "VLC stdout:" %3)
+                                                                                                                                                                                                                                             (kill-call config call-id))))
                             (wait-for-bye call-id
                                           sip-ctrl
                                           nil))
