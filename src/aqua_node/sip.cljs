@@ -53,7 +53,7 @@
     (when vlc
       (try
         (.kill js/process (.-pid vlc) "SIGKILL")
-        (catch js/Object e (log/c-error e "VLC already exited."))))
+        (catch js/Object e (log/c-info e "VLC already exited."))))
     (rm-call call-id)))
 
 (defn mk-call-id []
