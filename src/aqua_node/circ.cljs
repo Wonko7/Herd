@@ -660,5 +660,5 @@
       (log/error "Circ:" circ-id "received cell with bad length:" len "or cell length:" cell-len)
       (when (:fun command)
         (try
-          (do (println :processing (:name command)) ((:fun command) config socket circ-id (.slice data 9 cell-len)))
+          ((:fun command) config socket circ-id (.slice data 9 cell-len))
           (catch js/Object e (log/c-info e (str "Killed circuit " circ-id)) (destroy config circ-id)))))))

@@ -11,7 +11,6 @@
             [aqua-node.dir :as dir]
             [aqua-node.circ :as circ]
             [aqua-node.path :as path]
-            [aqua-node.rate :as rate]
             [aqua-node.geo :as geo]
             [aqua-node.sip :as sip]
             [aqua-node.sip-dir :as sip-dir])

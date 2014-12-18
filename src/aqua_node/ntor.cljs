@@ -41,7 +41,7 @@
 
 (defn server-reply [config {pub-B :pub-B sec-b :sec-b id :node-id :as auth} req key-len]
   (assert (= (.-length req) (+ (:node-id-len conf) (:h-len conf) (:h-len conf))) "bad client req ntor length")
-  (let [curve                      (node/require "node-curve25519")
+  (let [curve                      (node/require "curve25519")
         [req-nid req-pub pub-X]    (b/cut req (:node-id-len conf) (+ (:node-id-len conf) (:h-len conf)))]
     (assert (b/b= req-nid id)    "received create request with bad node-id")
     (assert (b/b= req-pub pub-B) "received create request with bad pub key")
@@ -54,7 +54,7 @@
 
 (defn client-finalise [{srv-id :srv-id pub-B :pub-B pub-X :pub-X sec-x :sec-x :as auth} req key-len]
   (assert (= (.-length req) (+ (:g-len conf) (:h-len conf))) "bad server req ntor length")
-  (let [curve                      (node/require "node-curve25519")
+  (let [curve                      (node/require "curve25519")
         [pub-Y srv-auth]           (b/cut req (:g-len conf))
         x-y                        (.deriveSharedSecret curve sec-x pub-Y)
         x-b                        (.deriveSharedSecret curve sec-x pub-B)

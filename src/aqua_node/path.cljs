@@ -8,7 +8,6 @@
             [aqua-node.conns :as c]
             [aqua-node.conn-mgr :as conn]
             [aqua-node.circ :as circ]
-            [aqua-node.rate :as rate]
             [aqua-node.geo :as geo]
             [aqua-node.dir :as dir])
   (:require-macros [cljs.core.async.macros :as m :refer [go-loop go]]))
