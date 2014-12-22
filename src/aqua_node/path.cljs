@@ -1,12 +1,13 @@
 (ns aqua-node.path
   (:require [cljs.core :as cljs]
             [cljs.nodejs :as node]
-            [cljs.core.async :refer [chan <! >!]]
+            [cljs.core.async :refer [chan <! >! sub pub unsub close!] :as a]
             [aqua-node.log :as log]
             [aqua-node.buf :as b]
             [aqua-node.parse :as conv]
-            [aqua-node.conns :as c]
+            [aqua-node.dtls-comm :as dtls]
             [aqua-node.conn-mgr :as conn]
+            [aqua-node.conns :as c]
             [aqua-node.circ :as circ]
             [aqua-node.geo :as geo]
             [aqua-node.dir :as dir])
@@ -186,10 +187,45 @@
         (circ/update-data circ-id [:local-dest] forward-to)
         [udp-sock port])))
 
-(defn attach-local-udp-to-simplex-circs [config in-circ-id-chan out-circ-id-chan forward-to-dest]
+(defn attach-circs-to-new-udp [config in-circ-id-chan out-circ-id-chan forward-to-dest]
   "Create a socket that will redirect incoming traffic to out-circ-id (outgoing traffic) and receive
   traffic from in-circ-id (incoming traffic).
   forward-to is the destination of local traffic (outside world [eg callee] -> in-circ -> forward-to [local sip client, caller])."
+  (let [ack       (chan)
+        cookie    (.readUInt32BE (.randomBytes c 4) 0)] ;; cookie used to identify transaction
+
+    (log/debug "DTLS: asked for new local udp socket with cookie =" cookie)
+    (sub dtls/dispatch-pub cookie ack)
+    (dtls/send-new-local-udp cookie)
+
+    (go (let [answer     (<! ack) ;; dtls anwer has to be at least x long.
+              index      (.readUInt32BE answer 5)
+              port       (.readUInt16BE answer 9)
+              id         {:index index :type :local-udp}]
+          (log/debug "DTLS: got ack, index =" index "port =" port)
+          (c/add id {:ctype :udp :type :rtp-exit})
+
+          (go (let [out-circ-id (<! out-circ-id-chan)]
+                (c/update-data id [:circuit] out-circ-id)
+                (circ/update-data out-circ-id [:state] :relay)
+                (circ/update-data out-circ-id [:backward-hop] id)
+                (dtls/send-update-local-udp-dest index out-circ-id :out nil (map :secret (-> out-circ-id circ/get-data :path)))))
+
+          (go (let [in-circ-id (<! in-circ-id-chan)
+                    fwd-to     (<! forward-to-dest)]
+                (c/update-data id [:rtp-dest] fwd-to)
+                (circ/update-data in-circ-id [:forward-hop] id)
+                (circ/update-data in-circ-id [:state] :relay)
+                (dtls/send-update-local-udp-dest index in-circ-id :in fwd-to (map :secret (-> in-circ-id circ/get-data :path)))))
+
+          [id port]))))
+
+(defn attach-local-udp-to-simplex-circs [config in-circ-id-chan out-circ-id-chan forward-to-dest]
+  "Create a socket that will redirect incoming traffic to out-circ-id (outgoing traffic) and receive
+  traffic from in-circ-id (incoming traffic).
+  forward-to is the destination of local traffic (outside world [eg callee] -> in-circ -> forward-to [local sip client, caller]).
+
+  This is being deprecated, in favor of letting dtls-handler take care of local sockets (for fastpath) with attach-circs-to-new-udp."
   (let [port       (chan)
         udp-sock   (.createSocket (node/require "dgram") "udp4")
         dest       {:type :ip4 :proto :udp :host "0.0.0.0" :port 0}] ;; FIXME should not be hardcoded to ip4.

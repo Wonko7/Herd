@@ -134,7 +134,7 @@
         [f b]    (if (is? :origin circ-data)
                    enc
                    (reverse enc))]
-    (update-data id [:path] (concat ls [(merge l {:f-enc f :b-enc b})]))))
+    (update-data id [:path] (concat ls [(merge l {:f-enc f :b-enc b :secret secret})]))))
 
 
 ;; send cell ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;

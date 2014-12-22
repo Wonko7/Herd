@@ -25,7 +25,7 @@
   {0  :init
    1  :connect-to-node
    2  :open-local-udp
-   3  :local-udp-port
+   3  :update-local-udp-dest
    4  :forward
    5  :data
    6  :new-circuit
@@ -75,6 +75,27 @@
                        (-> dest conv/dest-to-tor-str b/new)
                        b/zero
                        (-> dest :auth :srv-id))))
+
+(defn send-new-local-udp [cookie]
+  "Ask for a new socket. We'll receive an ack with the local port."
+  (send-to-dtls (b/cat (-> :local-udp from-cmd b/new1)
+                       (b/new4 cookie))))
+
+(defn send-update-local-udp-dest [index circ-id direction dest secrets]
+  "For now at least: assuming that circuits are done finished when called,
+  which means that if you extend it after calling this, things will break."
+  (let [message [(-> :update-local-udp-dest from-cmd b/new1)
+                 (b/new4 index)
+                 (b/new4 circ-id)
+                 (b/new1 (if (= direction :in) 0 1))]
+        message (concat message (if dest
+                                  [(-> dest conv/dest-to-tor-str b/new)
+                                   b/zero]
+                                  [b/zero]))
+        message (concat message [(-> secrets count b/new4)])
+        message (concat message secrets)]
+    (send-to-dtls (apply b/cat message))))
+
 
 ;; connect to a new node:
 (defn connect [dest conn-info conn-handler err]
