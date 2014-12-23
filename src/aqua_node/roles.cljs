@@ -147,6 +147,11 @@
                                 (register-to-dir config geo mix ds)))]
               (reconnect)
 
+              ;; (defn attach-circs-to-new-udp [config in-circ-id-chan out-circ-id-chan forward-to-dest]
+              (log/debug "attach!")
+              (path/attach-circs-to-new-udp config (path/get-path :one-hop) (path/get-path :one-hop) (go {:host "127.0.0.1" :port 12345}))
+              (log/debug "wtf?")
+
               (js/setInterval (fn []
                                 (go (<! (get-net-info config ds))
                                     (when (empty? (circ/get-all)) ;; FIXME: maybe count the nb of aqua sockets

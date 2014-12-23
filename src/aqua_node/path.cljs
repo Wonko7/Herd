@@ -191,8 +191,9 @@
   "Create a socket that will redirect incoming traffic to out-circ-id (outgoing traffic) and receive
   traffic from in-circ-id (incoming traffic).
   forward-to is the destination of local traffic (outside world [eg callee] -> in-circ -> forward-to [local sip client, caller])."
-  (let [ack       (chan)
-        cookie    (.readUInt32BE (.randomBytes c 4) 0)] ;; cookie used to identify transaction
+  (let [ack         (chan)
+        cookie      (-> "crypto" node/require (.randomBytes 4) (.readUInt32BE 0)) ;; cookie used to identify transaction
+        get-secrets #(map :secret (-> % circ/get-data :path))]
 
     (log/debug "DTLS: asked for new local udp socket with cookie =" cookie)
     (sub dtls/dispatch-pub cookie ack)
@@ -206,17 +207,19 @@
           (c/add id {:ctype :udp :type :rtp-exit})
 
           (go (let [out-circ-id (<! out-circ-id-chan)]
+                (log/debug "DTLS: got out circ")
                 (c/update-data id [:circuit] out-circ-id)
                 (circ/update-data out-circ-id [:state] :relay)
                 (circ/update-data out-circ-id [:backward-hop] id)
-                (dtls/send-update-local-udp-dest index out-circ-id :out nil (map :secret (-> out-circ-id circ/get-data :path)))))
+                (dtls/send-update-local-udp-dest index out-circ-id :out nil (get-secrets out-circ-id))))
 
           (go (let [in-circ-id (<! in-circ-id-chan)
                     fwd-to     (<! forward-to-dest)]
+                (log/debug "DTLS: got in circ")
                 (c/update-data id [:rtp-dest] fwd-to)
                 (circ/update-data in-circ-id [:forward-hop] id)
                 (circ/update-data in-circ-id [:state] :relay)
-                (dtls/send-update-local-udp-dest index in-circ-id :in fwd-to (map :secret (-> in-circ-id circ/get-data :path)))))
+                (dtls/send-update-local-udp-dest index in-circ-id :in fwd-to (get-secrets in-circ-id))))
 
           [id port]))))
 

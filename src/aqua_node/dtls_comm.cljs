@@ -78,7 +78,7 @@
 
 (defn send-new-local-udp [cookie]
   "Ask for a new socket. We'll receive an ack with the local port."
-  (send-to-dtls (b/cat (-> :local-udp from-cmd b/new1)
+  (send-to-dtls (b/cat (-> :open-local-udp from-cmd b/new1)
                        (b/new4 cookie))))
 
 (defn send-update-local-udp-dest [index circ-id direction dest secrets]
@@ -94,6 +94,7 @@
                                   [b/zero]))
         message (concat message [(-> secrets count b/new4)])
         message (concat message secrets)]
+    (log/debug "sending local udp dest" direction "using circ" circ-id "with" (count secrets) "secrets")
     (send-to-dtls (apply b/cat message))))
 
 
@@ -129,7 +130,8 @@
         cmd         (to-cmd (r1 0))]
     (log/debug "recvd" cmd "on socket" socket)
     (condp = cmd
-      :ack        (go (>! dispatch-rq buf))
+      :ack        (go (log/debug "FIXME: got ack with cookie" (.readUInt32BE buf 1))
+                      (>! dispatch-rq buf))
       :data       (let [socket-id (r4 1)]
                     (if (nil? (c/get-data socket-id))
                       (log/error "Got data for an invalid/unknown DTLS socket id" socket-id)
