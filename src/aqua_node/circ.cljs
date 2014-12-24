@@ -415,7 +415,7 @@
 
         ;; FIXME begin & data are bad and I should feel bad. everything that was "temporary".
         ;; process data packet: forward payload as rtp, udp to destination socket.
-        p-data       (fn [] ;; this has accumulated complexity as we experimented. only rtp-exit is used today.
+        p-data-depr  (fn [] ;; this has accumulated complexity as we experimented. only rtp-exit is used today.
                        (let [[fhop bhop :as hops] (map circ [:forward-hop :backward-hop])
                              dest                 (if (= socket fhop) bhop fhop)
                              dest-data            (c/get-data dest)]
@@ -451,6 +451,7 @@
                                               (c/update-data dest [:rtp-stats] [(+ total (- rtp-seq prev 1)) rtp-seq]))))
                              :rtp-ap    (.send dest r-payload 0 (.-length r-payload) (-> circ :local-dest :port) (-> circ :local-dest :host)) ;; FIXME quick and diiiirty
                              (.write dest r-payload)))))
+        p-data       #(log/error "Received relay data, dtls-handler should have processed it, circ:" circ-id)
 
         ;; we are being asked to begin relaying data -> we are the exit mix.
         p-begin      (fn []

@@ -117,12 +117,15 @@
   ;; Find the first mix's (will be our assigned mix/SP) socket & send a create.
   (println :creating :one-hop)
   (let [id     (circ/create config socket (:auth mix))
-        ctrl   (chan)]
+        ctrl   (chan)
+        notify (chan)]
     (circ/update-data id [:roles] [:origin])
     (circ/update-data id [:ctrl] ctrl)
+    (circ/update-data id [:notify] notify)
     (circ/update-data id [:mk-path-fn] #(go (>! ctrl :next)))
     (go (<! ctrl)
         (circ/update-data id [:state] :relay)
+        (>! notify :done)
         (log/info "One Hop Circuit" id "is ready for Signaling"))
     id))
 

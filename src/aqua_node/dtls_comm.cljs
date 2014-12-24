@@ -94,7 +94,7 @@
                                   [b/zero]))
         message (concat message [(-> secrets count b/new4)])
         message (concat message secrets)]
-    (log/debug "sending local udp dest" direction "using circ" circ-id "with" (count secrets) "secrets")
+    (log/debug "sending local udp dest" direction "using circ" circ-id "with" (count (filter identity secrets)) "secrets")
     (send-to-dtls (apply b/cat message))))
 
 
