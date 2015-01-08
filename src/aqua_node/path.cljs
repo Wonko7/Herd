@@ -214,7 +214,7 @@
                 (c/update-data id [:circuit] out-circ-id)
                 (circ/update-data out-circ-id [:state] :relay)
                 (circ/update-data out-circ-id [:backward-hop] id)
-                (dtls/send-update-local-udp-dest index out-circ-id :out nil (get-secrets out-circ-id))))
+                (dtls/send-update-local-udp-dest index out-circ-id :out (-> out-circ-id circ/get-data :id) (get-secrets out-circ-id))))
 
           (go (let [in-circ-id (<! in-circ-id-chan)
                     fwd-to     (<! forward-to-dest)]

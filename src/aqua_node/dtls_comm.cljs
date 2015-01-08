@@ -86,12 +86,13 @@
   which means that if you extend it after calling this, things will break."
   (let [message [(-> :update-local-udp-dest from-cmd b/new1)
                  (b/new4 index)
-                 (b/new4 circ-id)
-                 (b/new1 (if (= direction :in) 0 1))]
-        message (concat message (if dest
-                                  [(-> dest conv/dest-to-tor-str b/new)
+                 (b/new4 circ-id)]
+        message (concat message (if (= direction :in)
+                                  [(b/new1 0)
+                                   (-> dest conv/dest-to-tor-str b/new)
                                    b/zero]
-                                  [b/zero]))
+                                  [(b/new1 1)
+                                   (b/new4 dest)]))
         message (concat message [(-> secrets count b/new4)])
         message (concat message secrets)]
     (log/debug "sending local udp dest" direction "using circ" circ-id "with" (count (filter identity secrets)) "secrets")

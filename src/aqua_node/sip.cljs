@@ -336,6 +336,8 @@
                                                 callee-rdv-id    (.slice callee-rdv 4 (+ 4 node-id-len))
                                                 sdp-dest         (get-sdp-dest nrq)
                                                 rtcp-dest        (get-sdp-rtcp nrq)]                                                    ;; parse sdp to find where the SIP client expects to receive incoming RTP.
+                                            (println sdp-dest)
+                                            (println rtcp-dest)
                                             (assert callee-rdv-id (str "SIP: Could not find callee's mix:" name))
                                             (update-data call-id [:peer-rdv] callee-rdv-cid)
                                             (.send sip (.makeResponse sip rq 100 "TRYING"))                                             ;; inform the SIP client we have initiated the call.
@@ -369,6 +371,7 @@
                                                     rtp-ctrl                      (:dest-ctrl rtp-data)
                                                     rtp-notify                    (:notify rtp-data)
                                                     rtp-done                      (chan)
+                                                _ (println :here01)
                                                     [_ local-port]                (<! (path/attach-circs-to-new-udp config                               ;; create local udp socket. in-circ will be sent to sdp-dest, the SIP client's RTP media. out-circ is where data from the sip client will be sent through to callee.
                                                                                                                     (go (:circ-id rtp-rep))
                                                                                                                     rtp-done
@@ -378,6 +381,7 @@
                                                     rtcp-ctrl                     (:dest-ctrl rtcp-data)
                                                     rtcp-notify                   (:notify rtcp-data)
                                                     rtcp-done                     (chan)
+                                                _ (println :here0)
                                                     [_ loc-rtcp-port]             (<! (path/attach-circs-to-new-udp config                               ;; create local udp socket. in-circ will be sent to sdp-dest, the SIP client's RTP media. out-circ is where data from the sip client will be sent through to callee.
                                                                                                                     (go (:circ-id rtcp-rep))
                                                                                                                     rtcp-done
@@ -388,11 +392,17 @@
                                                                                                   (dir/find-by-id mix-id)             ;; callee's mix
                                                                                                   {:auth {:pub-B pub :srv-id id}}])]  ;; callee.
 
+                                                (println :here1)
                                                 (>! rtp-ctrl circuit-path)                                            ;; connect to callee using given path.
+                                                (println :here2)
                                                 (>! rtcp-ctrl circuit-path)                                           ;; connect to callee using given path.
+                                                (println :here3)
                                                 (<! rtp-notify)                                                                                           ;; wait until ready.
+                                                (println :here4)
                                                 (<! rtcp-notify)                                                                                          ;; wait until ready.
+                                                (println :here5)
                                                 (>! rtcp-done rtcp-circ)
+                                                (println :here6)
                                                 (>! rtp-done rtp-circ)
                                                 (log/info "SIP: RT circuits ready for outgoing data on:" call-id)
                                                 (update-data call-id [:rt] {:in (:circ-id rtp-rep) :out rtp-circ}) ;; FIXME if needed add chans.

@@ -17,8 +17,12 @@
 
 (defn create-tmp-dec [key iv msg]
   (let [c    (node/require "crypto")
-        aes  (.createDecipheriv c "aes-256-ctr" key iv)]
-    (.update aes msg)))
+        aes  (.createDecipheriv c "aes-256-ctr" key iv)
+    _ (println :key (.readUInt8 key 0) (.readUInt8 key 1) (.readUInt8 key 2) (.readUInt8 key 31))
+    _ (println :decb (.readUInt8 msg 0))
+    msg (.update aes msg)]
+    _ (println :deca (.readUInt8 msg 0))
+    msg))
 
 (defn create-dec [key iv]
   (let [c    (node/require "crypto")

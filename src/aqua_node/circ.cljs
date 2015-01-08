@@ -415,7 +415,7 @@
 
         ;; FIXME begin & data are bad and I should feel bad. everything that was "temporary".
         ;; process data packet: forward payload as rtp, udp to destination socket.
-        p-data-depr  (fn [] ;; this has accumulated complexity as we experimented. only rtp-exit is used today.
+        p-data       (fn [] ;; this has accumulated complexity as we experimented. only rtp-exit is used today.
                        (let [[fhop bhop :as hops] (map circ [:forward-hop :backward-hop])
                              dest                 (if (= socket fhop) bhop fhop)
                              dest-data            (c/get-data dest)]
@@ -443,7 +443,7 @@
                              :udp-ap    (.send dest r-payload 0 (.-length r-payload) (-> dest-data :from :port) (-> dest-data :from :host))
                              :rtp-exit  (let [real-len (.readUInt16BE r-payload 0)
                                               msg      (.slice r-payload 2 (+ real-len 2))]
-                                          (.send dest msg 0 real-len (-> dest-data :rtp-dest :port) (-> dest-data :rtp-dest :host))
+                                          ;(.send dest msg 0 real-len (-> dest-data :rtp-dest :port) (-> dest-data :rtp-dest :host))
                                           (let [rtp-seq          (.readUInt16BE msg 2)
                                                 [total prev]     (:rtp-stats dest-data)]
                                             (if (nil? prev)
@@ -451,7 +451,7 @@
                                               (c/update-data dest [:rtp-stats] [(+ total (- rtp-seq prev 1)) rtp-seq]))))
                              :rtp-ap    (.send dest r-payload 0 (.-length r-payload) (-> circ :local-dest :port) (-> circ :local-dest :host)) ;; FIXME quick and diiiirty
                              (.write dest r-payload)))))
-        p-data       #(log/error "Received relay data, dtls-handler should have processed it, circ:" circ-id)
+        p-data-n       #(log/error "Received relay data, dtls-handler should have processed it, circ:" circ-id)
 
         ;; we are being asked to begin relaying data -> we are the exit mix.
         p-begin      (fn []
@@ -654,7 +654,7 @@
         command      (to-cmd (r8 8))   ;; what kind of packet command (relay, extend, etc)
         circ         (@circuits circ-id)]
     (identity (when (or true (not= :padding (:name command))) ;; only print debug if the message isn't padding
-               (log/debug "recv cell: id:" circ-id "cmd:" (:name command) "len:" len  "id:" (if-let [id (-> socket c/get-data :auth :srv-id)]
+               (log/debug "recv cell: id:" circ-id "cmd:" (:name command) "len:" len "cell-len:" cell-len "id:" (if-let [id (-> socket c/get-data :auth :srv-id)]
                                                                                               (b/hx id)
                                                                                               "unknown"))))
     (if (not= len (:aqua-packet-size config))

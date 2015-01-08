@@ -8,7 +8,7 @@
   :dependencies [[org.clojure/clojure "1.6.0"]
                  ;[org.clojure/core.async "0.1.346.0-17112a-alpha"]
                  [org.clojure/core.async "0.1.338.0-5c5012-alpha"]
-                 [org.clojure/clojurescript "0.0-2511"]
+                 [org.clojure/clojurescript "0.0-2644"]
                  [org.bodil/cljs-noderepl "0.1.11"]]
   :repl-options {:nrepl-middleware [cemerick.piggieback/wrap-cljs-repl]}
   :cljsbuild {:builds [{:source-paths ["src"]
