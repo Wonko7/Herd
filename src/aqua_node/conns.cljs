@@ -29,10 +29,14 @@
     (rm conn)
     (doall (map #(%) (:on-destroy c)))
     (when (and conn (not= :aqua (:type c)))
-      (if (= :udp (:ctype c))
-        (.close conn)
-        (.destroy conn))
-      (.removeAllListeners conn))))
+      (cond (= :local-udp (:type c)) (println :fixme "tried to close" c conn)
+            (= :tcp (:ctype c))      (.destroy conn)
+            (= :udp (:ctype c))      (do (println :fixme "trying to close" c conn)
+                                         ;(.close conn)
+                                         )
+            :else                    (println :fixme "tried to close" c conn))
+      (when (nil? (:type c)) ;; FIXME, tmp.
+        (.removeAllListeners conn)))))
 
 (defn add [conn & [data]]
   (swap! connections merge {conn data})

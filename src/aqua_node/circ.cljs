@@ -155,7 +155,8 @@
           (log/debug :circ :sendingon socket cmd)
           (if-let [send-fn (-> socket c/get-data :send-fn)]
             (send-fn buf)
-            (log/error "Cell-Send: we were asked to send a cell on a non aqua socket, dropping."))))))
+            (do (.trace js/console "who called me? badsock")
+                (log/error "Cell-Send: circ:" circ-id "we were asked to send a cell on a non aqua socket, dropping.")))))))
 
 
 ;; make requests: circuit level ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
@@ -197,7 +198,10 @@
     (let [c        (node/require "crypto")
           encs     (get-path-enc circ direction) ;; FIXME: PATH: mk pluggable
           iv       (or iv (.randomBytes c (-> config :enc :iv-len)))
-          msg      (b/copycat2 iv (reduce #(%2 iv %1) msg encs))]
+          _ (log/error :iv (.readUInt8 iv 0)(.readUInt8 iv 1)(.readUInt8 iv 2)(.readUInt8 iv 3))
+          _ (log/error :before (.readUInt8 msg 0)(.readUInt8 msg 1)(.readUInt8 msg 2)(.readUInt8 msg 3))
+          msg      (b/copycat2 iv (reduce #(%2 iv %1) msg encs))
+          _ (log/error :after (.readUInt8 msg 16)(.readUInt8 msg 17)(.readUInt8 msg 18)(.readUInt8 msg 19))]
       (cell-send config socket circ-id circ-cmd msg))))
 
 (defn- enc-noiv-send [config socket circ-id circ-cmd direction msg]
@@ -568,7 +572,14 @@
           (enc-send config (:backward-hop circ) circ-id :relay :b-enc msg iv))
 
         ;; message going towards exit -> rm our enc layer. OR message @ origin, peel of all layers.
-        (let [msg         (reduce #(%2 iv %1) msg (get-path-enc circ direction))
+        (let [_ (log/error :iv (.readUInt8 iv 0)(.readUInt8 iv 1)(.readUInt8 iv 2)(.readUInt8 iv 3))
+              _ (doseq [s (-> circ :path)
+                        :let [s (:secret s)]
+                        :when s]
+                  (log/error :sec (.readUInt8 s 0)(.readUInt8 s 1)(.readUInt8 s 2)(.readUInt8 s 3)))
+          _ (log/error :before (.readUInt8 msg 0)(.readUInt8 msg 1)(.readUInt8 msg 2)(.readUInt8 msg 3))
+              msg         (reduce #(%2 iv %1) msg (get-path-enc circ direction))
+          _ (log/error :after (.readUInt8 msg 0)(.readUInt8 msg 1)(.readUInt8 msg 2)(.readUInt8 msg 3))
               [r1 r2 r4]  (b/mk-readers msg)
               recognised? (and (= 101 (r2 3) (r4 5) (r2 9)) (zero? (r2 1))) ;; FIXME -> add digest
               relay-data  {:relay-cmd    (r1 0)
