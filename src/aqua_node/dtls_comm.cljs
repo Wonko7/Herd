@@ -32,6 +32,8 @@
    7  :ack
    8  :new-client
    9  :rm-client
+   10 :new-mix-fp
+   11 :rm-mix-fp
    })
 
 (def from-cmd
@@ -62,6 +64,7 @@
         mk-size-and-buf   #(let [buf (b/new %)]
                              (b/cat (b/new2 (.-length buf)) buf))]
     (send-to-dtls (b/cat (-> :init from-cmd b/new1)
+                         (b/new1 (if (some #(= % :app-proxy) (:roles config)) 0 1)) ;; app-proxy = 0, others = 1.
                          (mk-size-and-buf cert-file)
                          (mk-size-and-buf key-file)
                          (mk-size-and-buf aqua-pub)
@@ -98,6 +101,21 @@
     (log/debug "sending local udp dest" direction "using circ" circ-id "with" (count (filter identity secrets)) "secrets")
     (send-to-dtls (apply b/cat message))))
 
+(defn send-new-mix-fp [circ-data-fwd circ-data-bwd]
+  (let [fwd-secs (map #(:secret %) (:path circ-data-fwd))
+        bwd-secs (map #(:secret %) (:path circ-data-bwd))
+        message  [(-> :new-mix-fp from-cmd b/new1)
+                   ;; (-> circ-data-fwd :forward-hop :index b/new4)
+                   ;; (-> circ-data-bwd :backward-hop :index b/new4)
+                   (-> circ-data-fwd :forward-hop b/new4)
+                   (-> circ-data-bwd :backward-hop b/new4)
+                   (-> circ-data-fwd :id b/new4)
+                   (-> circ-data-bwd :id b/new4)
+                   (-> fwd-secs count b/new4)]
+        message  (concat message fwd-secs)
+        message  (concat message [(-> bwd-secs count b/new4)])
+        message  (concat message bwd-secs)]
+    (send-to-dtls (apply b/cat message))))
 
 ;; connect to a new node:
 (defn connect [dest conn-info conn-handler err]

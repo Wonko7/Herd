@@ -8,7 +8,8 @@
             [aqua-node.conns :as c]
             [aqua-node.parse :as conv]
             [aqua-node.crypto :as crypto]
-            [aqua-node.conn-mgr :as conn])
+            [aqua-node.conn-mgr :as conn]
+            [aqua-node.dtls-comm :as dtls])
   (:require-macros [cljs.core.async.macros :as m :refer [go]]))
 
 (declare from-relay-cmd from-cmd to-cmd
@@ -419,7 +420,7 @@
 
         ;; FIXME begin & data are bad and I should feel bad. everything that was "temporary".
         ;; process data packet: forward payload as rtp, udp to destination socket.
-        p-data       (fn [] ;; this has accumulated complexity as we experimented. only rtp-exit is used today.
+        p-data-old   (fn [] ;; this has accumulated complexity as we experimented. only rtp-exit is used today.
                        (let [[fhop bhop :as hops] (map circ [:forward-hop :backward-hop])
                              dest                 (if (= socket fhop) bhop fhop)
                              dest-data            (c/get-data dest)]
@@ -455,7 +456,7 @@
                                               (c/update-data dest [:rtp-stats] [(+ total (- rtp-seq prev 1)) rtp-seq]))))
                              :rtp-ap    (.send dest r-payload 0 (.-length r-payload) (-> circ :local-dest :port) (-> circ :local-dest :host)) ;; FIXME quick and diiiirty
                              (.write dest r-payload)))))
-        p-data-n       #(log/error "Received relay data, dtls-handler should have processed it, circ:" circ-id)
+        p-data       #(log/error "Received relay data, dtls-handler should have processed it, circ:" circ-id)
 
         ;; we are being asked to begin relaying data -> we are the exit mix.
         p-begin      (fn []
@@ -507,6 +508,8 @@
                          (log/debug "Relay extend to:" (-> dest :id b/hx) "at:" (select-keys (c/get-data sock) [:host :port :role]) "on circ:" circ-id)
                          (update-data circ-id [:forward-hop] sock)
                          (update-data circ-id [:roles] (add-role :mix))
+                         (dtls/send-new-mix-fp (merge (@circuits circ-id) {:id circ-id})
+                                               (merge (@circuits circ-id) {:id circ-id}))
                          (cell-send config sock circ-id :create2 (:create dest))))
 
         ;; our relay extend has been acknowledged. Process as a created2 message.
