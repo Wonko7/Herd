@@ -29,12 +29,13 @@
     (rm conn)
     (doall (map #(%) (:on-destroy c)))
     (when (and conn (not= :aqua (:type c)))
-      (cond (= :local-udp (:type c)) (println :fixme "tried to close" c conn)
+      (cond (= :local-udp (:type c)) (log/debug :fixme1 "tried to close" c conn)
             (= :tcp (:ctype c))      (.destroy conn)
-            (= :udp (:ctype c))      (do (println :fixme "trying to close" c conn)
+            (= :udp (:ctype c))      (do (log/debug :fixme2 "trying to close" c conn)
                                          ;(.close conn)
                                          )
-            :else                    (println :fixme "tried to close" c conn))
+            (= :aqua-dir (:type c))  (.destroy conn)
+            :else                    (log/error :fixme3 "tried to close unknown type of socket" c conn))
       (when (nil? (:type c)) ;; FIXME, tmp.
         (.removeAllListeners conn)))))
 

@@ -155,7 +155,7 @@
           (.copy payload buf 14)
           (log/debug :circ :sendingon socket cmd)
           (if-let [send-fn (-> socket c/get-data :send-fn)]
-            (send-fn buf)
+            (send-fn buf) ;; FIXME: might make this a chan
             (do (.trace js/console "who called me? badsock")
                 (log/error "Cell-Send: circ:" circ-id "we were asked to send a cell on a non aqua socket, dropping.")))))))
 

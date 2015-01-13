@@ -41,10 +41,10 @@
                  {(to-cmd k) k})))
 
 ;; helpers:
-(defn- mk-send-fn [socket-id]
+(defn- mk-send-fn [socket]
   (let [header    (b/new 5)]
     (.writeUInt8 header (from-cmd :forward) 0)
-    (.writeUInt32BE header socket-id 1)
+    (.writeUInt32BE header (:index socket) 1)
     #(do (.copy header %)
          (send-to-dtls %))))
 
@@ -52,7 +52,6 @@
 (defn send-to-dtls [buf]
   "send to dtls"
   (let [[soc soc-ctrl port] dtls-handler-socket-data]
-    (println :fwd port (.-length buf))
     (.send soc buf 0 (.-length buf) port "127.0.0.1")))
 
 (defn send-init [config]
@@ -139,9 +138,10 @@
             (do (when conn-handler
                   (conn-handler))
                 (log/debug "got dtls-handler ok on cookie" cookie "given node id =" id)
-                (c/add id (merge conn-info
-                                 {:id id :cs :client :type :aqua :host (:host dest) :port (:port dest)
-                                  :send-fn (mk-send-fn id)}))))))))
+                (c/add {:index id :type :aqua-dtls}
+                       (merge conn-info
+                              {:id id :cs :client :type :aqua :host (:host dest) :port (:port dest)
+                               :send-fn (mk-send-fn id)}))))))));; FIXME: might make this a chan
 
 ;; process messages from dtls-handler:
 (defn process [socket config buf rinfo dispatch-rq]
@@ -151,16 +151,19 @@
     (condp = cmd
       :ack        (go (log/debug "FIXME: got ack with cookie" (.readUInt32BE buf 1))
                       (>! dispatch-rq buf))
-      :data       (let [socket-id (r4 1)]
-                    (if (nil? (c/get-data socket-id))
+      :data       (let [socket-id (r4 1)
+                        socket    {:index socket-id :type :aqua-dtls}]
+                    (if (nil? (c/get-data socket))
                       (log/error "Got data for an invalid/unknown DTLS socket id" socket-id)
-                      (circ-process config socket-id (.slice buf 5))))
-      :new-client (let [socket-id (r4 1)]
+                      (circ-process config socket (.slice buf 5))))
+      :new-client (let [socket-id (r4 1)
+                        socket    {:index socket-id :type :aqua-dtls}]
                     (log/info "New client on socket-id:" socket-id)
-                    (c/add socket-id {:id socket-id :cs :server :type :aqua ;; FIXME can we get rid of :cs? that was old...
-                                      :send-fn (mk-send-fn socket-id)}))
+                    (c/add socket
+                           {:id socket-id :cs :server :type :aqua ;; FIXME can we get rid of :cs? that was old...
+                            :send-fn (mk-send-fn socket)}))    ;; FIXME: might make this a chan
       :rm-client  (let [socket-id (r4 1)]
-                    (c/destroy socket-id))
+                    (c/destroy {:index socket-id :type :aqua-dtls}))
       (log/error "DTLS comm: unsupported command" cmd (r1 0)))))
 
 ;; start dtls-handler & create listening socket:
