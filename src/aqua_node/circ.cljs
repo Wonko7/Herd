@@ -323,6 +323,7 @@
 (defn recv-id [config socket circ-id payload]
   "Recv client's public ID & attach to socket"
   (c/add-id socket payload)
+  (log/debug "recvd client ID" (b/hx payload) "on socket index" (:index socket))
   (c/update-data socket [:auth] {:srv-id payload}))
 
 

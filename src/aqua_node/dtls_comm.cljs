@@ -104,10 +104,8 @@
   (let [fwd-secs (map #(:secret %) (:path circ-data-fwd))
         bwd-secs (map #(:secret %) (:path circ-data-bwd))
         message  [(-> :new-mix-fp from-cmd b/new1)
-                   ;; (-> circ-data-fwd :forward-hop :index b/new4)
-                   ;; (-> circ-data-bwd :backward-hop :index b/new4)
-                   (-> circ-data-fwd :forward-hop b/new4)
-                   (-> circ-data-bwd :backward-hop b/new4)
+                   (-> circ-data-fwd :forward-hop :index b/new4)
+                   (-> circ-data-bwd :backward-hop :index b/new4)
                    (-> circ-data-fwd :id b/new4)
                    (-> circ-data-bwd :id b/new4)
                    (-> fwd-secs count b/new4)]
@@ -121,8 +119,7 @@
   (let [c         (node/require "crypto")
         cookie    (.readUInt32BE (.randomBytes c 4) 0) ;; cookie used to identify transaction
         ctrl      (chan)]
-    (log/info "Connecting to" (select-keys dest [:host :port :role]))
-    (println "sending connect with cookie" cookie "id length" (-> dest :auth :srv-id .-length))
+    (log/info "DTLS: Connecting to" (select-keys dest [:host :port :role]) (-> dest :auth :srv-id b/hx))
     (sub dispatch-pub cookie ctrl)
     (go (send-connect dest cookie)
         (let [answer (<! ctrl) ;; also allow for timeout...
