@@ -424,13 +424,13 @@
                                 :else (log/error "Unsupported sip method" (:method nrq)))))]
 
           ;; Initialisation of create-server: prepare RDV, sip signalisation incoming channel.
-(println :lol1)
+(log/debug :lol1)
           (>! rdv-ctrl :rdv)
           (>! out-rdv-ctrl :rdv)
           (circ/update-data rdv-id [:sip-chan] incoming-sip)
           (circ/update-data out-rdv-id [:sip-chan] incoming-sip)
           (.start sip (cljs/clj->js {:protocol "UDP"}) process)
-(println :lol2)
+(log/debug :lol2)
 
           ;; FIXME: sip-ch is general and dispatches according to call-id to sub channels.
           (go-loop [query (<! incoming-sip)]
