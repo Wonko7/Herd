@@ -35,9 +35,9 @@
                                          ;(.close conn)
                                          )
             (= :aqua-dir (:type c))  (.destroy conn)
+            (= :aqua-dtls (:type conn)) (log/error :fixme 4 "send something to dtls handler")
             :else                    (log/error :fixme3 "tried to close unknown type of socket" c conn))
-      (when (nil? (:type c)) ;; FIXME, tmp.
-        (.removeAllListeners conn)))))
+      )))
 
 (defn add [conn & [data]]
   (swap! connections merge {conn data})
@@ -48,9 +48,11 @@
   conn)
 
 (defn add-id [conn id]
-  (destroy (-> id b/hx (@id-to-connections) :socket))
+  (let [existing-socket (-> id b/hx (@id-to-connections) :socket)]
+    (when (not= existing-socket conn)
+      (destroy existing-socket)))
   (swap! id-to-connections merge {(b/hx id) {:socket conn}})
-  (log/info "Received ID connection to:" (b/hx id)))
+  (log/info "Received ID connection to:" (b/hx id) (:index conn)))
 
 (defn set-data [conn data]
   (swap! connections merge {conn data})

@@ -124,7 +124,8 @@
     (go (send-connect dest cookie)
         (let [answer (<! ctrl) ;; also allow for timeout...
               state  (.readUInt32BE answer 5)
-              id     (.readUInt32BE answer 9)]
+              id     (.readUInt32BE answer 9)
+              soc    {:index id :type :aqua-dtls}]
           (unsub dispatch-pub cookie ctrl)
           (close! ctrl)
           (if (not= 0 state)
@@ -135,10 +136,10 @@
             (do (when conn-handler
                   (conn-handler))
                 (log/debug "got dtls-handler ok on cookie" cookie "given node id =" id)
-                (c/add {:index id :type :aqua-dtls}
+                (c/add soc
                        (merge conn-info
                               {:id id :cs :client :type :aqua :host (:host dest) :port (:port dest)
-                               :send-fn (mk-send-fn id)}))))))));; FIXME: might make this a chan
+                               :send-fn (mk-send-fn soc)}))))))));; FIXME: might make this a chan
 
 ;; process messages from dtls-handler:
 (defn process [socket config buf rinfo dispatch-rq]
