@@ -93,6 +93,7 @@
 (defn destroy [config circ]
   (when-let [c   (@circuits circ)]
     (recv-destroy config nil circ (b/new "because reasons"))
+    (dtls/send-rm-mix-fp circ)
     (log/info "destroying circuit" circ)
     (rm circ)))
 

@@ -31,9 +31,10 @@
    6  :new-circuit
    7  :ack
    8  :new-client
-   9  :rm-client
+   9  :rm-node
    10 :new-mix-fp
    11 :rm-mix-fp
+   12 :rm-local-udp
    })
 
 (def from-cmd
@@ -114,6 +115,18 @@
         message  (concat message bwd-secs)]
     (send-to-dtls (apply b/cat message))))
 
+(defn send-rm-local-udp [socket]
+  (send-to-dtls (b/cat (-> :rm-local-udp from-cmd b/new1)
+                       (-> socket :index b/new4))))
+
+(defn send-rm-mix-fp [circ-id]
+  (send-to-dtls (b/cat (-> :rm-mix-fp from-cmd b/new1)
+                       (b/new4 circ-id))))
+
+(defn send-rm-node [socket]
+  (send-to-dtls (b/cat (-> :rm-node from-cmd b/new1)
+                       (-> socket :index b/new4))))
+
 ;; connect to a new node:
 (defn connect [dest conn-info conn-handler err]
   (let [c         (node/require "crypto")
@@ -139,7 +152,8 @@
                 (c/add soc
                        (merge conn-info
                               {:id id :cs :client :type :aqua :host (:host dest) :port (:port dest)
-                               :send-fn (mk-send-fn soc)}))))))));; FIXME: might make this a chan
+                               :send-fn (mk-send-fn soc)
+                               :on-destroy [#(send-rm-node soc)]}))))))));; FIXME: might make this a chan
 
 ;; process messages from dtls-handler:
 (defn process [socket config buf rinfo dispatch-rq]
@@ -159,8 +173,10 @@
                     (log/info "New client on socket-id:" socket-id)
                     (c/add socket
                            {:id socket-id :cs :server :type :aqua ;; FIXME can we get rid of :cs? that was old...
-                            :send-fn (mk-send-fn socket)}))    ;; FIXME: might make this a chan
-      :rm-client  (let [socket-id (r4 1)]
+                            :send-fn (mk-send-fn socket)
+                            :on-destroy [#(send-rm-node socket)]}))    ;; FIXME: might make this a chan
+      :rm-node    (let [socket-id (r4 1)]
+                    ;; also remove circs.
                     (c/destroy {:index socket-id :type :aqua-dtls}))
       (log/error "DTLS comm: unsupported command" cmd (r1 0)))))
 
@@ -176,7 +192,7 @@
         soc           (.createSocket (node/require "dgram") "udp4")
         soc-ctrl      (chan)
         dispatch-rq   (chan)]
-    ;; yerk, define globals:
+    ;; yerk, define globals. might replace this with chans.
     (def circ-process circ-process)
     (def circ-accept circ-accept)
     (def dispatch-pub (pub dispatch-rq #(.readUInt32BE %1 1)))

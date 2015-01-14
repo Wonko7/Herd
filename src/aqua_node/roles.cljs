@@ -145,6 +145,8 @@
                               (let [mix      (path/init-pools config net-info geo 2)]
                                 (log/info "Dir: sending register info")
                                 (register-to-dir config geo mix ds)))]
+              (doseq [n (keys net-info)]
+                (log/info (keys (net-info n)))) ;; debugging.
               (reconnect)
 
               (js/setInterval (fn []

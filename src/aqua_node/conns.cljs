@@ -22,22 +22,19 @@
   conn)
 
 (defn destroy [conn]
-  (.trace js/console "who called me?")
   (when-let [c (@connections conn)]
     (when (-> c :auth :srv-id)
-      (log/info "Removed connection to:" (-> c :auth :srv-id b/hx)))
-    (rm conn)
-    (doall (map #(%) (:on-destroy c)))
-    (when (and conn (not= :aqua (:type c)))
-      (cond (= :local-udp (:type c)) (log/debug :fixme1 "tried to close" c conn)
-            (= :tcp (:ctype c))      (.destroy conn)
-            (= :udp (:ctype c))      (do (log/debug :fixme2 "trying to close" c conn)
-                                         ;(.close conn)
-                                         )
-            (= :aqua-dir (:type c))  (.destroy conn)
-            (= :aqua-dtls (:type conn)) (log/error :fixme 4 "send something to dtls handler")
-            :else                    (log/error :fixme3 "tried to close unknown type of socket" c conn))
-      )))
+      (log/info "Removing connection to:" (-> c :auth :srv-id b/hx)))
+      (rm conn)
+      (doall (map #(%) (:on-destroy c))) ;; used to kill circs.
+      (cond (or (= :aqua-dtls (:type conn))
+                (= :local-udp (:type conn))) (log/debug "destroyed:" (:type conn) "index:" (:index conn))
+            (= :tcp (:ctype c))              (do (log/debug :fixme2)
+                                                 (.destroy conn))
+            (= :udp (:ctype c))              (do (log/debug :fixme3 "trying to close" c conn)
+                                                 (.close conn))
+            (= :aqua-dir (:type c))          (.destroy conn)
+            :else                            (log/error :fixme5 "tried to close unknown type of socket" c conn))))
 
 (defn add [conn & [data]]
   (swap! connections merge {conn data})

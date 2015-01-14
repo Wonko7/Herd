@@ -207,7 +207,8 @@
               port       (.readUInt16BE answer 9)
               id         {:index index :type :local-udp}]
           (log/debug "DTLS: got ack, index =" index "port =" port)
-          (c/add id {:ctype :udp :type :rtp-exit})
+          (c/add id {:ctype :udp :type :rtp-exit
+                     :on-destroy [#(dtls/rm-local-udp id)]})
 
           (go (let [out-circ-id (<! out-circ-id-chan)]
                 (log/debug "DTLS: got out circ")
