@@ -317,15 +317,19 @@
 
 (defn send-id [config socket]
   "Send id to next hop."
-  (cell-send config socket 0 :id (-> config :auth :aqua-id :id)))
+  (cell-send config socket 0 :id (b/cat (-> config :roles first conv/role-to-int b/new1)
+                                        (-> config :auth :aqua-id :id))))
 
 ;; process recv ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
 (defn recv-id [config socket circ-id payload]
   "Recv client's public ID & attach to socket"
-  (c/add-id socket payload)
-  (log/debug "recvd client ID" (b/hx payload) "on socket index" (:index socket))
-  (c/update-data socket [:auth] {:srv-id payload}))
+  (let [role (-> payload .readUInt8 conv/int-to-role)]
+    (c/add-id socket payload)
+    (log/debug "recvd client ID" (b/hx payload) "on socket index" (:index socket))
+    (c/update-data socket [:role] role)
+    (c/update-data socket [:auth] {:srv-id (.slice payload 1)})
+    (dtls/send-role socket role)))
 
 
 (defn recv-create2 [config socket circ-id payload]

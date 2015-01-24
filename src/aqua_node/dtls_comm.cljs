@@ -35,6 +35,7 @@
    10 :new-mix-fp
    11 :rm-mix-fp
    12 :rm-local-udp
+   13 :update-role
    })
 
 (def from-cmd
@@ -64,7 +65,7 @@
         mk-size-and-buf   #(let [buf (b/new %)]
                              (b/cat (b/new2 (.-length buf)) buf))]
     (send-to-dtls (b/cat (-> :init from-cmd b/new1)
-                         (b/new1 (if (some #(= % :app-proxy) (:roles config)) 0 1)) ;; app-proxy = 0, others = 1.
+                         (-> config :roles first conv/role-to-int b/new1)
                          (mk-size-and-buf cert-file)
                          (mk-size-and-buf key-file)
                          (mk-size-and-buf aqua-pub)
@@ -75,9 +76,16 @@
 (defn send-connect [dest cookie]
   (send-to-dtls (b/cat (-> :connect-to-node from-cmd b/new1)
                        (b/new4 cookie)
+                       (-> dest :role conv/role-to-int b/new1)
                        (-> dest conv/dest-to-tor-str b/new)
                        b/zero
                        (-> dest :auth :srv-id))))
+
+(defn send-role [socket role]
+  "Ask for a new socket. We'll receive an ack with the local port."
+  (send-to-dtls (b/cat (-> :update-role from-cmd b/new1)
+                       (-> role conv/role-to-int b/new1)
+                       (-> socket :index b/new4))))
 
 (defn send-new-local-udp [cookie]
   "Ask for a new socket. We'll receive an ack with the local port."

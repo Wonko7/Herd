@@ -59,11 +59,12 @@
 
 (defn role-to-int [role]
   (condp = role
-    :app-proxy   0
-    :mix         1
-    :sip-dir     2
-    :rdv         3
-    :super-peer  4))
+    :app-proxy       0
+    :mix             1
+    :sip-dir         2
+    :rdv             3
+    :super-peer      4
+    :app-proxy-dummy 5))
 
 (defn int-to-role [role]
   (condp = role
@@ -71,7 +72,8 @@
     1 :mix
     2 :sip-dir
     3 :rdv
-    4 :super-peer))
+    4 :super-peer
+    5 :app-proxy-dummy))
 
 
 ;; Converting ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
