@@ -612,6 +612,7 @@
    11  {:name :created2        :fun recv-created2}
    ;; aqua only <--
    20  {:name :id              :fun recv-id}
+   21  {:name :sp              :fun recv-sp}
    ;; aqua only -->
    7   {:name :versions        :fun nil}
    128 {:name :vpadding        :fun nil}
