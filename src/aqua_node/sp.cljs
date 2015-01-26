@@ -77,8 +77,8 @@
                                                 sp-id               (-> sp-data :auth :srv-id)
                                                 sp-clients          (-> sp-data :client-secrets)
                                                 client-id           (first (filter #(not (sp-clients %)) (range (:max-clients-per-channel config))))]
-                                            (assert (= 1 (count sps)) "wrong number of superpeers") 
-                                            (assert client-id "could not add client, channel full") 
+                                            (assert (= 1 (count sps)) "wrong number of superpeers")
+                                            (assert client-id "could not add client, channel full")
                                             (c/update-data sp-socket [:client-secrets] (merge sp-clients {client-id {:secret nil}}))
                                             (c/update-data socket [:future-sp] sp-socket)
                                             (send-client-sp-id config socket client-id sp-id))
