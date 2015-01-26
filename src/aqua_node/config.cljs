@@ -24,18 +24,20 @@
                    :g-len       32
                    :h-len       32}]
     ;; key lengths, ntor, and rate period in milliseconds.
-    {:enc                   {:iv-len 16 :key-len 32}
-     :debug                 false
-     :ntor-values           ntor
-     :rate                  {:period 10}
+    {:enc                       {:iv-len 16 :key-len 32}
+     :debug                     false
+     :ntor-values               ntor
+     :rate                      {:period 10}
      ;; dir & sip dir register will timeout if not renewed within these:
-     :register-interval     10000
-     :keep-alive-interval   20000
-     :sip-register-interval 600000
+     :register-interval         10000
+     :keep-alive-interval       20000
+     :sip-register-interval     600000
      ;; dtls c layer:
-     :dtls-handler-port     6677
-     :dtls-handler-path     "./dtls-handler"
-     :aqua-packet-size      400
+     :dtls-handler-port         6677
+     :dtls-handler-path         "./dtls-handler"
+     :aqua-packet-size          400
+     ;; SP:
+     :max-clients-per-channel   5
      }))
 
 (defn read-config [argv]

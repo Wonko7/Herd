@@ -33,7 +33,7 @@
   (circ/send-sp config socket (b/cat (-> :register-to-sp from-cmd b/new1)
                                      sp-id)))
 
-(defn recv-mk-secret [config payload]
+(defn mk-secret-from-create [config payload]
   (let [{pub-B :pub node-id :id sec-b :sec} (-> config :auth :aqua-id)
         client-id                           (.readUInt16BE payload 0)
         hs-type                             (.readUInt16BE payload 0)
@@ -67,14 +67,27 @@
                     (let [cmd (if (number? cmd) (to-cmd cmd) cmd)]
                       (log/info "Recvd" cmd)
                       (condp = cmd
-                        ;; recvd commands:
-
                         ;;;; recvd by mix:
-                        :mk-secret        (let [[client-id shared-sec created] (mk-secret-from-create data)
-                                                client-secrets                 (-> sp-sock c/get-data :client-secrets)]
-                                            (c/update-data sp-sock ;; find sp
-                                                           [:client-secrets]
-                                                           (merge client-secrets {client-id shared-sec}))
+                        :new-client       (let [conns               (c/get-all)
+                                                sps                 (for [k (keys conns)
+                                                                          :let [data (conns k)]
+                                                                          :when (= :super-peer (:role data))]
+                                                                      [k  data])
+                                                [sp-socket sp-data] (first sps)
+                                                sp-id               (-> sp-data :auth :srv-id)
+                                                sp-clients          (-> sp-data :client-secrets)
+                                                client-id           (first (filter #(not (sp-clients %)) (range (:max-clients-per-channel config))))]
+                                            (assert (= 1 (count sps)) "wrong number of superpeers") 
+                                            (assert client-id "could not add client, channel full") 
+                                            (c/update-data sp-socket [:client-secrets] (merge sp-clients {client-id {:secret nil}}))
+                                            (c/update-data socket [:future-sp] sp-socket)
+                                            (send-client-sp-id config socket client-id sp-id))
+                        :mk-secret        (let [[client-id shared-sec created]  (mk-secret-from-create config data)
+                                                sp-socket                       (-> socket c/get-data :future-sp)
+                                                client-secrets                  (-> sp-socket c/get-data :client-secrets)]
+                                            (c/update-data sp-socket [:client-secrets]
+                                                           (merge client-secrets {client-id {:secret shared-sec}}))
+                                            (dtls/send-update-secret-for-client)
                                             ;; send ack to client:
                                             (circ/send-sp config socket (b/cat (-> :ack-secret from-cmd b/new1)
                                                                                (-> created .-length b/new2)
@@ -84,7 +97,6 @@
                                                 sp-id     (.slice data 1)]
                                            (go (>! mix-answer [client-id sp-id]))) ;; :connect function is waiting for this.
                         :ack-secret       (go (>! mix-answer data))
-
                         ;; internal commands (not from the network)
                         :connect          (let [zone          (-> config :geo-info :role)
                                                 net-info      (dir/get-net-info)
@@ -106,6 +118,7 @@
                                                           payload    (<! mix-answer)
                                                           shared-sec (hs/client-finalise auth (.slice payload 2) (-> config :enc :key-len))
                                                           sp-socket  (<! socket)]
+                                                      (dtls/send-client-id-to-sp sp-socket client-id)
                                                       ;; 3/ create circuits:
                                                       (dtls/send-update-sp-secret sp-socket shared-sec)
                                                       (c/update-data sp-socket [:auth] (-> mix-socket c/get-data :auth)) ;; FIXME: not sure if we'll keep this, but for now it'll do
