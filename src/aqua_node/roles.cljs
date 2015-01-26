@@ -12,6 +12,7 @@
             [aqua-node.circ :as circ]
             [aqua-node.path :as path]
             [aqua-node.geo :as geo]
+            [aqua-node.sp :as sp]
             [aqua-node.sip :as sip]
             [aqua-node.sip-dir :as sip-dir])
   (:require-macros [cljs.core.async.macros :as m :refer [go-loop go]]))
@@ -134,17 +135,25 @@
                                      20000)))
 
           (when (is? :app-proxy)
-            (let [geo       (<! geo)
-                  net-info  (<! net-info)
-                  sip-chan  (atom nil)
-                  reconnect (fn []
-                              (when @sip-chan
-                                (a/close! @sip-chan))
-                              (reset! sip-chan (sip/create-server config))
-                              (a/pipe (:sip-chan config) @sip-chan)
-                              (let [mix      (path/init-pools config net-info geo 2)]
-                                (log/info "Dir: sending register info")
-                                (register-to-dir config geo mix ds)))]
+            (let [geo                 (<! geo)
+                  net-info            (<! net-info)
+                  sip-chan            (atom nil)
+                  [sp-ctrl sp-notify] (sp/init config)
+                  config              (merge config {:sp-chans [sp-ctrl sp-notify]})
+                  get-id              #(-> % :auth :srv-id b/hx)
+                  reconnect           (fn []
+                                        ;; SIP:
+                                        (when @sip-chan
+                                          (a/close! @sip-chan))
+                                        (reset! sip-chan (sip/create-server config))
+                                        (a/pipe (:sip-chan config) @sip-chan)
+                                        ;; connect to SP:
+                                        (go (>! sp-ctrl :connect))
+                                        (go (let [[mix sp]            (<! sp-notify)]
+                                              (log/info "Connected to MIX:" (get-id mix))
+                                              (log/info "      through SP:" (get-id mix))
+                                              (log/info "Dir: sending register info")
+                                              (register-to-dir config geo mix ds))))]
               (doseq [n (keys net-info)]
                 (log/info (keys (net-info n)))) ;; debugging.
               (reconnect)

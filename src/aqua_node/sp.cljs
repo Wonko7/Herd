@@ -4,10 +4,13 @@
             [cljs.core.async :refer [chan <! >! sub pub unsub close!] :as a]
             [aqua-node.parse :as conv]
             [aqua-node.dtls-comm :as dtls]
+            [aqua-node.conn-mgr :as conn]
             [aqua-node.circ :as circ]
+            [aqua-node.path :as path]
             [aqua-node.ntor :as hs]
             [aqua-node.conns :as c]
             [aqua-node.log :as log]
+            [aqua-node.dir :as dir]
             [aqua-node.buf :as b])
   (:require-macros [cljs.core.async.macros :as m :refer [go-loop go]]))
 
@@ -25,12 +28,12 @@
 
 ;; sent by mix:
 
-(defn send-client-sp-id [client-index sp-id]
+(defn send-client-sp-id [config socket client-index sp-id]
   "send a sp id & its client-index on the channel to a client"
-  (circ/relay-sp config (b/cat (-> :register-to-sp from-cmd b/new1)
-                               sp-id)))
+  (circ/send-sp config socket (b/cat (-> :register-to-sp from-cmd b/new1)
+                                     sp-id)))
 
-(defn recv-mk-secret [payload]
+(defn recv-mk-secret [config payload]
   (let [{pub-B :pub node-id :id sec-b :sec} (-> config :auth :aqua-id)
         client-id                           (.readUInt16BE payload 0)
         hs-type                             (.readUInt16BE payload 0)
@@ -44,44 +47,72 @@
 
 ;; sent by client:
 
-(defn send-mk-secret [config mix-socket mix-auth]
+(defn send-mk-secret [config mix-socket client-id mix-auth]
   (let [[auth create]   (hs/client-init config mix-auth)]
-    (c/update-data mix-s)
-    (circ/relay-sp config (b/cat (-> :register-to-sp from-cmd b/new1)
-                                 (b/new1 client-id)
-                                 (b/new2 2) ;; type of hs
-                                 (-> create .-length b/new2)
-                                 create))
+    (circ/send-sp config mix-socket (b/cat (-> :register-to-sp from-cmd b/new1)
+                                           (b/new1 client-id)
+                                           (b/new2 2) ;; type of hs
+                                           (-> create .-length b/new2)
+                                           create))
     auth))
 
 
 ;; init:
 
 (defn init [config]
-  (let [sp-ctrl   (chan)
-        sp-notify (chan)
+  (let [sp-ctrl    (chan)
+        sp-notify  (chan)
+        mix-answer (chan)
         process   (fn [{cmd :cmd data :data socket :socket}]
-                    (log/info "Recvd" cmd)
-                    (condp = cmd
-                      :register-to-sp  (let [{id :id socket :socket} data]
-                                         ;; FIXME as a client, we need to connect to sp instead
-                                         )
-                      :mk-secret       (let [[client-id shared-sec created] (mk-secret-from-create data)
-                                             client-secrets                 (-> sp-sock c/get-data :client-secrets)]
-                                         (c/update  ;; find sp
-                                                   (merge client-secrets {client-id shared-sec}))
-                                         ;; send ack to client:
-                                         (circ/relay-sp config (b/cat (-> :ack-secret from-cmd b/new1)
-                                                                      (b/new2 2) ;; type of hs
-                                                                      (-> create .-length b/new2)
-                                                                      created)))
-                      :ack-secret      (let [[client-id shared-sec] (recv-mk-secret data)
-                                             client-secrets         (-> sp-sock c/get-data :client-secrets)]
-                                         (c/update  ;; find sp
-                                                   (merge client-secrets {client-id shared-sec})
-                                                   )
-                                         (dtls/update-id)
-                                         )))]
+                    (let [cmd (if (number? cmd) (to-cmd cmd) cmd)]
+                      (log/info "Recvd" cmd)
+                      (condp = cmd
+                        ;; recvd commands:
+
+                        ;;;; recvd by mix:
+                        :mk-secret        (let [[client-id shared-sec created] (mk-secret-from-create data)
+                                                client-secrets                 (-> sp-sock c/get-data :client-secrets)]
+                                            (c/update-data sp-sock ;; find sp
+                                                           [:client-secrets]
+                                                           (merge client-secrets {client-id shared-sec}))
+                                            ;; send ack to client:
+                                            (circ/send-sp config socket (b/cat (-> :ack-secret from-cmd b/new1)
+                                                                               (-> created .-length b/new2)
+                                                                               created)))
+                        ;;;; recvd by client:
+                        :register-to-sp   (let [client-id (.readUInt8 data 0)
+                                                sp-id     (.slice data 1)]
+                                           (go (>! mix-answer [client-id sp-id]))) ;; :connect function is waiting for this.
+                        :ack-secret       (go (>! mix-answer data))
+
+                        ;; internal commands (not from the network)
+                        :connect          (let [zone          (-> config :geo-info :role)
+                                                net-info      (dir/get-net-info)
+                                                select-mixes  #(->> net-info seq (map second) (filter %) shuffle) ;; FIXME make this a function
+                                                mix           (first (select-mixes #(and (= (:role %) :mix) (= (:zone %) zone))))
+                                                mk-path       (fn [] ;; change (take n) for a path of n+1 nodes.
+                                                                (->> (select-mixes #(and (= (:role %) :mix) (not= mix %))) (take 0) (cons mix))) ;; use same mix as entry point for single & rt. ; not= mix
+                                                rdvs          (select-mixes #(and (= (:role %) :rdv) (= (:zone %) zone)))
+                                                socket        (conn/new :aqua :client mix config  {:connect identity})]
+                                            ;; 1/ connect to mix, wait for client-id & sp-id
+                                            (go (let [mix-socket (<! socket)]
+                                                  (circ/send-id config mix-socket)
+                                                  (let [[client-id sp-id] (<! mix-answer)
+                                                        sp                (first (select-mixes #(b/b= sp-id (-> % :auth :srv-id))))]
+                                                    (assert sp "Could not find SP")
+                                                    ;; 2/ connect to SP:
+                                                    (go (conn/new :aqua :client sp config {:connect identity}))
+                                                    (let [auth       (send-mk-secret config mix-socket client-id (:auth mix))
+                                                          payload    (<! mix-answer)
+                                                          shared-sec (hs/client-finalise auth (.slice payload 2) (-> config :enc :key-len))
+                                                          sp-socket  (<! socket)]
+                                                      ;; 3/ create circuits:
+                                                      (dtls/send-update-sp-secret sp-socket shared-sec)
+                                                      (c/update-data sp-socket [:auth] (-> mix-socket c/get-data :auth)) ;; FIXME: not sure if we'll keep this, but for now it'll do
+                                                      (path/init-pool config sp-socket :rt mix)
+                                                      (path/init-pool config sp-socket :single #(concat (mk-path) (->> rdvs shuffle (take 1)))) ;; for now all single circuits are for rdvs, if this changes this'll have to change too.
+                                                      (path/init-pool config sp-socket :one-hop mix)
+                                                      (>! sp-notify [mix sp])))))))))]
     (go-loop [msg (<! sp-ctrl)]
       (process msg)
       (recur (<! sp-ctrl)))

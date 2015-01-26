@@ -320,6 +320,10 @@
   (cell-send config socket 0 :id (b/cat (-> config :roles first conv/role-to-int b/new1)
                                         (-> config :auth :aqua-id :id))))
 
+(defn send-sp [config socket payload]
+  "Send a superpeer signaling message."
+  (cell-send config socket 0 :sp payload))
+
 ;; process recv ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
 (defn recv-id [config socket circ-id payload]
@@ -331,6 +335,12 @@
     (c/update-data socket [:auth] {:srv-id (.slice payload 1)})
     (dtls/send-role socket role)))
 
+(defn recv-sp [config socket circ-id payload]
+  "Recv client's public ID & attach to socket"
+  (let [[sp-ctrl]  (-> config :sp-chans first)]
+    (go (>! sp-ctrl {:cmd    (.readUInt8 payload 0)
+                     :data   (.slice payload 1)
+                     :socket socket}))))
 
 (defn recv-create2 [config socket circ-id payload]
   "Parse message, perform handshake server reply."
@@ -534,7 +544,11 @@
 
         p-pong       #(let [now   (.now js/Date)
                             sent  (-> r-payload .toString js/parseInt)]
-                        (log/debug "Ping: Circuit:" circ-id "roundtrip delay:" (- now sent) "ms"))]
+                        (log/debug "Ping: Circuit:" circ-id "roundtrip delay:" (- now sent) "ms"))
+
+        p-sp         #(let [[sp-ctrl] (:sp-chans config)
+                            cmd       (.readUInt8 r-payload)]
+                        (>! sp-ctrl {:cmd cmd :data (.slice r-payload 1) :socket socket}))]
 
     ;; dispatch the relay command to appropriate function.
     (condp = (:relay-cmd relay-data)
@@ -560,6 +574,7 @@
       18 (p-rdv)
       19 (p-ping)
       20 (p-pong)
+      21 (p-sp)
       (log/error "unsupported relay command"))))
 
 ;; see tor spec 6.
@@ -612,7 +627,7 @@
    11  {:name :created2        :fun recv-created2}
    ;; aqua only <--
    20  {:name :id              :fun recv-id}
-   21  {:name :sp              :fun recv-sp}
+   21  {:name :id              :fun recv-sp}
    ;; aqua only -->
    7   {:name :versions        :fun nil}
    128 {:name :vpadding        :fun nil}
