@@ -32,6 +32,7 @@
 (defn send-client-sp-id [config socket client-index sp-id]
   "send a sp id & its client-index on the channel to a client"
   (circ/send-sp config socket (b/cat (-> :register-to-sp from-cmd b/new1)
+                                     (b/new4 client-index)
                                      sp-id)))
 
 (defn mk-secret-from-create [config payload]
@@ -51,7 +52,7 @@
 
 (defn send-mk-secret [config mix-socket client-id mix-auth]
   (let [[auth create]   (hs/client-init config mix-auth)]
-    (circ/send-sp config mix-socket (b/cat (-> :register-to-sp from-cmd b/new1)
+    (circ/send-sp config mix-socket (b/cat (-> :mk-secret from-cmd b/new1)
                                            (b/new4 client-id)
                                            (b/new2 2) ;; type of hs
                                            (-> create .-length b/new2)
@@ -97,8 +98,8 @@
                                                                                (-> created .-length b/new2)
                                                                                created)))
                         ;;;; recvd by client:
-                        :register-to-sp   (let [client-id (.readUInt8 data 0)
-                                                sp-id     (.slice data 1)]
+                        :register-to-sp   (let [client-id (.readUInt32BE data 0)
+                                                sp-id     (.slice data 4)]
                                            (go (>! mix-answer [client-id sp-id]))) ;; :connect function is waiting for this.
                         :ack-secret       (go (>! mix-answer data))
                         ;; internal commands (not from the network)
@@ -119,8 +120,8 @@
                                                     (log/debug "Will connect to SP" (b/hx sp-id))
                                                     (assert sp "Could not find SP")
                                                     ;; 2/ connect to SP:
-                                                    (go (conn/new :aqua :client sp config {:connect identity}))
-                                                    (let [auth       (send-mk-secret config mix-socket client-id (:auth mix))
+                                                    (let [socket     (conn/new :aqua :client sp config {:connect identity})
+                                                          auth       (send-mk-secret config mix-socket client-id (:auth mix))
                                                           payload    (<! mix-answer)
                                                           shared-sec (hs/client-finalise auth (.slice payload 2) (-> config :enc :key-len))
                                                           sp-socket  (<! socket)]
