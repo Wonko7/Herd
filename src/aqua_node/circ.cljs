@@ -328,16 +328,20 @@
 
 (defn recv-id [config socket circ-id payload]
   "Recv client's public ID & attach to socket"
-  (let [role (-> payload .readUInt8 conv/int-to-role)]
-    (c/add-id socket payload)
-    (log/debug "recvd client ID" (b/hx payload) "on socket index" (:index socket))
+  (let [role (-> payload (.readUInt8 0) conv/int-to-role)
+        id   (.slice payload 1)]
+    (c/add-id socket id)
+    (log/debug "recvd client ID" (b/hx id) "on socket index" (:index socket))
     (c/update-data socket [:role] role)
-    (c/update-data socket [:auth] {:srv-id (.slice payload 1)})
-    (dtls/send-role socket role)))
+    (c/update-data socket [:auth] {:srv-id id})
+    (dtls/send-role socket role)
+    (when (and (= role :app-proxy) (= :mix (-> config :roles first)))
+      (go (>! (-> config :sp-chans first) {:cmd :new-client
+                                           :socket socket})))))
 
 (defn recv-sp [config socket circ-id payload]
-  "Recv client's public ID & attach to socket"
-  (let [[sp-ctrl]  (-> config :sp-chans first)]
+  "Recv super-peer sig. Forward to sp chan."
+  (let [[sp-ctrl]  (:sp-chans config)]
     (go (>! sp-ctrl {:cmd    (.readUInt8 payload 0)
                      :data   (.slice payload 1)
                      :socket socket}))))
@@ -627,7 +631,7 @@
    11  {:name :created2        :fun recv-created2}
    ;; aqua only <--
    20  {:name :id              :fun recv-id}
-   21  {:name :id              :fun recv-sp}
+   21  {:name :sp              :fun recv-sp}
    ;; aqua only -->
    7   {:name :versions        :fun nil}
    128 {:name :vpadding        :fun nil}
@@ -686,7 +690,7 @@
                (log/debug "recv cell: id:" circ-id "cmd:" (:name command) "len:" len "cell-len:" cell-len "id:" (if-let [id (-> socket c/get-data :auth :srv-id)]
                                                                                               (b/hx id)
                                                                                               "unknown"))))
-    (if (not= len (:aqua-packet-size config))
+    (if (and false (not= len (:aqua-packet-size config))) ;; FIXME SP manifest
       (log/error "Circ:" circ-id "received cell with bad length:" len "or cell length:" cell-len)
       (when (:fun command)
         (try

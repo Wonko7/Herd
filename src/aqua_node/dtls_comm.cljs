@@ -135,6 +135,13 @@
   (send-to-dtls (b/cat (-> :rm-node from-cmd b/new1)
                        (-> socket :index b/new4))))
 
+;; sp signalization:
+
+(defn send-node-secret [sp-socket shared-sec]
+  (send-to-dtls (b/cat (-> :update-node-secret from-cmd b/new1)
+                       (-> sp-socket :index b/new4)
+                       shared-sec)))
+
 ;; connect to a new node:
 (defn connect [dest conn-info conn-handler err]
   (let [c         (node/require "crypto")

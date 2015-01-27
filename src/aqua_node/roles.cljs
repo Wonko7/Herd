@@ -100,15 +100,17 @@
   "For each mix in node info, if not already connected, extract ip & port and connect."
   (go (let [ctrl   (chan)]
         (doseq [[[ip port] mix] (seq (dir/get-net-info))
-                :when (and (not= (-> mix :auth :srv-id b/hx) (-> config :auth :aqua-id :id b/hx))
-                           (nil? (c/find-by-id (-> mix :auth :srv-id))))]
+                :let [id (-> mix :auth :srv-id)]
+                :when (and (not (b/b= id (-> config :auth :aqua-id :id)))
+                           (not= :super-peer (:role mix))
+                           (nil? (c/find-by-id id)))]
           (aqua-connect config mix ctrl)
           (<! ctrl)))))
 
 (defn bootstrap [{roles :roles ap :app-proxy aq :aqua ds :remote-dir dir :dir sip-dir :sip-dir :as config}]
   "Setup the services needed by the given role."
 
-  (let [config      (merge config {:sip-chan (chan)})]          ;; init sip-chan
+  (let [config      (merge config {:sip-chan (chan) :sp-chans [(chan) (chan)]})]          ;; init sip-chan, sp-chans
     (dtls/init config circ/process aqua-server-recv)            ;; init dtls-handler
 
     (go (let [is?         #(m/is? % roles)                      ;; tests roles for our running instance
@@ -138,44 +140,42 @@
             (let [geo                 (<! geo)
                   net-info            (<! net-info)
                   sip-chan            (atom nil)
-                  [sp-ctrl sp-notify] (sp/init config)
-                  config              (merge config {:sp-chans [sp-ctrl sp-notify]})
+                  [sp-ctrl sp-notify] (:sp-chans config)
                   get-id              #(-> % :auth :srv-id b/hx)
                   reconnect           (fn []
-                                        ;; SIP:
-                                        (when @sip-chan
-                                          (a/close! @sip-chan))
-                                        (reset! sip-chan (sip/create-server config))
-                                        (a/pipe (:sip-chan config) @sip-chan)
                                         ;; connect to SP:
-                                        (go (>! sp-ctrl :connect))
+                                        (go (>! sp-ctrl {:cmd :connect}))
                                         (go (let [[mix sp]            (<! sp-notify)]
                                               (log/info "Connected to MIX:" (get-id mix))
                                               (log/info "      through SP:" (get-id mix))
                                               (log/info "Dir: sending register info")
-                                              (register-to-dir config geo mix ds))))]
+                                              (register-to-dir config geo mix ds)
+                                              ;; SIP:
+                                              (when @sip-chan
+                                                (a/close! @sip-chan))
+                                              (reset! sip-chan (sip/create-server config))
+                                              (a/pipe (:sip-chan config) @sip-chan))))]
+              (sp/init config)
               (doseq [n (keys net-info)]
-                (log/info (keys (net-info n)))) ;; debugging.
+                (log/info (select-keys (net-info n) [:role :zone]))) ;; debugging.
               (reconnect)
 
-              (js/setInterval (fn []
+              (comment (js/setInterval (fn []
                                 (go (<! (get-net-info config ds))
                                     (when (empty? (circ/get-all)) ;; FIXME: maybe count the nb of aqua sockets
                                       (log/error "Lost connectivity, reconnecting")
                                       (doseq [c (c/get-all)]
                                         (c/destroy c))
                                       (>! @sip-chan :destroy)
-                                      (reconnect))))
-                              (:register-interval config))))
-
-          ;; (when (is? :super-peer)
-          ;;   (register-to-dir config (<! geo) mix ds)
-          ;;   (conn/new :channel :server sp config {:connect identity}))
+                                      (reconnect)
+                                      )))
+                              (:register-interval config)))))
 
           (when (or (is? :mix) (is? :rdv))
             (let [sip-chan (sip-dir/create-mix-dir config)
-                  config   (merge config {:sip-mix-dir sip-dir/mix-dir}) ;; FIXME :sip-mix-dir unused.
-                  ctrl     (chan)]
+                  ctrl     (chan)
+                  config              (merge config {:sip-mix-dir sip-dir/mix-dir})] ;; FIXME :sip-mix-dir unused.
+              (sp/init config)
               (a/pipe (:sip-chan config) sip-chan)
               (<! net-info)
               (connect-to-all config)
@@ -183,6 +183,20 @@
                                    (connect-to-all config))
                               (:register-interval config))
               (register-to-dir config (<! geo) nil ds)))
+
+          (when (is? :super-peer)
+            (go (let [mixes (for [[[ip port] mix] (seq (<! net-info))
+                                  :when (and (= (:role mix) :mix)
+                                             (= (:zone mix) (-> config :geo-info :zone)))]
+                              mix)
+                      [mix] mixes
+                      ctrl  (chan)]
+                  (when (not= 1 (count mixes))
+                    (log/error mix)
+                    (log/error "SP init: more than one suitable mix found" mixes))
+                  (register-to-dir config (<! geo) nil ds)
+                  (aqua-connect config mix ctrl)
+                  (<! ctrl))))
 
           (when (is? :dir)
             (conn/new :dir :server dir config {:connect aqua-dir-recv}))

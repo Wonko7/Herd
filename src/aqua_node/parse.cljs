@@ -64,7 +64,8 @@
     :sip-dir         2
     :rdv             3
     :super-peer      4
-    :app-proxy-dummy 5))
+    :app-proxy-dummy 5
+    :dir             6))
 
 (defn int-to-role [role]
   (condp = role
@@ -73,7 +74,8 @@
     2 :sip-dir
     3 :rdv
     4 :super-peer
-    5 :app-proxy-dummy))
+    5 :app-proxy-dummy
+    6 :dir))
 
 
 ;; Converting ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
