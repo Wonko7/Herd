@@ -259,6 +259,9 @@
 (def pool (atom {}))
 (def chosen-mix (atom nil))
 
+(defn reset-chosen-mix! [mix]
+  (reset! chosen-mix mix))
+
 (defn init-pool [config soc type path-data]
   "Initialises a channel, filling it with as many circuits as it will take.
   Replaces them as they are consumed."
@@ -266,24 +269,26 @@
                    :one-hop #(create-one-hop config soc path-data)
                    :single  #(create-single config (path-data))
                    :rt      #(create-rt config soc path-data))]
-   (go-loop [] ;; as soon as one of our buffered circs is claimed, this loop recurs once to replace it:
+    (go-loop [] ;; as soon as one of our buffered circs is claimed, this loop recurs once to replace it:
       (>! (@pool type) (new-path))
       (recur))))
 
-(defn init-pools [config net-info loc N]
+(defn init-pools [config net-info loc N & [already-chosen-mix]]
   "Initialise a pool of N of each type of circuits (rt and single for now)
   net-info is the list of mixes with their geo info."
   (let [zone         (-> loc :zone)
         select-mixes #(->> net-info seq (map second) (filter %) shuffle)
         ;; entry mix, for :rt --> will be assigned by dir.
-        mix          (first (select-mixes #(and (= (:role %) :mix) (= (:zone %) zone))))
+        mix          (or already-chosen-mix
+                         (first (select-mixes #(and (= (:role %) :mix) (= (:zone %) zone)))))
         ;; make path for :single, three hops, the first being mix chosen for :rt.
         mk-path      (fn [] ;; change (take n) for a path of n+1 nodes.
                        (->> (select-mixes #(and (= (:role %) :mix) (not= mix %))) (take 0) (cons mix))) ;; use same mix as entry point for single & rt. ; not= mix
         ;; rdvs in our zone:
         rdvs         (select-mixes #(and (= (:role %) :rdv) (= (:zone %) zone)))
-        connected    (chan)
-        soc          (conn/new :aqua :client mix config  {:connect #(go (>! connected :done))})
+        soc          (if already-chosen-mix
+                       (go (c/find-by-id (-> already-chosen-mix :auth :srv-id)))
+                       (conn/new :aqua :client mix config  {:connect identity}))
         N            (dec N)] ;; an additional circ is created waiting for the channel to be ready to receive.
     (log/info "Init Circuit pools: we are in" zone)
     (log/debug "Chosen mix:" (:host mix) (:port mix))
@@ -291,8 +296,7 @@
     ;; init channel pools:
     (reset! pool {:one-hop (chan N) :rt (chan N) :single (chan N)})
     ;; wait until connected to the chosen mix before sending requests
-    (go (<! connected)
-        (let [soc (<! soc)]
+    (go (let [soc (<! soc)]
           (circ/send-id config soc)
           (init-pool config soc :rt mix)
           (init-pool config soc :single #(concat (mk-path) (->> rdvs shuffle (take 1)))) ;; for now all single circuits are for rdvs, if this changes this'll have to change too.

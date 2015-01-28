@@ -11,7 +11,7 @@
 ;;      tor/src/test/ntor_ref.py, tor/src/or/onion_ntor.c
 
 ;; FIXME: also, [slow]buffers or not?
-(def conf (:ntor-values cfg/static-conf))
+(def conf (:ntor-values cfg/static-conf)) ;; why did I do this again?
 
 (defn hmac [key message]
   (let [crypto (node/require "crypto")]

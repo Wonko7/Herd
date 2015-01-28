@@ -342,6 +342,7 @@
 (defn recv-sp [config socket circ-id payload]
   "Recv super-peer sig. Forward to sp chan."
   (let [[sp-ctrl]  (:sp-chans config)]
+    (log/debug (.-length payload) (-> payload (.slice 1) .-length))
     (go (>! sp-ctrl {:cmd    (.readUInt8 payload 0)
                      :data   (.slice payload 1)
                      :socket socket}))))

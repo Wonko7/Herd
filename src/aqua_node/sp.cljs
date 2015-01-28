@@ -36,22 +36,21 @@
                                      sp-id)))
 
 (defn mk-secret-from-create [config payload]
-  (log/debug ":aoeu" (.-length payload) (+ (:node-id-len config) (:h-len config) (:h-len config)))
-  (comment (let [{pub-B :pub node-id :id sec-b :sec} (-> config :auth :aqua-id)
+  (log/debug ":aoeu" (.-length payload))
+  (let [{pub-B :pub node-id :id sec-b :sec} (-> config :auth :aqua-id) ;; FIXME: this is the current blocking bug.
         client-id                           (.readUInt32BE payload 0)
         hs-type                             (.readUInt16BE payload 4)
         len                                 (.readUInt16BE payload 6)
         [shared-sec created]                (hs/server-reply config {:pub-B pub-B :node-id node-id :sec-b sec-b} (.slice payload 8) (-> config :enc :key-len))]
     (assert (= hs-type 2) "unsupported handshake type")
-    [client-id shared-sec created])))
-
-;(defn recv-r)
+    [client-id shared-sec created]))
 
 
 ;; sent by client:
 
 (defn send-mk-secret [config mix-socket client-id mix-auth]
   (let [[auth create]   (hs/client-init config mix-auth)]
+    (log/debug :FIXME :mk-secret (.-length create))
     (circ/send-sp config mix-socket (b/cat (-> :mk-secret from-cmd b/new1)
                                            (b/new4 client-id)
                                            (b/new2 2) ;; type of hs
@@ -73,9 +72,9 @@
                         ;;;; recvd by mix:
                         :new-client       (let [conns               (c/get-all)
                                                 sps                 (for [k (keys conns)
-                                                                          :let [data (conns k)]
-                                                                          :when (= :super-peer (:role data))]
-                                                                      [k  data])
+                                                                          :let [conn-data (conns k)]
+                                                                          :when (= :super-peer (:role conn-data))]
+                                                                      [k  conn-data])
                                                 [sp-socket sp-data] (first sps)
                                                 sp-id               (-> sp-data :auth :srv-id)
                                                 sp-clients          (-> sp-data :client-secrets)
@@ -129,10 +128,10 @@
                                                                                             (b/new4 client-id)))
                                                       ;; 3/ create circuits:
                                                       (dtls/send-node-secret sp-socket shared-sec)
+                                                      (c/update-data sp-socket [:sp-auth] (:auth sp)) ;; FIXME: not sure if we'll keep this, but for now it'll do
                                                       (c/update-data sp-socket [:auth] (-> mix-socket c/get-data :auth)) ;; FIXME: not sure if we'll keep this, but for now it'll do
-                                                      (path/init-pool config sp-socket :rt mix)
-                                                      (path/init-pool config sp-socket :single #(concat (mk-path) (->> rdvs shuffle (take 1)))) ;; for now all single circuits are for rdvs, if this changes this'll have to change too.
-                                                      (path/init-pool config sp-socket :one-hop mix)
+                                                      (log/debug :sp sp)
+                                                      (path/init-pools config net-info (:geo-info config) 2 sp)
                                                       (>! sp-notify [mix sp])))))))))]
     (go-loop [msg (<! sp-ctrl)]
       (process msg)
