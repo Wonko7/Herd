@@ -80,7 +80,8 @@
                                                 sp-clients          (-> sp-data :client-secrets)
                                                 sp-clients          (or sp-clients {}) 
                                                 client-id           (first (filter #(not (sp-clients %)) (range (:max-clients-per-channel config))))]
-                                            (assert (= 1 (count sps)) "wrong number of superpeers")
+                                            (when (not= 1 (count sps))
+                                              (log/error "wrong number of superpeers" sps))
                                             (assert client-id "could not add client, channel full")
                                             (log/debug "Sending SP id" (b/hx sp-id) "to client" client-id)
                                             (c/update-data sp-socket [:client-secrets] (merge sp-clients {client-id {:secret nil}}))
@@ -106,9 +107,6 @@
                                                 net-info      (dir/get-net-info)
                                                 select-mixes  #(->> net-info seq (map second) (filter %) shuffle) ;; FIXME make this a function
                                                 mix           (first (select-mixes #(and (= (:role %) :mix) (= (:zone %) zone))))
-                                                mk-path       (fn [] ;; change (take n) for a path of n+1 nodes.
-                                                                (->> (select-mixes #(and (= (:role %) :mix) (not= mix %))) (take 0) (cons mix))) ;; use same mix as entry point for single & rt. ; not= mix
-                                                rdvs          (select-mixes #(and (= (:role %) :rdv) (= (:zone %) zone)))
                                                 socket        (conn/new :aqua :client mix config  {:connect identity})]
                                             ;; 1/ connect to mix, wait for client-id & sp-id
                                             (go (let [mix-socket (<! socket)]
@@ -127,12 +125,12 @@
                                                       (circ/send-sp config sp-socket (b/cat (-> :register-id-to-sp from-cmd b/new1)
                                                                                             (b/new4 client-id)))
                                                       ;; 3/ create circuits:
+                                                      (dtls/send-role sp-socket :super-peer)
                                                       (dtls/send-node-secret sp-socket shared-sec)
                                                       (c/update-data sp-socket [:sp-auth] (:auth sp)) ;; FIXME: not sure if we'll keep this, but for now it'll do
                                                       (c/update-data sp-socket [:auth] (-> mix-socket c/get-data :auth)) ;; FIXME: not sure if we'll keep this, but for now it'll do
-                                                      (log/debug :sp sp)
-                                                      (path/init-pools config net-info (:geo-info config) 2 sp)
-                                                      (>! sp-notify [mix sp])))))))))]
+                                                      (path/init-pools config net-info (:geo-info config) 2 (c/get-data sp-socket))
+                                                      (>! sp-notify [sp-socket mix])))))))))]
     (go-loop [msg (<! sp-ctrl)]
       (process msg)
       (recur (<! sp-ctrl)))

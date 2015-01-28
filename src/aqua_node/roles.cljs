@@ -84,6 +84,7 @@
     (log/debug "Aqua: Connecting to" (select-keys dest [:host :port :role]))
     (go (let [soc (<! soc)]
           (c/update-data soc [:auth] (:auth dest))
+          (dtls/send-role soc (:role dest))
           (if (= :timeout (<! con))
             (c/destroy soc)
             (do (js/clearTimeout timer)
@@ -145,11 +146,12 @@
                   reconnect           (fn []
                                         ;; connect to SP:
                                         (go (>! sp-ctrl {:cmd :connect}))
-                                        (go (let [[mix sp]            (<! sp-notify)]
-                                              (log/info "Connected to MIX:" (get-id mix))
-                                              (log/info "      through SP:" (get-id mix))
+                                        (go (let [[sp-socket mix-data] (<! sp-notify)
+                                                  sp                   (c/get-data sp-socket)]
+                                              (log/info "Connected to MIX:" (get-id sp))
+                                              (log/info "      through SP:" (-> sp :sp-auth :srv-id b/hx))
                                               (log/info "Dir: sending register info")
-                                              (register-to-dir config geo mix ds)
+                                              (register-to-dir config geo mix-data ds)
                                               ;; SIP:
                                               (when @sip-chan
                                                 (a/close! @sip-chan))

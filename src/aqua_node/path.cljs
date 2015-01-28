@@ -288,7 +288,7 @@
         rdvs         (select-mixes #(and (= (:role %) :rdv) (= (:zone %) zone)))
         soc          (if already-chosen-mix
                        (go (c/find-by-id (-> already-chosen-mix :auth :srv-id)))
-                       (conn/new :aqua :client mix config  {:connect identity}))
+                       (conn/new :aqua :client mix config  {:connect identity})) ;; FIXME make :connect optional
         N            (dec N)] ;; an additional circ is created waiting for the channel to be ready to receive.
     (log/info "Init Circuit pools: we are in" zone)
     (log/debug "Chosen mix:" (:host mix) (:port mix))
@@ -297,7 +297,7 @@
     (reset! pool {:one-hop (chan N) :rt (chan N) :single (chan N)})
     ;; wait until connected to the chosen mix before sending requests
     (go (let [soc (<! soc)]
-          (circ/send-id config soc)
+          ;;(circ/send-id config soc) ;; not with sp
           (init-pool config soc :rt mix)
           (init-pool config soc :single #(concat (mk-path) (->> rdvs shuffle (take 1)))) ;; for now all single circuits are for rdvs, if this changes this'll have to change too.
           (init-pool config soc :one-hop mix)))

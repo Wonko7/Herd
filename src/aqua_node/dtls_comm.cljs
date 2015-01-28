@@ -36,6 +36,7 @@
    11 :rm-mix-fp
    12 :rm-local-udp
    13 :update-role
+   14 :update-node-secret
    })
 
 (def from-cmd
@@ -138,6 +139,7 @@
 ;; sp signalization:
 
 (defn send-node-secret [sp-socket shared-sec]
+  (log/debug "FIXM send-node-secret" sp-socket)
   (send-to-dtls (b/cat (-> :update-node-secret from-cmd b/new1)
                        (-> sp-socket :index b/new4)
                        shared-sec)))
