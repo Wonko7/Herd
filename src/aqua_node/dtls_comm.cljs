@@ -37,6 +37,7 @@
    12 :rm-local-udp
    13 :update-role
    14 :update-node-secret
+   15 :ping
    })
 
 (def from-cmd
@@ -143,6 +144,9 @@
   (send-to-dtls (b/cat (-> :update-node-secret from-cmd b/new1)
                        (-> sp-socket :index b/new4)
                        shared-sec)))
+(defn relay-ping [config circ]
+  (send-to-dtls (b/cat (-> :ping from-cmd b/new1)
+                       (-> circ b/new4))))
 
 ;; connect to a new node:
 (defn connect [dest conn-info conn-handler err]

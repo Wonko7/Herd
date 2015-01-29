@@ -12,6 +12,7 @@
             [aqua-node.circ :as circ]
             [aqua-node.path :as path]
             [aqua-node.dir :as dir]
+            [aqua-node.dtls-comm :as dtls]
             [aqua-node.sip-dir :as sd]
             [aqua-node.sip-helpers :as s])
   (:require-macros [cljs.core.async.macros :as m :refer [go-loop go]]))
@@ -415,7 +416,7 @@
                                                   ;(update-data call-id [:bye] (.makeResponse sip rq))
                                                   (.send sip (conv/to-js ok)))
                                                 (add-sip-ctrl-to-rt-circs call-id sip-ctrl)
-                                                (js/setInterval #(circ/relay-ping config rtcp-circ) 2000)
+                                                (js/setInterval #(dtls/relay-ping config rtcp-circ) 2000)
                                                 (wait-for-bye call-id
                                                               sip-ctrl
                                                               {:name callee-name
@@ -504,6 +505,8 @@
                             (<! rtp-notify)                                                                          ;; wait for answer.
                             (>! rtcp-done rtcp-circ)
                             (>! rtp-done rtp-circ)
+                            (go (>! rtcp-dest {:host "127.0.0.1" :port 1234}))
+                            (go (>! sdp-dest {:host "127.0.0.1" :port 1234}))
                             (log/info "SIP: RT circuit ready for call" call-id)
                             (circ/relay-sip config rtp-circ :f-enc (b/cat (-> :ack s/from-cmd b/new1)                ;; Send ack to caller, with our mix's coordinates so he can create an rt-path to us to send rtp.
                                                                           (b/new call-id)
@@ -524,7 +527,7 @@
                               (update-data call-id [:rtcp :in] rtcp-id))
                             (log/info "SIP: got ackack, ready for relay on" call-id)
                             (add-sip-ctrl-to-rt-circs call-id sip-ctrl)
-                            (js/setInterval #(circ/relay-ping config rtcp-circ) 2000)
+                            (js/setInterval #(dtls/relay-ping config rtcp-circ) 2000)
                             (log/info "SIP: launching vlc for answering-machine playback")
                             (update-data call-id [:vlc-child]
                                          (exec (str "cvlc '" (:answering-machine-file config) "' --play-and-exit --sout '#transcode{acodec=ulaw,channels=1,samplerate=8000}:rtp{dst=127.0.0.1,port-audio=" (:port local-dest) "}'") nil #(do (log/debug "VLC exited with:" %1)
@@ -574,7 +577,7 @@
                                         (.send sip (conv/to-js ok)))
                                       (log/info "SIP: got ackack, ready for relay on" call-id)
                                       (add-sip-ctrl-to-rt-circs call-id sip-ctrl)
-                                      (js/setInterval #(circ/relay-ping config rtcp-circ) 2000)
+                                      (js/setInterval #(dtls/relay-ping config rtcp-circ) 2000)
                                       (wait-for-bye call-id
                                                     sip-ctrl
                                                     {:name caller
