@@ -78,25 +78,30 @@
                                                 [sp-socket sp-data] (first sps)
                                                 sp-id               (-> sp-data :auth :srv-id)
                                                 sp-clients          (-> sp-data :client-secrets)
-                                                sp-clients          (or sp-clients {}) 
-                                                client-id           (first (filter #(not (sp-clients %)) (range (:max-clients-per-channel config))))]
+                                                sp-clients          (or sp-clients {})
+                                                client-id           (first (filter #(not (sp-clients %)) (range (:max-clients-per-channel config))))
+                                                client-ntor-id      data]
                                             (when (not= 1 (count sps))
                                               (log/error "wrong number of superpeers" sps))
                                             (assert client-id "could not add client, channel full")
                                             (log/debug "Sending SP id" (b/hx sp-id) "to client" client-id)
-                                            (c/update-data sp-socket [:client-secrets] (merge sp-clients {client-id {:secret nil}}))
+                                            (c/update-data sp-socket [:client-secrets] (merge sp-clients {client-id {:secret nil :srv-id client-ntor-id}}))
                                             (c/update-data socket [:future-sp] sp-socket)
                                             (send-client-sp-id config socket client-id sp-id))
                         :mk-secret        (let [[client-id shared-sec created]  (mk-secret-from-create config data)
+                                                on-destroy                      (-> socket c/get-data :on-destroy)
                                                 sp-socket                       (-> socket c/get-data :future-sp)
                                                 client-secrets                  (-> sp-socket c/get-data :client-secrets)]
                                             (c/update-data sp-socket [:client-secrets]
                                                            (merge client-secrets {client-id {:secret shared-sec}}))
+                                            (c/update-data socket [:on-destroy] (cons #(c/add-id sp-socket (:srv-id (client-secrets client-id)))
+                                                                                      on-destroy))
                                             (dtls/send-node-secret {:index client-id} shared-sec)
                                             ;; send ack to client:
                                             (circ/send-sp config socket (b/cat (-> :ack-secret from-cmd b/new1)
                                                                                (-> created .-length b/new2)
-                                                                               created)))
+                                                                               created))
+                                            )
                         ;;;; recvd by client:
                         :register-to-sp   (let [client-id (.readUInt32BE data 0)
                                                 sp-id     (.slice data 4)]
@@ -129,6 +134,8 @@
                                                       (dtls/send-node-secret sp-socket shared-sec)
                                                       (c/update-data sp-socket [:sp-auth] (:auth sp)) ;; FIXME: not sure if we'll keep this, but for now it'll do
                                                       (c/update-data sp-socket [:auth] (-> mix-socket c/get-data :auth)) ;; FIXME: not sure if we'll keep this, but for now it'll do
+                                                      (c/add-id sp-socket (-> mix :auth :srv-id))
+                                                      ;(circ/send-id config sp-socket)
                                                       (path/init-pools config net-info (:geo-info config) 2 (c/get-data sp-socket))
                                                       (>! sp-notify [sp-socket mix])))))))))]
     (go-loop [msg (<! sp-ctrl)]

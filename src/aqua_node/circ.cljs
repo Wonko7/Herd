@@ -331,12 +331,13 @@
   (let [role (-> payload (.readUInt8 0) conv/int-to-role)
         id   (.slice payload 1)]
     (c/add-id socket id)
-    (log/debug "recvd client ID" (b/hx id) "on socket index" (:index socket))
+    (log/debug "recvd client ID" (b/hx id) "on socket index" (:index socket) "with role" role)
     (c/update-data socket [:role] role)
     (c/update-data socket [:auth] {:srv-id id})
     (dtls/send-role socket role)
     (when (and (= role :app-proxy) (= :mix (-> config :roles first)))
       (go (>! (-> config :sp-chans first) {:cmd :new-client
+                                           :data id
                                            :socket socket})))))
 
 (defn recv-sp [config socket circ-id payload]

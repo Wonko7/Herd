@@ -182,6 +182,7 @@
                       (>! dispatch-rq buf))
       :data       (let [socket-id (r4 1)
                         socket    {:index socket-id :type :aqua-dtls}]
+                    (log/debug :total-len (.-length buf))
                     (if (nil? (c/get-data socket))
                       (log/error "Got data for an invalid/unknown DTLS socket id" socket-id)
                       (circ-process config socket (.slice buf 5))))

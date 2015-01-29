@@ -426,6 +426,7 @@
           ;; Initialisation of create-server: prepare RDV, sip signalisation incoming channel.
 (log/debug :lol1)
           (>! rdv-ctrl :rdv)
+(log/debug :lol0.5)
           (>! out-rdv-ctrl :rdv)
           (circ/update-data rdv-id [:sip-chan] incoming-sip)
           (circ/update-data out-rdv-id [:sip-chan] incoming-sip)
