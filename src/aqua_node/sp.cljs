@@ -114,7 +114,11 @@
                                                 mix           (first (select-mixes #(and (= (:role %) :mix) (= (:zone %) zone))))
                                                 socket        (conn/new :aqua :client mix config  {:connect identity})]
                                             ;; 1/ connect to mix, wait for client-id & sp-id
-                                            (go (let [mix-socket (<! socket)]
+                                            (go (let [mix-socket (loop [soc (<! socket)]
+                                                                   (log/debug soc :mix-socket "what is this?")
+                                                                   (if (= soc :fail)
+                                                                     (recur (<! (conn/new :aqua :client mix config {:connect identity})))
+                                                                     soc))]
                                                   (circ/send-id config mix-socket)
                                                   (log/debug :FIXME "sent id")
                                                   (let [[client-id sp-id] (<! mix-answer)
@@ -126,7 +130,11 @@
                                                           auth       (send-mk-secret config mix-socket client-id (:auth mix))
                                                           payload    (<! mix-answer)
                                                           shared-sec (hs/client-finalise auth (.slice payload 2) (-> config :enc :key-len))
-                                                          sp-socket  (<! socket)]
+                                                          sp-socket  (loop [soc (<! socket)]
+                                                                       (log/debug soc :sp-sockt "what is this?")
+                                                                       (if (= soc :fail)
+                                                                         (recur (<! (conn/new :aqua :client sp config {:connect identity})))
+                                                                         soc))]
                                                       (circ/send-sp config sp-socket (b/cat (-> :register-id-to-sp from-cmd b/new1)
                                                                                             (b/new4 client-id)))
                                                       ;; 3/ create circuits:

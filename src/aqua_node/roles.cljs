@@ -83,11 +83,12 @@
         timer   (js/setTimeout #(go (>! con :timeout)) (:keep-alive-interval config))]
     (log/debug "Aqua: Connecting to" (select-keys dest [:host :port :role]))
     (go (let [soc (<! soc)]
-          (c/update-data soc [:auth] (:auth dest))
-          (dtls/send-role soc (:role dest))
-          (if (= :timeout (<! con))
-            (c/destroy soc)
+          (if (or (= :fail soc) (= :timeout (<! con)))
+            (do (c/destroy soc)
+                :fail)
             (do (js/clearTimeout timer)
+                (c/update-data soc [:auth] (:auth dest))
+                (dtls/send-role soc (:role dest))
                 (circ/send-id config soc)
                 (when ctrl (>! ctrl soc))))))))
 
@@ -197,7 +198,10 @@
                     (log/error mix)
                     (log/error "SP init: more than one suitable mix found" mixes))
                   (register-to-dir config (<! geo) nil ds)
-                  (aqua-connect config mix ctrl)
+                  (loop [soc (<! (aqua-connect config mix ctrl))]
+                    (log/debug soc :spfail "what is this?")
+                    (when (= soc :fail)
+                      (recur (<! (aqua-connect config mix ctrl)))))
                   (<! ctrl))))
 
           (when (is? :dir)

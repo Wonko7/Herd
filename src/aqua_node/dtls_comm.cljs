@@ -157,15 +157,16 @@
     (sub dispatch-pub cookie ctrl)
     (go (send-connect dest cookie)
         (let [answer (<! ctrl) ;; also allow for timeout...
+              _ (log/info (.-length answer))
               state  (.readUInt32BE answer 5)
               id     (.readUInt32BE answer 9)
               soc    {:index id :type :aqua-dtls}]
           (unsub dispatch-pub cookie ctrl)
           (close! ctrl)
           (if (not= 0 state)
-            (do (log/error "got fail on" cookie)
+            (do (log/error "got fail on" cookie "/ err" state)
                 (when err
-                  (err))
+                  (err soc))
                 :fail)
             (do (when conn-handler
                   (conn-handler))

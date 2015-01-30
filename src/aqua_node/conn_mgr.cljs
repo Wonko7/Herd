@@ -1,11 +1,13 @@
 (ns aqua-node.conn-mgr
   (:require [cljs.core :as cljs]
             [cljs.nodejs :as node]
+            [cljs.core.async :refer [chan <! >! sub pub unsub close!] :as a]
             [aqua-node.log :as log]
             [aqua-node.dtls-comm :as dtls]
             [aqua-node.tls :as tls]
             [aqua-node.socks :as socks]
-            [aqua-node.conns :as c]))
+            [aqua-node.conns :as c])
+  (:require-macros [cljs.core.async.macros :as m :refer [go-loop go]]))
 
 ;; conn_mgr.cljs: high level network inits (dtls/tls/tcp/udp/dir).
 
@@ -39,7 +41,11 @@
     ;; create the appropriate connection:
     (cond (is? :socks :server) (socks/create-server conn data udp-data (partial init config) (partial err config))
           (is? :aqua :server)  (log/error "Aqua server should be created by dtls-comm/init now")
-          (is? :aqua :client)  (dtls/connect conn conn-info connect err)
+          (is? :aqua :client)  (go-loop [soc (<! (dtls/connect conn conn-info connect err))]
+                                 (log/debug soc :spfail "what is this?")
+                                 (if (not= soc :fail)
+                                   soc
+                                   (recur (<! (dtls/connect conn conn-info connect err)))))
           (is? :dir :server)   (tls/create-server conn config connect err) ;; FIXME: setting type to aqua/aqua-dir is in dtls/tls. this is Bad.
           (is? :dir :client)   (tls/connect conn config connect err)
           (is? :tcp :client)   (new-tcp-c)

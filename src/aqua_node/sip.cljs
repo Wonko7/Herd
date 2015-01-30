@@ -416,7 +416,7 @@
                                                   ;(update-data call-id [:bye] (.makeResponse sip rq))
                                                   (.send sip (conv/to-js ok)))
                                                 (add-sip-ctrl-to-rt-circs call-id sip-ctrl)
-                                                (js/setInterval #(dtls/relay-ping config rtcp-circ) 2000)
+                                                (js/setInterval #(dtls/relay-ping config rtcp-circ) 1000)
                                                 (wait-for-bye call-id
                                                               sip-ctrl
                                                               {:name callee-name
@@ -527,7 +527,7 @@
                               (update-data call-id [:rtcp :in] rtcp-id))
                             (log/info "SIP: got ackack, ready for relay on" call-id)
                             (add-sip-ctrl-to-rt-circs call-id sip-ctrl)
-                            (js/setInterval #(dtls/relay-ping config rtcp-circ) 2000)
+                            (js/setInterval #(dtls/relay-ping config rtcp-circ) 1000)
                             (log/info "SIP: launching vlc for answering-machine playback")
                             (update-data call-id [:vlc-child]
                                          (exec (str "cvlc '" (:answering-machine-file config) "' --play-and-exit --sout '#transcode{acodec=ulaw,channels=1,samplerate=8000}:rtp{dst=127.0.0.1,port-audio=" (:port local-dest) "}'") nil #(do (log/debug "VLC exited with:" %1)
@@ -577,7 +577,7 @@
                                         (.send sip (conv/to-js ok)))
                                       (log/info "SIP: got ackack, ready for relay on" call-id)
                                       (add-sip-ctrl-to-rt-circs call-id sip-ctrl)
-                                      (js/setInterval #(dtls/relay-ping config rtcp-circ) 2000)
+                                      (js/setInterval #(dtls/relay-ping config rtcp-circ) 1000)
                                       (wait-for-bye call-id
                                                     sip-ctrl
                                                     {:name caller
