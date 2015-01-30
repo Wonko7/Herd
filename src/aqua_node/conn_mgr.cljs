@@ -42,7 +42,6 @@
     (cond (is? :socks :server) (socks/create-server conn data udp-data (partial init config) (partial err config))
           (is? :aqua :server)  (log/error "Aqua server should be created by dtls-comm/init now")
           (is? :aqua :client)  (go-loop [soc (<! (dtls/connect conn conn-info connect err))]
-                                 (log/debug soc :spfail "what is this?")
                                  (if (not= soc :fail)
                                    soc
                                    (recur (<! (dtls/connect conn conn-info connect err)))))

@@ -198,10 +198,7 @@
                     (log/error mix)
                     (log/error "SP init: more than one suitable mix found" mixes))
                   (register-to-dir config (<! geo) nil ds)
-                  (loop [soc (<! (aqua-connect config mix ctrl))]
-                    (log/debug soc :spfail "what is this?")
-                    (when (= soc :fail)
-                      (recur (<! (aqua-connect config mix ctrl)))))
+                  (<! (aqua-connect config mix ctrl))
                   (<! ctrl))))
 
           (when (is? :dir)
