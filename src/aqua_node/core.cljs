@@ -2,9 +2,13 @@
   (:require [cljs.core :as cljs]
             [cljs.nodejs :as node]
             [clojure.walk :as walk]
+            [cljs.core.async :refer [chan <! >!] :as a]
+            [utils.helpers :as h]
             [aqua-node.log :as log]
             [aqua-node.roles :as roles]
-            [aqua-node.config :as config]))
+            [aqua-node.config :as config])
+  (:require-macros [cljs.core.async.macros :as m :refer [go-loop go]]
+                   [utils.macros :refer [<? go? go-try-catch dprint go-retry?]]))
 
 ;; Aqua source code:
 ;;
@@ -61,8 +65,15 @@
     (println (:dtls-handler-port config))
     (roles/bootstrap config)))
 
-;(set! *main-cli-fn* #(do (enable-console-print!) ;; @Nic: sometimes you want to do things outside the try catch for a more complete stacktrace.
-;                         (apply -main %&)))
+
 (set! *main-cli-fn* #(try (enable-console-print!)
                           (apply -main %&)
                           (catch js/Object e (log/c-error e "No one expects the Spanish Inquisition."))))
+
+;;(set! *main-cli-fn* #(try (enable-console-print!)
+;;                          (let [c (chan)]
+;;                            (go-retry? (<? c)
+;;                                       {:loops 4 :timeout 1000}))
+;;                          ;;(go-try-catch (go? (println (<? (lalal :lol))))
+;;                          ;;              (fn [] (println "this the end my friend")))
+;;                          (catch js/Object e (log/c-error e "No one expects the Spanish Inquisition."))))
