@@ -8,7 +8,7 @@
             [aqua-node.roles :as roles]
             [aqua-node.config :as config])
   (:require-macros [cljs.core.async.macros :as m :refer [go-loop go]]
-                   [utils.macros :refer [<? go? go-try-catch dprint go-retry?]]))
+                   [utils.macros :refer [<? <?? go? dprint]]))
 
 ;; Aqua source code:
 ;;
@@ -66,14 +66,14 @@
     (roles/bootstrap config)))
 
 
-(set! *main-cli-fn* #(try (enable-console-print!)
-                          (apply -main %&)
-                          (catch js/Object e (log/c-error e "No one expects the Spanish Inquisition."))))
-
 ;;(set! *main-cli-fn* #(try (enable-console-print!)
-;;                          (let [c (chan)]
-;;                            (go-retry? (<? c)
-;;                                       {:loops 4 :timeout 1000}))
-;;                          ;;(go-try-catch (go? (println (<? (lalal :lol))))
-;;                          ;;              (fn [] (println "this the end my friend")))
+;;                          (apply -main %&)
 ;;                          (catch js/Object e (log/c-error e "No one expects the Spanish Inquisition."))))
+
+(set! *main-cli-fn* #(try (enable-console-print!)
+                          (let [c (chan)]
+                            (go (println (<?? (>! c :lol)
+                                              {:loops 4 :timeout 0 :chan c}))))
+                          ;;(go-try-catch (go? (println (<? (lalal :lol))))
+                          ;;              (fn [] (println "this the end my friend")))
+                          (catch js/Object e (log/c-error e "No one expects the Spanish Inquisition."))))

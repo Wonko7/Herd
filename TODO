@@ -2,9 +2,6 @@
 	- relay -> finish relay begin (missing ack). extend + extended. also need parse/ip6-to-bin to make this work.
 	- relay -> need to implement the digest.
 	- circuit mgr -> cell protocol: single path, multipath.
-	- onioning: for now work with a hardcoded dir descriptor list. concentrate on onioning and take it from there. see tor dir-spec when the time comes.
-	- nw errors. automatic reconnection.
-	- see what exists in node for buffering/qos/shaping.
 
 * testing:
 	- automatic network simulation testing & benchmarking.
@@ -13,3 +10,13 @@
 * libs:
 	- find a good logging module
 	- fix stuff in nodedtls: API (host in opts), remoteAddr.
+
+
+
+
+* misc
+	- role/roles, make is? is-not? in misc. 
+	- merge & clean conv, parse & misc into tools.
+	- support multiple roles.
+	- try catch everything
+	- n-

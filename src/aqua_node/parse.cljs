@@ -77,6 +77,17 @@
     5 :app-proxy-dummy
     6 :dir))
 
+(defn int-to-ack [ack]
+  (condp = ack
+   :ok 0
+   :fail 1
+   nil))
+
+(defn ack-to-int [ack]
+  (condp = ack
+   0 :ok
+   1 :fail
+   nil))
 
 ;; Converting ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 

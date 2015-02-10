@@ -11,7 +11,8 @@
             [aqua-node.circ :as circ]
             [aqua-node.geo :as geo]
             [aqua-node.dir :as dir])
-  (:require-macros [cljs.core.async.macros :as m :refer [go-loop go]]))
+  (:require-macros [cljs.core.async.macros :as m :refer [go-loop go]]
+                   [utils.macros :refer [<? <?? go? dprint]]))
 
 ;; Overview;
 ;;
@@ -30,86 +31,88 @@
 
 ;; make requests: path level ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
+(defn get-and-init-circ [config socket auth]
+  (let [retry-chan (chan)]
+    (go (<?? (let [id                 (circ/create config socket auth)
+                   [ctrl dest notify] (repeatedly chan)]
+               (circ/update-data id [:roles] [:origin])
+               (circ/update-data id [:ctrl] ctrl)
+               (circ/update-data id [:notify] notify)
+               (circ/update-data id [:dest-ctrl] dest)
+               (circ/update-data id [:mk-path-fn] #(go (>! ctrl :next)))
+               (>! retry-chan (<! ctrl))
+               id)
+             {:chan retry-chan :mins 1}))))
+
 ;; Create a single path circuit (TOR like).
 (defn create-single [config [n & nodes :as all-nodes]]
   "Creates a single path. Assumes a connection to the first node exists."
   ;; Find the first mix's socket & send a create.
-  (let [socket (c/find-by-id (-> n :auth :srv-id))
-        id     (circ/create config socket (:auth n))
-        ctrl   (chan)
-        dest   (chan)
-        notify (chan)]
-    (circ/update-data id [:roles]      [:origin])
-    (circ/update-data id [:ctrl]       ctrl)
-    (circ/update-data id [:dest-ctrl]  dest)
-    (circ/update-data id [:notify]     notify)
-    (circ/update-data id [:mk-path-fn] #(go (>! ctrl :next)))
-    (circ/update-data id [:path-dest]  (-> all-nodes last :dest))
-    (circ/update-data id [:chosen-mix] n)
-    ;; for each remaining mix (nodes here), send a relay-extend, wait until
-    ;; the handshaking is over by waiting on (<! ctrl)
-    (go (loop [cmd (<! ctrl), [n & nodes] nodes]
-          (when n
-            (circ/relay-extend config id n)
-            (log/debug "Single Circuit:" id "extending to;" (-> n :auth :srv-id b/hx) "-- remaining =" (count nodes))
-            (recur (<! ctrl) nodes)))
-        ;; the circuit is built, waiting on dest-ctrl for a destination before sending relay begin,
-        ;; or a :rdv command to make the last node a rdv.
-        (let [cmd  (<! dest)
-              circ (circ/get-data id)]
-          (condp = cmd
-            ;; normal circuit, what app-proxy uses:
-            :begin (do (circ/relay-begin config id (:ap-dest circ))
-                       (circ/update-data id [:state] :relay-ack-pending)
-                       (circ/update-data id [:path-dest :port] (:port (<! ctrl)))
-                       (circ/update-data id [:state] :relay)
-                       (>! (-> circ :backward-hop c/get-data :ctrl) :relay)
-                       (log/info "Single Circuit:" id "is ready for relay"))
-            ;; RDV logic: send relay rdv to ask last node to become our rdv point.
-            :rdv   (do (circ/relay-rdv config id)
-                       (log/info "Using Single Circuit" id "as RDV")
-                       (circ/update-data id [:rdv] (last all-nodes))
-                       ;; each time we receive a new dest, we ask rdv to extend to it.
-                       ;; if the rdv already had a next hop, it will destroy it.
-                       (loop [next-hop (<! dest)]
-                         (let [enc-path (-> id circ/get-data :path)]
-                           ;; if rdv had a next hop, remove it from the encryption node list.
-                           (when (> (count enc-path) (count all-nodes))
-                             (circ/update-data id [:path] (drop-last enc-path)))
-                           (when (not= next-hop :drop-last)
-                             (log/debug "Extending RDV" id "to" (-> next-hop :role) (-> next-hop :auth :srv-id b/hx))
-                             ;; send extend, then wait for extended before notifying upstream.
-                             (circ/relay-extend config id next-hop)
-                             (<! ctrl) ;; FIXME add timeout in case things go wrong.
-                             ;; notify:
+  (go? (let [socket (c/find-by-id (-> n :auth :srv-id))
+             id     (<? (get-and-init-circ config socket (:auth n)))
+             {notify :notify ctrl :ctrl dest :dest} (circ/get-data id)]
+         (circ/update-data id [:path-dest] (-> all-nodes last :dest))
+         (circ/update-data id [:chosen-mix] n)
+         ;; for each remaining mix (nodes here), send a relay-extend, wait until
+         ;; the handshaking is over by waiting on (<! ctrl)
+         (go? (doseq [n nodes]
+                (<?? (circ/relay-extend config id n)
+                     {:mins 1 :chan ctrl})
+                (log/debug "Single Circuit:" id "extended to;" (-> n :auth :srv-id b/hx) "-- remaining =" (count nodes)))
+              ;; the circuit is built, waiting on dest-ctrl for a destination before sending relay begin,
+              ;; or a :rdv command to make the last node a rdv.
+              (let [cmd  (<! dest)
+                    circ (circ/get-data id)]
+                (condp = cmd
+                  ;; normal circuit, what app-proxy uses:
+                  :begin (do (throw "isn't this unused?")
+                             (circ/relay-begin config id (:ap-dest circ))
+                             (circ/update-data id [:state] :relay-ack-pending)
+                             (circ/update-data id [:path-dest :port] (:port (<! ctrl)))
                              (circ/update-data id [:state] :relay)
-                             (log/info "RDV" id "is ready for relay"))
-                           (go (>! notify :extended))
-                           (recur (<! dest)))))
-            (log/error "Single: Did not understand command" cmd "on circ" id))))
-    id))
+                             (>! (-> circ :backward-hop c/get-data :ctrl) :relay)
+                             (log/info "Single Circuit:" id "is ready for relay"))
+                  ;; RDV logic: send relay rdv to ask last node to become our rdv point.
+                  :rdv   (do (<?? (circ/relay-rdv config id)
+                                  {:mins 1 :chan ctrl :ret-val :ok})
+                             (log/info "Using Single Circuit" id "as RDV")
+                             (circ/update-data id [:rdv] (last all-nodes))
+                             ;; each time we receive a new dest, we ask rdv to extend to it.
+                             ;; if the rdv already had a next hop, it will destroy it.
+                             (loop [next-hop (<! dest)]
+                               (let [enc-path (-> id circ/get-data :path)]
+                                 ;; if rdv had a next hop, remove it from the encryption node list.
+                                 (when (> (count enc-path) (count all-nodes))
+                                   (circ/update-data id [:path] (drop-last enc-path)))
+                                 (when (not= next-hop :drop-last)
+                                   (log/debug "Extending RDV" id "to" (-> next-hop :role) (-> next-hop :auth :srv-id b/hx))
+                                   ;; send extend, then wait for extended before notifying upstream.
+                                   (<?? (circ/relay-extend config id next-hop)
+                                        {:mins 1 :chan ctrl})
+                                   (circ/update-data id [:state] :relay)
+                                   (log/info "RDV" id "is ready for relay"))
+                                 ;; notify:
+                                 (go (>! notify :extended))
+                                 (recur (<! dest)))))
+                  (log/error "Single: Did not understand command" cmd "on circ" id))))
+         id)))
 
 ;; create a realtime path for RTP. This version connects to the callee's ap.
 (defn create-rt [config socket mix]
   "Creates a real time path. Assumes a connection to the first node exists."
   ;; Find the first mix's (will be our assigned mix/SP) socket & send a create.
-  (let [id                 (circ/create config socket (:auth mix))
-        [ctrl dest notify] (repeatedly chan)]
-    (circ/update-data id [:roles] [:origin])
-    (circ/update-data id [:ctrl] ctrl)
-    (circ/update-data id [:notify] notify)
-    (circ/update-data id [:dest-ctrl] dest)
-    (circ/update-data id [:mk-path-fn] #(go (>! ctrl :next)))
-    (go (<! ctrl)
-        (log/debug "RT Circuit" id "waiting for destination")
-        ;; wait until we are given a destination: our rdv, the peer's rdv, the peer's mix, and the peer's name.
-        (doseq [hop (<! dest)]
-          (circ/relay-extend config id hop)
-          (<! ctrl)
-          (log/info "RT Circuit" id "extended by one hop"))
-        (>! notify :done)
-        (log/info "RT Circuit" id "is ready for relay"))
-    id))
+  (let [retry-chan (chan)]
+    (go? (let [id   (<? (get-and-init-circ config socket (:auth mix)))
+               {notify :notify ctrl :ctrl dest :dest} (circ/get-data id)]
+           (log/debug "RT Circuit" id "waiting for destination")
+           ;; wait until we are given a destination: our rdv, the peer's rdv, the peer's mix, and the peer's name.
+           (doseq [hop (<! dest)]
+             (<?? (circ/relay-extend config id hop)
+                  {:chan ctrl :mins 1})
+             (log/info "RT Circuit" id "extended by one hop"))
+           (>! notify :done)
+           (log/info "RT Circuit" id "is ready for relay")
+           id))))
 ;(circ/update-data id [:path-dest] rt-dest)
 
 (defn create-one-hop [config socket mix]

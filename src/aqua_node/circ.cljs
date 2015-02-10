@@ -10,7 +10,8 @@
             [aqua-node.crypto :as crypto]
             [aqua-node.conn-mgr :as conn]
             [aqua-node.dtls-comm :as dtls])
-  (:require-macros [cljs.core.async.macros :as m :refer [go]]))
+  (:require-macros [cljs.core.async.macros :as m :refer [go]]
+                   [utils.macros :refer [<? <?? go? dprint]]))
 
 (declare from-relay-cmd from-cmd to-cmd
          create relay-begin relay-extend
@@ -226,6 +227,9 @@
     (w16 101 9) ;; Length
     (.copy msg data 11)
     (enc-send config socket circ-id :relay direction data)))
+
+(defn relay-rdv-ack [config socket circ-id answer]
+  (enc-send config socket circ-id :rdv-ack :b-enc (-> answer conv/ack-to-int b/new1)))
 
 ;; see tor spec 6.2. 160 = ip6 ok & prefered.
 (defn relay-begin [config circ-id dest]
@@ -538,9 +542,17 @@
         p-extended   #(recv-created2 config socket circ-id r-payload)
 
         ;; we are asked to be RDV:
+        p-rdv-ack    (fn []
+                       ;; catching because ctrl chan can be nil if this is not one of our circs
+                       (go? (>! (:ctrl (@circuits circ-id))
+                                (conv/int-to-ack (.readUInt8 r-payload)))))
         p-rdv        (fn []
-                       (log/info "Acting as RDV for" circ-id)
-                       (update-data circ-id [:roles] (add-role :rdv)))
+                       (if (is? :rdv config)
+                         (do (log/info "Acting as RDV for" circ-id)
+                             (update-data circ-id [:roles] (add-role :rdv))
+                             (relay-rdv-ack config socket circ-id :ok))
+                         (do (log/error "We can't be RDV for" circ-id)
+                             (relay-rdv-ack config socket circ-id :fail))))
 
         p-sip        #(if-let [sip-ch (or (:sip-chan circ) (:sip-chan config))] ;; sip dir servers use a global chan so it is stored in config, clients use a per circ chan.
                         (go (>! sip-ch {:circ circ :circ-id circ-id :sip-rq r-payload}))
@@ -578,6 +590,7 @@
       16 (p-sip)
       ;; 17 (p-extend-sip)
       18 (p-rdv)
+      22 (p-rdv-ack)
       19 (p-ping)
       20 (p-pong)
       21 (p-sp)
@@ -692,9 +705,11 @@
                (log/debug "recv cell: id:" circ-id "cmd:" (:name command) "len:" len "cell-len:" cell-len "id:" (if-let [id (-> socket c/get-data :auth :srv-id)]
                                                                                               (b/hx id)
                                                                                               "unknown"))))
-    (if (and false (not= len (:aqua-packet-size config))) ;; FIXME SP manifest
-      (log/error "Circ:" circ-id "received cell with bad length:" len "or cell length:" cell-len)
+    ;(if (and false (not= len (:aqua-packet-size config))) ;; FIXME SP manifest
+      ;(log/error "Circ:" circ-id "received cell with bad length:" len "or cell length:" cell-len)
       (when (:fun command)
         (try
           ((:fun command) config socket circ-id (.slice data 9 cell-len))
-          (catch js/Object e (log/c-info e (str "Killed circuit " circ-id)) (destroy config circ-id)))))))
+          (catch js/Object e (log/c-info e (str "Killed circuit " circ-id)) (destroy config circ-id))))
+      ;)
+    ))

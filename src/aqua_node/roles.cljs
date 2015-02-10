@@ -116,7 +116,7 @@
     (dtls/init config circ/process aqua-server-recv)            ;; init dtls-handler
 
     (go (let [is?         #(m/is? % roles)                      ;; tests roles for our running instance
-              geo         (go (<! (geo/parse config)))          ;; match our ip against database, unless already specified in config:
+              geo         (go (<! (geo/parse config)))          ;; FIXME: remove this? match our ip against database, unless already specified in config:
               net-info    (go (when-not (is? :dir)              ;; request net-info if we're not a dir. FIXME -> get-net-info will be called periodically.
                                 (<! (get-net-info config ds))))]
 
