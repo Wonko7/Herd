@@ -215,7 +215,7 @@
         soc           (.createSocket (node/require "dgram") "udp4")
         soc-ctrl      (chan)
         dispatch-rq   (chan)]
-    ;; yerk, define globals. might replace this with chans.
+    ;; FIXME yerk, define globals. might replace this with chans.
     (def circ-process circ-process)
     (def circ-accept circ-accept)
     (def dispatch-pub (pub dispatch-rq #(.readUInt32BE %1 1)))
