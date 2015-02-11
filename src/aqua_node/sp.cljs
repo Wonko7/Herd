@@ -12,7 +12,8 @@
             [aqua-node.log :as log]
             [aqua-node.dir :as dir]
             [aqua-node.buf :as b])
-  (:require-macros [cljs.core.async.macros :as m :refer [go-loop go]]))
+  (:require-macros [cljs.core.async.macros :as m :refer [go-loop go]]
+                   [utils.macros :refer [<? <?? go? dprint]]))
 
 
 (def to-cmd
@@ -104,7 +105,7 @@
                         ;;;; recvd by client:
                         :register-to-sp   (let [client-id (.readUInt32BE data 0)
                                                 sp-id     (.slice data 4)]
-                                           (go (>! mix-answer [client-id sp-id]))) ;; :connect function is waiting for this.
+                                            (go (>! mix-answer [client-id sp-id]))) ;; :connect function is waiting for this.
                         :ack-secret       (go (>! mix-answer data))
                         ;; internal commands (not from the network)
                         :connect          (let [zone          (-> config :geo-info :zone)
@@ -113,30 +114,30 @@
                                                 mix           (first (select-mixes #(and (= (:role %) :mix) (= (:zone %) zone))))
                                                 socket        (conn/new :aqua :client mix config  {:connect identity})]
                                             ;; 1/ connect to mix, wait for client-id & sp-id
-                                            (go (let [mix-socket (<! socket)]
-                                                  (circ/send-id config mix-socket)
-                                                  (log/debug :FIXME "sent id")
-                                                  (let [[client-id sp-id] (<! mix-answer)
-                                                        sp                (first (select-mixes #(b/b= sp-id (-> % :auth :srv-id))))]
-                                                    (log/debug "Will connect to SP" (b/hx sp-id))
-                                                    (assert sp "Could not find SP")
-                                                    ;; 2/ connect to SP:
-                                                    (let [socket     (conn/new :aqua :client sp config {:connect identity})
-                                                          auth       (send-mk-secret config mix-socket client-id (:auth mix))
-                                                          payload    (<! mix-answer)
-                                                          shared-sec (hs/client-finalise auth (.slice payload 2) (-> config :enc :key-len))
-                                                          sp-socket  (<! socket)]
-                                                      (circ/send-sp config sp-socket (b/cat (-> :register-id-to-sp from-cmd b/new1)
-                                                                                            (b/new4 client-id)))
-                                                      ;; 3/ create circuits:
-                                                      (dtls/send-role sp-socket :super-peer)
-                                                      (dtls/send-node-secret sp-socket shared-sec)
-                                                      (c/update-data sp-socket [:sp-auth] (:auth sp)) ;; FIXME: not sure if we'll keep this, but for now it'll do
-                                                      (c/update-data sp-socket [:auth] (-> mix-socket c/get-data :auth)) ;; FIXME: not sure if we'll keep this, but for now it'll do
-                                                      (c/add-id sp-socket (-> mix :auth :srv-id))
-                                                      ;(circ/send-id config sp-socket)
-                                                      (path/init-pools config net-info (:geo-info config) 2 (c/get-data sp-socket))
-                                                      (>! sp-notify [sp-socket mix])))))))))]
+                                            (go? (let [mix-socket (<! socket)]
+                                                   (circ/send-id config mix-socket)
+                                                   (log/debug :FIXME "sent id")
+                                                   (let [[client-id sp-id] (<! mix-answer)
+                                                         sp                (first (select-mixes #(b/b= sp-id (-> % :auth :srv-id))))]
+                                                     (log/debug "Will connect to SP" (b/hx sp-id))
+                                                     (assert sp "Could not find SP")
+                                                     ;; 2/ connect to SP:
+                                                     (let [socket     (conn/new :aqua :client sp config {:connect identity})
+                                                           auth       (send-mk-secret config mix-socket client-id (:auth mix))
+                                                           payload    (<! mix-answer)
+                                                           shared-sec (hs/client-finalise auth (.slice payload 2) (-> config :enc :key-len))
+                                                           sp-socket  (<! socket)]
+                                                       (circ/send-sp config sp-socket (b/cat (-> :register-id-to-sp from-cmd b/new1)
+                                                                                             (b/new4 client-id)))
+                                                       ;; 3/ create circuits:
+                                                       (dtls/send-role sp-socket :super-peer)
+                                                       (dtls/send-node-secret sp-socket shared-sec)
+                                                       (c/update-data sp-socket [:sp-auth] (:auth sp)) ;; FIXME: not sure if we'll keep this, but for now it'll do
+                                                       (c/update-data sp-socket [:auth] (-> mix-socket c/get-data :auth)) ;; FIXME: not sure if we'll keep this, but for now it'll do
+                                                       (c/add-id sp-socket (-> mix :auth :srv-id))
+                                                       ;(circ/send-id config sp-socket)
+                                                       (path/init-pools config net-info (:geo-info config) 2 (c/get-data sp-socket))
+                                                       (>! sp-notify [sp-socket mix])))))))))]
     (go-loop [msg (<! sp-ctrl)]
       (process msg)
       (recur (<! sp-ctrl)))

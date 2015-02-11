@@ -1,4 +1,5 @@
 (ns aqua-node.buf
+  (:refer-clojure :exclude [cat])
   (:require [cljs.core :as cljs]
             [cljs.nodejs :as node]))
 

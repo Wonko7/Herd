@@ -19,20 +19,25 @@
                                e#)))))
 
 (defmacro <?? [expr & [{loops :loops
-                        timeout-val :timeout return-value secs :secs mins :mins
-                        :ret-val return-fn :return-fn result-chan :chan}]]
+                        timeout-val :timeout secs :secs mins :mins
+                        return-value :ret-val return-fn :return-fn result-chan :chan}]]
   (assert (or (and (nil? return-value) (nil? return-fn))
               (nil? return-value)
               (nil? return-fn))
           "Setting both return-fn & return-value does not make sense.")
-  (assert (or timeout (or secs mins))
+  (assert (or (nil? (or timeout-val secs mins))
+              (and timeout-val (nil? (or secs mins)))
+              (and (nil? timeout-val) (or secs mins))
+              )
           "Setting both timeout & secs/mins does not make sense.")
   (let [loops       (or loops 3)
+        secs        (or secs 0)
+        mins        (or mins 0)
         timeout-val (if (or secs mins)
                       (+ (* mins 60 1000) (* secs 1000))
                       timeout-val)
         timeout-fn  `(fn [ch#]
-                       (go (cljs.core.async/<! (cljs.core.async/timeout ~timeout-val))
+                       (cljs.core.async.macros/go (cljs.core.async/<! (cljs.core.async/timeout ~timeout-val))
                            (cljs.core.async/>! ch# [:end])))
         return-fn   (or return-fn (if return-value
                                     `#(= % ~return-value)
