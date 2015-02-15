@@ -2,6 +2,7 @@
   (:require [cljs.core :as cljs]
             [cljs.nodejs :as node]
             [cljs.core.async :refer [chan <! >!]]
+            [clojure.set :as clj-set]
             [aqua-node.log :as log]
             [aqua-node.buf :as b]
             [aqua-node.ntor :as hs]
@@ -657,9 +658,7 @@
    256 {:name :forward         :fun recv-forward}
    257 {:name :create-mux      :fun recv-create-mux}})
 
-(def from-cmd
-  (apply merge (for [k (keys to-cmd)]
-                 {((to-cmd k) :name) k})))
+(def from-cmd (clj-set/map-invert to-cmd))
 
 (def from-relay-cmd
   {:begin      1

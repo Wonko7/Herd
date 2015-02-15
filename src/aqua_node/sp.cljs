@@ -2,6 +2,7 @@
   (:require [cljs.core :as cljs]
             [cljs.nodejs :as node]
             [cljs.core.async :refer [chan <! >! sub pub unsub close!] :as a]
+            [clojure.set :as clj-set]
             [aqua-node.parse :as conv]
             [aqua-node.dtls-comm :as dtls]
             [aqua-node.conn-mgr :as conn]
@@ -23,12 +24,56 @@
    3  :register-id-to-sp
    })
 
-(def from-cmd
-  (apply merge (for [k (keys to-cmd)]
-                 {(to-cmd k) k})))
+(def from-cmd (clj-set/map-invert to-cmd))
 
 
-;; sent by mix:
+;; sent by AP to mix:
+
+(defn send-register-to-mix [config mix-socket client-id mix-auth]
+  (let [[auth create]   (hs/client-init config mix-auth)]
+    (log/debug :FIXME :mk-secret (.-length create))
+    (circ/send-sp config mix-socket (b/cat (-> :register-to-mix from-cmd b/new1)
+                                           (:nb-channels config)
+                                           (b/new4 client-id)
+                                           (b/new2 2) ;; type of hs
+                                           (-> create .-length b/new2)
+                                           create))
+    auth))
+
+(defn send-ack-regesiter-info [config mix-socket cookie]
+  (circ/send-sp config mix-socket (b/cat (-> :ack from-cmd b/new1)
+                                         (b/new4 cookie))))
+
+;; sent by mix to AP:
+
+(defn send-register-info-to-client [config cookie ap-socket chan-info secret-info]
+  (circ/send-sp config ap-socket (b/cat (-> :register-info-to-client b/new1)
+                                        (b/new4 cookie)
+                                        (-> secret-info .-length b/new2)
+                                        secret-info
+                                        (-> (for [{sp-id :sp-id chan-id :chan-id client-id :client-id} chan-info]
+                                              [sp-id chan-id client-id])
+                                            flatten
+                                            b/new-from-coll))))
+
+
+;; sent by mix to SP:
+
+(defn send-expect-new-client [config sp-socket cookie {chan-id :chan-id client-id :client-id client-pub-id}]
+  (circ/send-sp config sp-socket (b/cat (-> :expect-new-client from-cmd b/new1)
+                                        (b/new4 cookie)
+                                        (b/new4 chan-id)
+                                        (b/new4 client-id)
+                                        client-pub-id)))
+
+;; sent by SP to mix:
+
+(defn send-ack-new-client [config mix-socket cookie ack-value]
+  (circ/send-sp config mix-socket (b/cat (-> :ack from-cmd b/new1)
+                                         (b/new4 cookie)
+                                         (b/new1 ack-value))))
+
+;; old:
 
 (defn send-client-sp-id [config socket client-index sp-id]
   "send a sp id & its client-index on the channel to a client"
@@ -48,16 +93,6 @@
 
 
 ;; sent by client:
-
-(defn send-mk-secret [config mix-socket client-id mix-auth]
-  (let [[auth create]   (hs/client-init config mix-auth)]
-    (log/debug :FIXME :mk-secret (.-length create))
-    (circ/send-sp config mix-socket (b/cat (-> :mk-secret from-cmd b/new1)
-                                           (b/new4 client-id)
-                                           (b/new2 2) ;; type of hs
-                                           (-> create .-length b/new2)
-                                           create))
-    auth))
 
 
 ;; init:

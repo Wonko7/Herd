@@ -2,6 +2,7 @@
   (:require [cljs.core :as cljs]
             [cljs.nodejs :as node]
             [cljs.core.async :refer [chan <! >! sub pub unsub close!] :as a]
+            [clojure.set :as clj-set]
             [aqua-node.parse :as conv]
             [aqua-node.log :as log]
             [aqua-node.buf :as b]
@@ -40,9 +41,7 @@
    15 :ping
    })
 
-(def from-cmd
-  (apply merge (for [k (keys to-cmd)]
-                 {(to-cmd k) k})))
+(def from-cmd (clj-set/map-invert to-cmd))
 
 ;; helpers:
 (defn- mk-send-fn [socket]

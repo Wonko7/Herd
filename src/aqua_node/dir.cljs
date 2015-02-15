@@ -2,6 +2,7 @@
   (:require [cljs.core :as cljs]
             [cljs.nodejs :as node]
             [cljs.core.async :refer [chan <! >!]]
+            [clojure.set :as clj-set]
             [clojure.string :as str]
             [aqua-node.buf :as b]
             [aqua-node.log :as log]
@@ -197,9 +198,7 @@
 
 ;; (def roles {:mix 0 :app-proxy 1}) ;; FIXME add :super-peer
 
-(def from-cmd
-  (apply merge (for [k (keys to-cmd)]
-                 {((to-cmd k) :name) k})))
+(def from-cmd (clj-set/map-invert to-cmd))
 
 (defn process [config srv buf & [recv-chan]]
   "Parse the header & give the message to the appropriate function."

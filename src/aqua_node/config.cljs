@@ -38,6 +38,7 @@
      :aqua-packet-size          400
      ;; SP:
      :max-clients-per-channel   5
+     :nb-channels               2
      }))
 
 (defn read-config [argv]

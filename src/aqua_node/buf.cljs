@@ -12,6 +12,11 @@
   If data is an int, will create a buffer of that size."
   (js/Buffer. data))
 
+(defn new-from-coll [coll]
+  (-> coll
+      cljs/clj->js
+      js/Buffer.))
+
 (defn new4 [integer]
   (let [b (js/Buffer. 4)]
     (.writeUInt32BE b integer 0)

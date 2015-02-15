@@ -2,6 +2,7 @@
   (:require [cljs.core :as cljs]
             [cljs.nodejs :as node]
             [cljs.core.async :refer [chan <! >!]]
+            [clojure.set :as clj-set]
             [aqua-node.log :as log]
             [aqua-node.buf :as b]
             [aqua-node.parse :as conv]
@@ -27,9 +28,7 @@
                :ackack-rtcp     9
                :error           10})
 
-(def to-cmd
-  (apply merge (for [k (keys from-cmd)]
-                 {(from-cmd k) k})))
+(def to-cmd (clj-set/map-invert from-cmd))
 
 
 ;; Parsing ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
