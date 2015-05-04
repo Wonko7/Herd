@@ -4,7 +4,7 @@
 (defmacro <? [expr]
   `(utils.helpers/throw-err (cljs.core.async/<! ~expr)))
 
-(defmacro go-try-catch [& body]
+(defmacro go-try [& body]
   `(cljs.core.async.macros/go
      (try
        ~@(drop-last body)
@@ -20,15 +20,15 @@
 
 (defmacro <?? [expr & [{loops :loops
                         timeout-val :timeout secs :secs mins :mins
-                        return-value :ret-val return-fn :return-fn result-chan :chan}]]
+                        return-value :ret-val return-fn :return-fn result-chan :chan
+                        on-error-fn :on-error}]]
   (assert (or (and (nil? return-value) (nil? return-fn))
               (nil? return-value)
               (nil? return-fn))
           "Setting both return-fn & return-value does not make sense.")
   (assert (or (nil? (or timeout-val secs mins))
               (and timeout-val (nil? (or secs mins)))
-              (and (nil? timeout-val) (or secs mins))
-              )
+              (and (nil? timeout-val) (or secs mins)))
           "Setting both timeout & secs/mins does not make sense.")
   (let [loops       (or loops 3)
         secs        (or secs 0)
@@ -59,7 +59,9 @@
                                               (throw "Failed, reached timeout on each try"))
                                             (recur (cljs.core.async/<! (retry-fn#)) (inc i#)))
                         (~return-fn v#) v#
-                        (= i# ~loops)   (throw "Reached max retries")
+                        (= i# ~loops)   (do ~(when on-error-fn
+                                               `(~on-error-fn))
+                                            (throw "Reached max retries"))
                         :else           (recur (cljs.core.async/<! (retry-fn#)) (inc i#)))))))))
 
 ;; only used for debugging:

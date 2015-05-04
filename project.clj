@@ -2,13 +2,13 @@
   :description "anonymous quanta"
   :url "http://example.com/FIXME"
   :license {:name "BSD"
-            :url "http://www.eclipse.org/legal/epl-v10.html"}
-  :plugins [[lein-cljsbuild "1.0.3"]
+            :url "http://opensource.org/licenses/BSD-3-Clause"}
+  :plugins [[lein-cljsbuild "1.0.5"]
             [com.cemerick/piggieback "0.1.3"]]
-  :dependencies [[org.clojure/clojure "1.6.0"]
-                 ;[org.clojure/core.async "0.1.346.0-17112a-alpha"]
-                 [org.clojure/core.async "0.1.338.0-5c5012-alpha"]
-                 [org.clojure/clojurescript "0.0-2644"]
+                 
+  :dependencies [[org.clojure/clojure "1.7.0-beta1"]
+                 [org.clojure/core.async "0.1.346.0-17112a-alpha"]
+                 [org.clojure/clojurescript "0.0-3211"]
                  [org.bodil/cljs-noderepl "0.1.11"]]
   :repl-options {:nrepl-middleware [cemerick.piggieback/wrap-cljs-repl]}
   :cljsbuild {:builds [{:source-paths ["src"]
@@ -16,7 +16,7 @@
                                    :hashbang "/usr/bin/env node\nrequire('source-map-support').install();"
                                    :output-to "target/aqua.js"
                                    :source-map "target/aqua.js.map"
-                                   :cache-analysis true
+                                   ;:cache-analysis true  ;; latest cljs doesn't like this
                                    :optimizations :simple
                                    :static-fns true
                                    :pretty-print true}}]})

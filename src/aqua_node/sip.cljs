@@ -309,88 +309,86 @@
                                 ;; Take care of invite: SIP client sent an invite.
                                 ;; this means we are the caller. The following will find the callee & initiate call:
                                 (= (:method nrq) "INVITE")
-                                (go (let [sip-call-id      (-> nrq :headers :call-id)
-                                          call-id          (mk-call-id)
-                                          sip-ctrl         (chan)
-                                          callee-name      (second (re-find #"sip:(.*)@" (:uri nrq)))                                   ;; get callee name
-                                          sdp              (:content nrq)
-                                          sip-dir-dest     (first (select #(= (:role %) :sip-dir)))]
+                                (go? (let [sip-call-id      (-> nrq :headers :call-id)
+                                           call-id          (mk-call-id)
+                                           sip-ctrl         (chan)
+                                           callee-name      (second (re-find #"sip:(.*)@" (:uri nrq)))                                   ;; get callee name
+                                           sdp              (:content nrq)
+                                           sip-dir-dest     (first (select #(= (:role %) :sip-dir)))]
                                       (add-call call-id {:sip-ctrl sip-ctrl :sip-call-id sip-call-id :state :ringing
                                                          :headers (-> (.makeResponse sip rq 200 "OK") cljs/js->clj walk/keywordize-keys :headers)
                                                          :uri-to  (-> contact :uri)})
                                       (assert (:auth sip-dir-dest) "Could not find SIP DIR in aqua network")
                                       (>! out-rdv-ctrl sip-dir-dest)                                                ;; --- RDV: connect to sip dir to send register
-                                      (<! out-rdv-notify)                                                           ;; wait until connected to send
+                                      (<? out-rdv-notify)                                                           ;; wait until connected to send
                                       (sd/query config callee-name out-rdv-id call-id)                                                  ;; query for callee's rdv
                                       (log/info "SIP:" "initiating call" call-id "to" callee-name)
                                       (let [query-reply-rdv      (<! sip-ctrl)                                                          ;; get query reply
                                             rdv-data             (circ/get-data rdv-id)]
-                                        (if (= :error (-> query-reply-rdv :sip-rq (.readUInt8 0) s/to-cmd))                             ;; FIXME: assert this instead.
-                                          (do (log/error "Query for" callee-name "failed.")
-                                              (.send sip (.makeResponse sip rq 404 "NOT FOUND")))
-                                          (let [callee-rdv       (:data query-reply-rdv)
-                                                callee-rdv-cid   (.readUInt32BE callee-rdv 0)
-                                                callee-rdv-id    (.slice callee-rdv 4 (+ 4 node-id-len))
-                                                sdp-dest         (get-sdp-dest nrq)
-                                                rtcp-dest        (get-sdp-rtcp nrq)]                                                    ;; parse sdp to find where the SIP client expects to receive incoming RTP.
-                                            (println sdp-dest)
-                                            (println rtcp-dest)
-                                            (assert callee-rdv-id (str "SIP: Could not find callee's mix:" name))
-                                            (update-data call-id [:peer-rdv] callee-rdv-cid)
-                                            (.send sip (.makeResponse sip rq 100 "TRYING"))                                             ;; inform the SIP client we have initiated the call.
-                                            (if (not (b/b= callee-rdv-id (-> out-rdv-id circ/get-data :rdv :auth :srv-id)))
-                                              (do (>! out-rdv-ctrl (dir/find-by-id callee-rdv-id))
-                                                  (<! out-rdv-notify)
-                                                  (log/debug "Extended to callee's RDV"))
-                                              (do (>! out-rdv-ctrl :drop-last)
-                                                  (<! out-rdv-notify)
-                                                  (log/debug "We already are on callee's RDV")))
-                                            ;; FIXME: once this works we'll add relay-sip extend to callee so rdv can't read demand,
-                                            ;; and client can match our HS against the keys he has for his contacts.
-                                            (circ/relay-sip config out-rdv-id :f-enc (b/cat (-> :invite s/from-cmd b/new1)              ;; Send invite to callee. include our rdv-id so callee can send sig to us.
-                                                                                            (b/new call-id)
-                                                                                            b/zero
-                                                                                            (b/new4 callee-rdv-cid)
-                                                                                            (-> rdv-data :rdv :auth :srv-id)
-                                                                                            (-> @path/chosen-mix :auth :srv-id)
-                                                                                            (b/new name)
-                                                                                            b/zero
-                                                                                            (-> config :auth :aqua-id :id)
-                                                                                            (-> config :auth :aqua-id :pub)))
-                                            (let [reply1                 (<! sip-ctrl)
-                                                  reply2                 (<! sip-ctrl)
-                                                  [rtp-rep rtcp-rep]     (if (= (:cmd reply1) :ack-rtcp) [reply2 reply1] [reply1 reply2])]                                                 ;; and now we wait for ack
-                                              (assert (= (:cmd rtp-rep) :ack) (str "Something went wrong with call" call-id))
-                                              (.send sip (.makeResponse sip rq 180 "RINGING"))                                                            ;; we received an answer (non error) from callee, inform our SIP client that callee's phone is ringing
-                                              (let [[rdv-callee-id mix-id id pub] (b/cut (:data rtp-rep) node-id-len (* 2 node-id-len) (* 3 node-id-len))
-                                                    rtp-circ                      (<! (path/get-path :rt))
-                                                    rtp-data                      (circ/get-data rtp-circ)
-                                                    rtp-ctrl                      (:dest-ctrl rtp-data)
-                                                    rtp-notify                    (:notify rtp-data)
-                                                    rtp-done                      (chan)
-                                                    [_ local-port]                (<! (path/attach-circs-to-new-udp config                               ;; create local udp socket. in-circ will be sent to sdp-dest, the SIP client's RTP media. out-circ is where data from the sip client will be sent through to callee.
-                                                                                                                    (go (:circ-id rtp-rep))
-                                                                                                                    rtp-done
-                                                                                                                    (go sdp-dest)))
-                                                    rtcp-circ                     (<! (path/get-path :rt))
-                                                    rtcp-data                     (circ/get-data rtcp-circ)
-                                                    rtcp-ctrl                     (:dest-ctrl rtcp-data)
-                                                    rtcp-notify                   (:notify rtcp-data)
-                                                    rtcp-done                     (chan)
-                                                    [_ loc-rtcp-port]             (<! (path/attach-circs-to-new-udp config                               ;; create local udp socket. in-circ will be sent to sdp-dest, the SIP client's RTP media. out-circ is where data from the sip client will be sent through to callee.
-                                                                                                                    (go (:circ-id rtcp-rep))
-                                                                                                                    rtcp-done
-                                                                                                                    (go rtcp-dest)))
-                                                    circuit-path                  (distinct-hops [(:chosen-mix rdv-data)              ;; our mix
-                                                                                                  (:rdv rdv-data)                     ;; our rdv
-                                                                                                  (dir/find-by-id rdv-callee-id)      ;; callee's rdv
-                                                                                                  (dir/find-by-id mix-id)             ;; callee's mix
-                                                                                                  {:auth {:pub-B pub :srv-id id}}])]  ;; callee.
+                                        (when (= :error (-> query-reply-rdv :sip-rq (.readUInt8 0) s/to-cmd))                             ;; FIXME: assert this instead.
+                                          (.send sip (.makeResponse sip rq 404 "NOT FOUND"))
+                                          (throw (str "Query for " callee-name " failed.")))
+                                        (let [callee-rdv       (:data query-reply-rdv)
+                                              callee-rdv-cid   (.readUInt32BE callee-rdv 0)
+                                              callee-rdv-id    (.slice callee-rdv 4 (+ 4 node-id-len))
+                                              sdp-dest         (get-sdp-dest nrq)
+                                              rtcp-dest        (get-sdp-rtcp nrq)]                                                    ;; parse sdp to find where the SIP client expects to receive incoming RTP.
+                                          (assert callee-rdv-id (str "SIP: Could not find callee's mix:" name))
+                                          (update-data call-id [:peer-rdv] callee-rdv-cid)
+                                          (.send sip (.makeResponse sip rq 100 "TRYING"))                                             ;; inform the SIP client we have initiated the call.
+                                          (if (not (b/b= callee-rdv-id (-> out-rdv-id circ/get-data :rdv :auth :srv-id)))
+                                            (do (>! out-rdv-ctrl (dir/find-by-id callee-rdv-id))
+                                                (<? out-rdv-notify)
+                                                (log/debug "Extended to callee's RDV"))
+                                            (do (>! out-rdv-ctrl :drop-last)
+                                                (<? out-rdv-notify)
+                                                (log/debug "We already are on callee's RDV")))
+                                          ;; FIXME: once this works we'll add relay-sip extend to callee so rdv can't read demand,
+                                          ;; and client can match our HS against the keys he has for his contacts.
+                                          (circ/relay-sip config out-rdv-id :f-enc (b/cat (-> :invite s/from-cmd b/new1)              ;; Send invite to callee. include our rdv-id so callee can send sig to us.
+                                                                                          (b/new call-id)
+                                                                                          b/zero
+                                                                                          (b/new4 callee-rdv-cid)
+                                                                                          (-> rdv-data :rdv :auth :srv-id)
+                                                                                          (-> @path/chosen-mix :auth :srv-id)
+                                                                                          (b/new name)
+                                                                                          b/zero
+                                                                                          (-> config :auth :aqua-id :id)
+                                                                                          (-> config :auth :aqua-id :pub)))
+                                          (let [reply1                 (<? sip-ctrl)
+                                                reply2                 (<? sip-ctrl)
+                                                [rtp-rep rtcp-rep]     (if (= (:cmd reply1) :ack-rtcp) [reply2 reply1] [reply1 reply2])]                                                 ;; and now we wait for ack
+                                            (assert (= (:cmd rtp-rep) :ack) (str "Something went wrong with call" call-id))
+                                            (.send sip (.makeResponse sip rq 180 "RINGING"))                                                            ;; we received an answer (non error) from callee, inform our SIP client that callee's phone is ringing
+                                            (let [[rdv-callee-id mix-id id pub] (b/cut (:data rtp-rep) node-id-len (* 2 node-id-len) (* 3 node-id-len))
+                                                  rtp-circ                      (<? (path/get-path :rt))
+                                                  rtp-data                      (circ/get-data rtp-circ)
+                                                  rtp-ctrl                      (:dest-ctrl rtp-data)
+                                                  rtp-notify                    (:notify rtp-data)
+                                                  rtp-done                      (chan)
+                                                  [_ local-port]                (<? (path/attach-circs-to-new-udp config                               ;; create local udp socket. in-circ will be sent to sdp-dest, the SIP client's RTP media. out-circ is where data from the sip client will be sent through to callee.
+                                                                                                                  (go (:circ-id rtp-rep))
+                                                                                                                  rtp-done
+                                                                                                                  (go sdp-dest)))
+                                                  rtcp-circ                     (<? (path/get-path :rt))
+                                                  rtcp-data                     (circ/get-data rtcp-circ)
+                                                  rtcp-ctrl                     (:dest-ctrl rtcp-data)
+                                                  rtcp-notify                   (:notify rtcp-data)
+                                                  rtcp-done                     (chan)
+                                                  [_ loc-rtcp-port]             (<? (path/attach-circs-to-new-udp config                               ;; create local udp socket. in-circ will be sent to sdp-dest, the SIP client's RTP media. out-circ is where data from the sip client will be sent through to callee.
+                                                                                                                  (go (:circ-id rtcp-rep))
+                                                                                                                  rtcp-done
+                                                                                                                  (go rtcp-dest)))
+                                                  circuit-path                  (distinct-hops [(:chosen-mix rdv-data)              ;; our mix
+                                                                                                (:rdv rdv-data)                     ;; our rdv
+                                                                                                (dir/find-by-id rdv-callee-id)      ;; callee's rdv
+                                                                                                (dir/find-by-id mix-id)             ;; callee's mix
+                                                                                                {:auth {:pub-B pub :srv-id id}}])]  ;; callee.
 
                                                 (>! rtp-ctrl circuit-path)                                            ;; connect to callee using given path.
                                                 (>! rtcp-ctrl circuit-path)                                           ;; connect to callee using given path.
-                                                (<! rtp-notify)                                                                                           ;; wait until ready.
-                                                (<! rtcp-notify)                                                                                          ;; wait until ready.
+                                                (<? rtp-notify)                                                                                           ;; wait until ready.
+                                                (<? rtcp-notify)                                                                                          ;; wait until ready.
                                                 (>! rtcp-done rtcp-circ)
                                                 (>! rtp-done rtp-circ)
                                                 (log/info "SIP: RT circuits ready for outgoing data on:" call-id)
@@ -416,11 +414,11 @@
                                                   ;(update-data call-id [:bye] (.makeResponse sip rq))
                                                   (.send sip (conv/to-js ok)))
                                                 (add-sip-ctrl-to-rt-circs call-id sip-ctrl)
-                                                (js/setInterval #(dtls/relay-ping config rtcp-circ) 500)
+                                                ;(js/setInterval #(dtls/relay-ping config rtcp-circ) 500)
                                                 (wait-for-bye call-id
                                                               sip-ctrl
                                                               {:name callee-name
-                                                               :dest {:host (:local-ip config)}}))))))))
+                                                               :dest {:host (:local-ip config)}})))))))
 
                                 :else (log/error "Unsupported sip method" (:method nrq)))))]
 
