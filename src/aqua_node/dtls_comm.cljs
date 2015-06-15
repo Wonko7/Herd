@@ -143,6 +143,7 @@
   (send-to-dtls (b/cat (-> :update-node-secret from-cmd b/new1)
                        (-> sp-socket :index b/new4)
                        shared-sec)))
+
 (defn relay-ping [config circ]
   (send-to-dtls (b/cat (-> :ping from-cmd b/new1)
                        (-> circ b/new4))))
