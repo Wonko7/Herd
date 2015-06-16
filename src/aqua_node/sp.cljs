@@ -39,11 +39,14 @@
   (swap! SP-channel-info #(apply dissoc % keys)))
 
 (defn get-random-chans [config nb-chans]
-  (take nb-chans (shuffle (for [sp      (keys @SP-channel-info)
-                                chan-id (range (:max-chans-per-sp config))
-                                cl-id   (range (:max-clients-per-chan config))
-                                :when   (nil? (get-in @SP-channel-info [sp chan-id cl-id]))]
-                            [sp chan-id cl-id]))))
+  ;; naive, won't scale well. maybe not make things this random?
+  (take nb-chans (map #(first (shuffle %))
+                      (shuffle (partition-by first
+                                             (for [sp      (keys @SP-channel-info)
+                                                   chan-id (range (:max-chans-per-sp config))
+                                                   cl-id   (range (:max-clients-per-chan config))
+                                                   :when   (nil? (get-in @SP-channel-info [sp chan-id cl-id]))]
+                                               [sp chan-id cl-id]))))))
 
 (defn get-inactive-chans-for-client [client-id]
   (for [sp      (keys @SP-channel-info)
