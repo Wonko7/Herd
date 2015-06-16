@@ -153,7 +153,7 @@
         node-id-len (-> config :ntor-values :node-id-len)
 
         process
-        (fn [{cmd :cmd data :data socket :socket :as process-arguments}]
+        (fn [{cmd :cmd data :data socket :socket}]
           (let [cmd       (if (number? cmd) (to-cmd cmd) cmd)
                 mk-cookie #(-> (node/require "crypto") (.randomBytes 4) (.readUInt32BE 0))
 
