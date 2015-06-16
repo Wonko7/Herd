@@ -24,6 +24,8 @@
    3  :register-to-sp
    4  :ack-secret
    5  :register-id-to-sp
+   6  :request-active-channel
+   7  :activated-channel
    })
 
 (def from-cmd (clj-set/map-invert to-cmd))
@@ -37,14 +39,24 @@
   (swap! SP-channel-info #(apply dissoc % keys)))
 
 (defn get-random-chans [config nb-chans]
-  (take nb-chans (shuffle (for [sp      (keys SP-channel-info)
+  (take nb-chans (shuffle (for [sp      (keys @SP-channel-info)
                                 chan-id (range (:max-chans-per-sp config))
                                 cl-id   (range (:max-clients-per-chan config))
-                                :when   (nil? (get-in sps [sp chan-id cl-id]))]
+                                :when   (nil? (get-in @SP-channel-info [sp chan-id cl-id]))]
                             [sp chan-id cl-id]))))
 
+(defn get-inactive-chans-for-client [client-id]
+  (for [sp      (keys @SP-channel-info)
+        chan-id (-> (@SP-channel-info) sp keys)
+        cl-id   (-> (@SP-channel-info) sp chan-id keys)
+        :let    [node-id (-> (@SP-channel-info) sp chan-id cl-id :pub)
+                 state   (-> (@SP-channel-info) sp chan-id :state)]
+        :when   (and (= client-id node-id)
+                     (= state :inactive))]
+    [sp chan-id cl-id]))
+
 (defn update-chan-info [keys subdata]
-  (swap! circuits assoc-in keys subdata))
+  (swap! SP-channel-info assoc-in keys subdata))
 
 
 ;; sent by AP to mix:
@@ -53,6 +65,7 @@
   (log/debug :FIXME :mk-secret (.-length create))
   (circ/send-sp config mix-socket (b/cat (-> :register-to-mix from-cmd b/new1)
                                          (-> config :nb-channels b/new1)
+                                         (-> config :auth :aqua-id b/new)
                                          ;(b/new1 client-id)
                                          (b/new2 2) ;; type of hs
                                          (-> create .-length b/new2)
@@ -73,6 +86,15 @@
                         (mapcat #(list (b/new %1) (b/new1 %2) (b/new1 %3) chan-info)))]
     (circ/send-sp config ap-socket (apply b/cat message))))
 
+(defn send-activated-channel [config socket cookie [sp-id chan-id client-id]]
+  (if sp-id
+    (circ/send-sp config socket (b/cat (-> :actived-channel from-cmd b/new1)
+                                       (b/new4 cookie)
+                                       (b/new sp-id)
+                                       (b/new1 chan-id)
+                                       (b/new1 client-id)))
+    (circ/send-sp config socket (b/cat (-> :actived-channel from-cmd b/new1)
+                                       (b/new4 cookie)))))
 
 ;; sent by mix to SP:
 
@@ -85,10 +107,10 @@
 
 ;; sent by SP to mix:
 
-(defn send-ack-new-client [config mix-socket cookie ack-value]
-  (circ/send-sp config mix-socket (b/cat (-> :ack from-cmd b/new1)
-                                         (b/new4 cookie)
-                                         (b/new1 ack-value))))
+(defn send-ack [config socket cookie ack-value]
+  (circ/send-sp config socket (b/cat (-> :ack from-cmd b/new1)
+                                     (b/new4 cookie)
+                                     (b/new1 ack-value))))
 
 ;;;; old:
 ;;
@@ -115,6 +137,11 @@
   (circ/send-sp config sp-socket (b/cat (-> :register-to-sp from-cmd b/new1)
                                         (-> config :auth :aqua-id :pub))))
 
+(defn send-request-active-channel [config sp-socket cookie]
+  (circ/send-sp config sp-socket (b/cat (-> :request-active-channel from-cmd b/new1)
+                                        (-> config :auth :aqua-id :pub)
+                                        (b/new4 cookie))))
+
 ;; init:
 
 (defn init [config]
@@ -139,39 +166,60 @@
                           (condp = cmd
 
                             :register-to-mix
-                            (let [[nb-chans create]   (b/cut data 1)
-                                  cookies             (repeatedly #(.readUInt32BE (.randomBytes c 4) 0) nb-chans)
+                            (let [[_ client-pub-id create] (b/cut 5 (+ 5 node-id-len))
+                                  nb-chans            (.readUInt8 data 0)
+                                  hs-type             (.readUInt16BE data 1)
+                                  create-len          (.readUInt16BE data 3)
+                                  create              (.slice data 5)
+                                  cookies             (repeatedly mk-cookie nb-chans)
+                                  ap-cookie           (mk-cookie)
                                   sp-answers          (repeatedly chan nb-chans)
-                                  chan-info           (get-random-chans nb-chans)
+                                  chan-info           (get-random-chans config nb-chans)
                                   wait-for-all-SPs    (chan)]
-                              (assert (and (= create-len (.-length create))
+                              (assert (and ;(= create-len (.-length create))
                                            (= 2 hs-type)
                                            (> nb-chans 0))
                                       "Bad :register-to-mix request")
                               (go-try
                                 ;; send a request to each mix:
-                                (doseq [[cookie ans sp chan-id cl-id] (map #(concat [%1] [%2] %3) cookies sp-answer chan-info)]
+                                (doseq [[cookie ans sp chan-id cl-id] (map #(concat [%1] [%2] %3) cookies sp-answers chan-info)]
                                   (swap! merge answers {cookie ans})
                                   (go?
-                                    (<?? (send-expect-new-client config (:socket ((c/get-all) sp)) cookie {:chan-id chan-in :client-id cl-id :client-pub-id client-pub})
-                                         {:chan ans}) ;; FIXME also check ack value
+                                    (<?? (send-expect-new-client config (:socket ((c/get-all) sp)) cookie {:chan-id chan-id :client-id cl-id :client-pub-id client-pub-id})
+                                         {:chan ans :secs 30}) ;; FIXME also check ack value
                                     (>! wait-for-all-SPs :done)))
                                 ;; wait for all mixes to respond
                                 (go? (doseq [i (range nb-chans)]
                                        (<! wait-for-all-SPs))
                                      ;; send client chan info
                                      (let [[client-id secret created]  (mk-secret-from-create config create)
-                                           answer (chan)]
+                                           answer     (chan)
+                                           ]
                                        (swap! merge answers {ap-cookie answer})
                                        (<?? (send-register-info-to-client config ap-cookie socket chan-info secret)
-                                            {:chan answer})
+                                            {:chan answer :secs 30})
                                        (doseq [[sp chan-id client-id] chan-info]
-                                         (add-client-to-chan sp chan-id client-id {:secret secret :pub client-pub}))))
+                                         (add-client-to-chan sp chan-id client-id {:secret secret :node-id client-pub-id}))))
                                 ;; on error:
                                 #(do (doseq [cookie (cons ap-cookie cookies)]
                                        (swap! dissoc answers cookie))
                                      (comment send rm client to all sps)
-                                     (throw (str "Could not reach SP " sp)))))
+                                     (throw "Error registering to mix"))))
+
+                            :request-active-channel
+                            (let [client-node-id (b/hx (.slice data 0 node-id-len))
+                                  cookie         (.readUInt32BE data node-id-len)
+                                  channel        (first (get-inactive-chans-for-client client-node-id))
+                                  answer         (chan)]
+                              (if channel
+                                (go? (swap! merge answers {cookie answer})
+                                     (update-chan-info (cons (take 2 channel) :state) :active)
+                                     (dtls/send fixme)
+                                     (<?? (send-activated-channel config socket cookie channel) 
+                                          {:mins 1 :chan answer :on-error #(do (update-chan-info (cons (take 2 channel) :state) :inactive)
+                                                                               (swap! dissoc answers cookie)
+                                                                               (comment :FIXME dtls/send inactive))}))
+                                (go? (send-activated-channel config socket cookie nil))))
 
                             :ack                (fwd-ack)
                             :ack-secret         (fwd-ack)
@@ -183,13 +231,13 @@
                             :expect-new-client  (let [[cookie chan-id client-id client-pub-id] (b/cut data 4 8 12)]
                                                   (dtls/send expect client)
                                                   ;; we should wait for answer
-                                                  (send-ack-new-client config socket cookie 1) ;; we don't check ack value for now
+                                                  (send-ack config socket cookie 1) ;; we don't check ack value for now
                                                   (add-client-to-chan :me chan-id client-id {:socket socket}))
                             :register-to-sp     identity ;(let [pub data]) ;; we'll need to auth the client with a HS, for now we don't care
                             nil))
 
                         as-ap  
-                        (fn []
+                        (fn as-ap []
                           (condp = cmd
 
                             :connect
@@ -202,12 +250,12 @@
                                   cookie        (mk-cookie)]
                               ;; 1/ connect to mix, wait for sp-ids
                               (go? (let [mix-socket    (<! socket)
-                                         [auth create] (hs/client-init config)]
+                                         [auth create] (hs/client-init config (:auth mix))]
                                      ;; this will be replaced with send reg
                                      (circ/send-id config mix-socket)
                                      (log/debug :FIXME "sent id")
                                      (swap! merge answers {cookie mix-answer})
-                                     (let [SPs (<?? (send-register-to-mix config mix-socket (:auth mix))
+                                     (let [SPs (<?? (send-register-to-mix config mix-socket (:auth mix) create)
                                                     {:chan mix-answer :mins 3})
                                            node-id-len (-> config :ntor-values :node-id-len)
                                            [cookie len secret chans] (b/cut SPs 4 6 (+ 6 (-> config :enc :key-len)))
@@ -231,9 +279,9 @@
                                          (send-register-to-sp config socket) ;; we want an ack here too
                                          ;; update the socket info for dtls-handler:
                                          (dtls/send-role sp-socket :super-peer) ;; FIXME add chan & client IDs.
-                                         (dtls/send-node-secret sp-socket shared-sec)
+                                         (dtls/send-node-secret sp-socket secret)
                                          ;; we'll need to check this, there's a hack somewhere.
-                                         (c/update-data sp-socket [:sp-auth] (:auth sp)) ;; FIXME: not sure if we'll keep this, but for now it'll do
+                                         (c/update-data sp-socket [:sp-auth] (:auth sp-data)) ;; FIXME: not sure if we'll keep this, but for now it'll do
                                          (c/update-data sp-socket [:auth] (-> mix-socket c/get-data :auth)) ;; FIXME: not sure if we'll keep this, but for now it'll do
                                          (c/add-id sp-socket (-> mix :auth :srv-id))
                                          ;;(circ/send-id config sp-socket)
@@ -243,18 +291,35 @@
                                            (as-ap {:cmd :request-active-channel})))))))
 
                             :request-active-channel
-                            (go? (let [mix-answer (chan)
-                                       cookie     (mk-cookie)]
-                                   (swap! merge answers {cookie mix-answer})
-                                   (let [chan-info (<?? (send-request-active-channel config cookie)
-                                                        {:chan mix-answer :mins 1})
-                                         [sp-id chan-info]  (b/hx (b/cut chan-info node-id-len))
-                                         chan-id    (.readUInt8 chan-info 0)
-                                         client-id  (.readUInt8 chan-info 1)]
+                            (go-try (let [mix-answer (chan)
+                                          cookie     (mk-cookie)]
+                                      (swap! merge answers {cookie mix-answer})
+                                      (let [chan-info (loop [[sp-socket & sockets] (shuffle (filter #(:sp-auth %) (c/get-all)))] ;; we're shuffling so clients don't all request on the same channel
+                                                        (log/debug "Trying to connect to mix through SP" sp-socket)
+                                                        (if sp-socket
+                                                          (let [timeout (chan)]
+                                                            (js/setTimeout #(go (>! timeout :timeout)) (* 30 1000))
+                                                            (send-request-active-channel config sp-socket cookie)
+                                                              (let [chan-info (alts! [mix-answer timeout])]
+                                                                (if (= :timeout chan-info)
+                                                                  (recur sockets)
+                                                                  chan-info)))))
+                                            ;_ (assert (.-length...) "No available channels")
+                                            [sp-id chan-info]  (b/hx (b/cut chan-info node-id-len))
+                                            chan-id    (.readUInt8 chan-info 0)
+                                            client-id  (.readUInt8 chan-info 1)
+                                            chan-data  (-> (@SP-channel-info) sp-id chan-id client-id)
+                                            sp-socket  (:socket chan-data)]
+                                        (assert chan-data "Mix tried to use inexistent channel")
+                                        (update-chan-info [sp-id chan-id client-id :state] :active)
+                                        (dtls/send fixme)
+                                        ;; FIXME check on sp-notify --> why does it need mix?
+                                        (path/init-pools config (dir/get-net-info) (:geo-info config) 2 (c/get-data sp-socket))
+                                        (send-ack config sp-socket cookie 1) ;; we don't check ack value for now
+                                        (>! sp-notify [sp-socket mix])))
+                                    #(log/error "Could not contact mix through available channels"))
 
-                                     )))
-
-                            :active-channel-ack      (fwd-ack)
+                            :activated-channel       (fwd-ack)
                             :register-info-to-client (fwd-ack)
 
                             nil))
@@ -263,14 +328,15 @@
 
                     (log/info "Recvd" cmd)
 
-                    ;; this is inelegant. 
-                    (try (loop [[role & roles] (:roles config)] ;; try each role.
+                    ;; this is inelegant, I must have been tired.
+                    (try (loop [[role & roles] (:roles config)] ;; try to process command with each role.
                            (when (nil? role)
                              (throw "could not process message"))
-                           (if-let [result ((fs role))]
+                           (if-let [result ((process-fns role))]
                              result
                              (recur roles)))
                          (catch js/Object e (log/c-error e "Couldn't process SP signalisation.")))))]
+
                 (go? (loop [msg (<? sp-ctrl)]
                        (process msg)
                        (recur (<? sp-ctrl))))
