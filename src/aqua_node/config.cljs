@@ -37,8 +37,9 @@
      :dtls-handler-path         "./dtls-handler"
      :aqua-packet-size          400
      ;; SP:
-     :max-clients-per-channel   5
-     :nb-channels               2
+     :SP                        {:max-clients-per-channel 8
+                                 :max-chans-per-sp        1
+                                 :nb-channels             1}
      }))
 
 (defn read-config [argv]

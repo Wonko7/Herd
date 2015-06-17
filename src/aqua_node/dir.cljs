@@ -198,7 +198,10 @@
 
 ;; (def roles {:mix 0 :app-proxy 1}) ;; FIXME add :super-peer
 
-(def from-cmd (clj-set/map-invert to-cmd))
+(def from-cmd
+  (apply merge (for [k (keys to-cmd)]
+                 {((to-cmd k) :name) k})))
+
 
 (defn process [config srv buf & [recv-chan]]
   "Parse the header & give the message to the appropriate function."

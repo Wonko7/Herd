@@ -12,7 +12,7 @@
             [aqua-node.geo :as geo]
             [aqua-node.dir :as dir])
   (:require-macros [cljs.core.async.macros :as m :refer [go-loop go]]
-                   [utils.macros :refer [<? <?? go? dprint]]))
+                   [utils.macros :refer [<? <?? go? go-try dprint]]))
 
 ;; Overview;
 ;;

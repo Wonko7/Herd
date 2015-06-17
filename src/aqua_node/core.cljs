@@ -66,23 +66,23 @@
     (roles/bootstrap config)))
 
 
-;;(set! *main-cli-fn* #(try (enable-console-print!)
-;;                          (apply -main %&)
-;;                          (catch js/Object e (log/c-error e "No one expects the Spanish Inquisition."))))
-
 (set! *main-cli-fn* #(try (enable-console-print!)
-                          (let [c (chan)
-                                a (filter (fn [a] (= :kkt a)) c)
-                                b (filter (fn [a] (= :mdr a)) c)]
-                            (go
-                              (go (println (<! c)))
-                              (go (println (<! c)))
-                              (>! c :kkt)
-                              (>! c :mdr)
-                              )
-                            ;(go (println (<?? (>! c :lol)
-                            ;                  {:loops 4 :timeout 0 :chan c})))
-                            )
-                          ;;(go-try-catch (go? (println (<? (lalal :lol))))
-                          ;;              (fn [] (println "this the end my friend")))
+                          (apply -main %&)
                           (catch js/Object e (log/c-error e "No one expects the Spanish Inquisition."))))
+
+;; (set! *main-cli-fn* #(try (enable-console-print!)
+;;                           (let [c (chan)
+;;                                 a (filter (fn [a] (= :kkt a)) c)
+;;                                 b (filter (fn [a] (= :mdr a)) c)]
+;;                             (go
+;;                               (go (println (<! c)))
+;;                               (go (println (<! c)))
+;;                               (>! c :kkt)
+;;                               (>! c :mdr)
+;;                               )
+;;                             ;(go (println (<?? (>! c :lol)
+;;                             ;                  {:loops 4 :timeout 0 :chan c})))
+;;                             )
+;;                           ;;(go-try-catch (go? (println (<? (lalal :lol))))
+;;                           ;;              (fn [] (println "this the end my friend")))
+;;                           (catch js/Object e (log/c-error e "No one expects the Spanish Inquisition."))))
