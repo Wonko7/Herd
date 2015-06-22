@@ -198,9 +198,10 @@
                            {:id socket-id :cs :server :type :aqua ;; FIXME can we get rid of :cs? that was old...
                             :send-fn (mk-send-fn socket)
                             :on-destroy [#(send-rm-node socket)]}))    ;; FIXME: might make this a chan
-      :rm-node    (let [socket-id (r4 1)]
+      :rm-node    (do (log/debug :rm-node :buffer (.-length buf))
+                    (comment (let [socket-id (r4 1)]
                     ;; also remove circs.
-                    (c/destroy {:index socket-id :type :aqua-dtls}))
+                    (c/destroy {:index socket-id :type :aqua-dtls}))))
       (log/error "DTLS comm: unsupported command" cmd (r1 0)))))
 
 ;; start dtls-handler & create listening socket:

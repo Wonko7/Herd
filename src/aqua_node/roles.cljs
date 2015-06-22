@@ -82,7 +82,7 @@
         soc     (conn/new :aqua :client dest config {:connect #(go (>! con :done))})
         timer   (js/setTimeout #(go (>! con :timeout)) (:keep-alive-interval config))]
     (log/debug "Aqua: Connecting to" (select-keys dest [:host :port :role]))
-    (go (let [soc (<! soc)]
+    (go (let [soc (<! (<! soc))] ;; FIXME bug in <?? ?
           (if (or (= :fail soc) (= :timeout (<! con)))
             (do (c/destroy soc)
                 :fail)
@@ -101,6 +101,15 @@
 (defn connect-to-all [{aq :aqua :as config}]
   "For each mix in node info, if not already connected, extract ip & port and connect."
   (go (let [ctrl   (chan)]
+        (doall (map #(let [s (second %1)
+                           c? (nil? (c/find-by-id (-> s :auth :srv-id)))
+                           s (dissoc s :auth)]
+                       [(first %1) s c?])
+                    (seq (dir/get-net-info))))
+        (doseq [[[ip port] mix] (seq (dir/get-net-info))
+                :let [id (-> mix :auth :srv-id)]
+                ]
+          (log/debug ip port ":" (:role mix) ":" (b/hx id) ":" (nil? (c/find-by-id id))))
         (doseq [[[ip port] mix] (seq (dir/get-net-info))
                 :let [id (-> mix :auth :srv-id)]
                 :when (and (not (b/b= id (-> config :auth :aqua-id :id)))
@@ -187,6 +196,7 @@
                               (:register-interval config))
               (register-to-dir config (<! geo) nil ds)))
 
+
           (when (is? :super-peer)
             (go (let [mixes (for [[[ip port] mix] (seq (<! net-info))
                                   :when (and (= (:role mix) :mix)
@@ -194,12 +204,35 @@
                               mix)
                       [mix] mixes
                       ctrl  (chan)]
+                  (sp/init config)
                   (when (not= 1 (count mixes))
                     (log/error mix)
                     (log/error "SP init: more than one suitable mix found" mixes))
                   (register-to-dir config (<! geo) nil ds)
-                  (<! (aqua-connect config mix ctrl))
-                  (<! ctrl))))
+                  (aqua-connect config mix ctrl)
+                  (log/debug :sp 1)
+                  (let [mix-socket (<! ctrl)
+                  _ (log/debug :sp 2)
+                        [sp-ctrl sp-notify] (:sp-chans config)]
+                  (log/debug :sp 3)
+                    (>! sp-ctrl {:cmd :connect :socket mix-socket})
+                    (log/debug :sp 4))
+
+                  )))
+
+          (comment (when (is? :super-peer)
+                     (go (let [mixes (for [[[ip port] mix] (seq (<! net-info))
+                                           :when (and (= (:role mix) :mix)
+                                                      (= (:zone mix) (-> config :geo-info :zone)))]
+                                       mix)
+                               [mix] mixes
+                               ctrl  (chan)]
+                           (when (not= 1 (count mixes))
+                             (log/error mix)
+                             (log/error "SP init: more than one suitable mix found" mixes))
+                           (register-to-dir config (<! geo) nil ds)
+                           (<! (aqua-connect config mix ctrl))
+                           (<! ctrl)))))
 
           (when (is? :dir)
             (conn/new :dir :server dir config {:connect aqua-dir-recv}))

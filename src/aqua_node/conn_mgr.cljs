@@ -42,7 +42,7 @@
     ;; create the appropriate connection:
     (cond (is? :socks :server) (socks/create-server conn data udp-data (partial init config) (partial err config))
           (is? :aqua :server)  (log/error "Aqua server should be created by dtls-comm/init now")
-          (is? :aqua :client)  (go (<?? #(dtls/connect conn conn-info connect err)
+          (is? :aqua :client)  (go (<?? (dtls/connect conn conn-info connect err)
                                         {:return-fn #(not= % :fail) :secs 30}))
           (is? :dir :server)   (tls/create-server conn config connect err) ;; FIXME: setting type to aqua/aqua-dir is in dtls/tls. this is Bad.
           (is? :dir :client)   (tls/connect conn config connect err)
