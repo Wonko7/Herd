@@ -1,6 +1,6 @@
 # Herd
 Herd: A Scalable, Traffic Analysis Resistant Anonymity Network for VoIP Systems
-(SIGCOMM)[http://conferences.sigcomm.org/sigcomm/2015/pdf/papers/p639.pdf]
+[SIGCOMM paper.](http://conferences.sigcomm.org/sigcomm/2015/pdf/papers/p639.pdf)
 
 ## License
 
