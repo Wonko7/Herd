@@ -1,25 +1,10 @@
-# aqua-node
-
-An aqua implementation.
-
-## Building
-
-### Program versions:
-- Node:		v0.10.12-release:a088cf4f930d3928c97d239adf950ab43e7794aa (this should no longer be a requirement now that we've stopped using the node dtls module (but I haven't tested yet).)
-
-### Building:
-- `lein cljsbuild once`
-- `npm install .`
-
-## Usage
-
-`node target/aqua.js`
-
-Also see aquarc config file.
+# Herd
+Herd: A Scalable, Traffic Analysis Resistant Anonymity Network for VoIP Systems
+(SIGCOMM)[http://conferences.sigcomm.org/sigcomm/2015/pdf/papers/p639.pdf]
 
 ## License
 
-Copyright (c) 2014, aqua
+Copyright (c) 2014, Herd.
 All rights reserved.
 
 Redistribution and use in source and binary forms, with or without
