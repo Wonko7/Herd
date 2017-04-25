@@ -520,8 +520,8 @@
                             (let [reply1             (<! (skip-until #(:circ-id %) sip-ctrl))
                                   reply2             (<! (skip-until #(:circ-id %) sip-ctrl))
                                   [rtp-id rtcp-id]   (map :circ-id (if (= (:cmd reply1) :ackack-rtcp) [reply2 reply1] [reply1 reply2]))]                                     ;; Wait for caller's rt path's first message.
-                              (>! rtp-incoming  rtp-id)                                                              ;; inform attach-local-udp-to-simplex-circs that we have incoming-rtp to attach to socket.
-                              (>! rtcp-incoming rtcp-id)                                                             ;; inform attach-local-udp-to-simplex-circs that we have incoming-rtp to attach to socket.
+                              (>! rtp-incoming  rtp-circ)                                                              ;; inform attach-local-udp-to-simplex-circs that we have incoming-rtp to attach to socket.
+                              (>! rtcp-incoming rtcp-circ)                                                             ;; inform attach-local-udp-to-simplex-circs that we have incoming-rtp to attach to socket.
                               (update-data call-id [:rt :in] rtp-id)
                               (update-data call-id [:rtcp :in] rtcp-id))
                             (log/info "SIP: got ackack, ready for relay on" call-id)
